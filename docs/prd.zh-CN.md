@@ -154,7 +154,7 @@ internal/base/release/hertz.go  # Hertz 服务额外生成
 internal/base/release/kitex.go  # Kitex 服务额外生成
 ```
 
-MVP 支持 release metadata、`Traffic` context、Hertz Header adapter、Kitex metadata adapter、统一 canary `RuleSet`、priority、header/cookie/user/tenant/region/weighted 分流、Nacos / Polaris provider 标识与 discovery config、统一 `Instance` 模型、`Discoverer` / `RuleProvider` / `Selector` 抽象、stable/canary/unknown pool 拆分、实例权重选择和 `fallback=stable|fail_fast`。默认模板仅预留安全 wiring 注释；`ncgo add infra canary --wire` 可 opt-in 挂载默认 traffic middleware。它暂不直接依赖 Nacos / Polaris SDK；后续通过 SDK adapter、config watch 和 Kitex selector adapter 扩展。
+MVP 支持 release metadata、`Traffic` context、Hertz Header adapter、Kitex metadata adapter、统一 canary `RuleSet`、priority、header/cookie/user/tenant/region/weighted 分流、Nacos / Polaris provider 标识与 discovery config、统一 `Instance` 模型、`Discoverer` / `RuleProvider` / `Selector` 抽象、stable/canary/unknown pool 拆分、实例权重选择、`fallback=stable|fail_fast` 和 SDK-neutral Kitex client load balancer adapter skeleton。默认模板仅预留安全 wiring 注释；`ncgo add infra canary --wire` 可 opt-in 挂载默认 traffic middleware。它暂不直接依赖 Nacos / Polaris SDK；后续通过 SDK adapter 和 config watch 扩展。
 
 ## 9. 生命周期
 

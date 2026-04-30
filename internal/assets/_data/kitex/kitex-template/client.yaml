@@ -86,9 +86,12 @@ body: |-
       // Optional release canary wiring (after `ncgo add infra canary`):
       // import "{{.Module}}/internal/base/release"
       // options = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))
-      // Adapt release.Selector behind a Kitex resolver/selector when adding a
-      // concrete Nacos/Polaris SDK adapter for instance-level canary routing.
-	      // ncgo:wire:kitex-client:middleware
+      // options = append(options, kitexclient.WithLoadBalancer(
+      //     release.NewKitexCanaryLoadBalancer(cfg.ServiceName, ruleProvider, nil),
+      // ))
+      // The load balancer filters instances from the configured resolver by
+      // release.track metadata; plug Nacos/Polaris discovery in as a resolver.
+      // ncgo:wire:kitex-client:middleware
       if cfg.CallerService != "" {
           options = append(options, kitexclient.WithMiddleware(callerServiceMiddleware(cfg.CallerService)))
       }

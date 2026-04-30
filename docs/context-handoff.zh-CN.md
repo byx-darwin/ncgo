@@ -166,7 +166,7 @@ Usecase 文件中使用：
 - 支持 `Discoverer` / `RuleProvider` / `Selector` 抽象，后续 Nacos / Polaris SDK adapter 可直接接入。
 - 支持实例权重选择、sticky key、一致回退语义：`fallback=stable` / `fallback=fail_fast`。
 - 已补 infra unit tests、`scripts/smoke.sh` canary 冒烟，并确认模板在临时 Go module 中可编译。
-- 已在默认 Hertz / Kitex 模板中加入安全 wiring 注释，标出 `release.HertzTraffic()`、`release.KitexTraffic()` 与后续 `release.Selector` 的插入位置；默认项目不会 import optional 的 `internal/base/release` 包。
+- 已在默认 Hertz / Kitex 模板中加入安全 wiring 注释，标出 `release.HertzTraffic()`、`release.KitexTraffic()` 与 `release.NewKitexCanaryLoadBalancer(...)` 的插入位置；默认项目不会 import optional 的 `internal/base/release` 包。
 - 已新增 `ncgo add infra canary --wire` / MCP `wire=true`，可 opt-in 挂载默认 traffic middleware；默认不改源码。
 - 方向 A：已为 `ncgo add infra ... --wire` 增加 `--dry-run` / MCP `dryRun=true` 预览能力；会输出 `would write` / `would wire`、manifest 预期更新，并保证不写 optional 文件、不保存 manifest、不修改 server/client 源码。
 - 已继续优化 `--wire`：真实写入前先做 `PreviewWire` preflight，避免 anchor/format 失败后留下 optional/manifest 半完成状态；logging wiring 的默认 middleware/init anchor 也从静默 no-op 改为缺失时报错，已接线场景保持幂等。

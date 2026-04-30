@@ -105,11 +105,11 @@
 2. 继续减少对具体 middleware 行的字符串替换依赖；
 3. 继续扩展 plan patch 信息，例如 `from` / `to` / `insertAfter`。
 
-### P1：Kitex canary selector adapter MVP
+### P1（MVP 已完成）：Kitex canary selector adapter MVP
 
-基于已有 `Selector` / `Discoverer` / `RuleProvider` 抽象，补 Kitex client selector adapter skeleton。
+基于已有 `Selector` / `Discoverer` / `RuleProvider` 抽象，已补 SDK-neutral Kitex client load balancer adapter skeleton：`release.NewKitexCanaryLoadBalancer(...)` 会把 Kitex discovery instances 转为 `release.Instance`，再复用统一 selector 规则按 `release.track` 做 stable / canary 选路。
 
-注意：优先保持 SDK-neutral，避免引入重依赖导致生成模板不可编译。
+注意：当前仍不引入 Nacos / Polaris SDK；真实服务发现需要后续 adapter 通过 Kitex resolver 提供带 `release.track` metadata 的实例。
 
 ### P1：Nacos / Polaris adapter skeleton
 
@@ -163,6 +163,6 @@
 
 建议优先做：
 
-1. logging / canary troubleshooting 文档；
-2. 继续细化 wiring plan detail 为结构化 patch 信息；
-3. Kitex canary selector adapter MVP。
+1. Nacos / Polaris adapter skeleton；
+2. CLI / MCP 统一 add infra result renderer；
+3. CI / release 工程化。

@@ -646,6 +646,7 @@ internal/base/release/kitex.go  # Kitex 服务额外生成
 - 已支持：按 `release.track` 分 stable / canary / unknown instance pool。
 - 已支持：按权重与 sticky key 选择实例。
 - 已支持：`Discoverer` / `RuleProvider` / `Selector` 抽象，便于后续接入 Nacos / Polaris SDK。
+- 已支持：SDK-neutral Kitex client load balancer adapter，可复用 `Selector` 对 Kitex discovery instances 做 stable / canary 选路。
 - 待增强：Nacos / Polaris SDK adapter、watch、本地缓存。
 
 ### 14.5 config adapter
@@ -687,9 +688,12 @@ import "<module>/internal/base/release"
 
 options = append(options, kitexclient.WithMetaHandler(transmeta.ClientTTHeaderHandler))
 options = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))
+options = append(options, kitexclient.WithLoadBalancer(
+    release.NewKitexCanaryLoadBalancer(cfg.ServiceName, ruleProvider, nil),
+))
 ```
 
-`release.Selector` 当前是 SDK-neutral seam。真实实例级选路应在 Nacos / Polaris adapter 落地后，把 `Discoverer` / `RuleProvider` 接到 Kitex resolver / selector 或调用端封装中；默认模板只预留注释，不直接引用 optional 包。
+`release.NewKitexCanaryLoadBalancer` 当前是 SDK-neutral seam。它只消费 Kitex resolver 已发现的实例及其 metadata；真实实例来源仍应在 Nacos / Polaris adapter 落地后，通过 Kitex resolver 提供带 `release.track` 的实例，并通过 `RuleProvider` 提供动态 canary rule。
 
 ## 15. MVP 分阶段
 
@@ -718,6 +722,7 @@ options = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))
 
 - 已完成：按 registry metadata 过滤 stable / canary 实例。
 - 已完成：SDK-neutral selector seam，可从任意 `Discoverer` / `RuleProvider` 获取实例与规则。
+- 已完成：Kitex client load balancer adapter skeleton，可把 Kitex discovery result 转接到统一 selector。
 - 待增强：从 Nacos / Polaris 服务发现缓存获取实例。
 - 已完成：支持 fallback stable / fail-fast。
 - 已完成：支持权重分流。

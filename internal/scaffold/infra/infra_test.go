@@ -415,7 +415,7 @@ func TestAddCanaryAliasRecordsCanonicalKind(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read kitex canary adapter: %v", err)
 	}
-	for _, want := range []string{"func KitexTraffic", "func TrafficFromKitex", "func InjectKitexTraffic"} {
+	for _, want := range []string{"func KitexTraffic", "func TrafficFromKitex", "func InjectKitexTraffic", "type KitexCanaryLoadBalancer struct", "func NewKitexCanaryLoadBalancer", "type KitexResultDiscoverer struct"} {
 		if !strings.Contains(string(adapterBody), want) {
 			t.Errorf("kitex canary adapter missing %q", want)
 		}

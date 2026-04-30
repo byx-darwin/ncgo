@@ -260,7 +260,7 @@ func TestGenerateKitexTemplatesIncludeSafeOptionalWiringAnchors(t *testing.T) {
 		"logging.KitexRequestID()",
 		"logging.KitexAccessLog()",
 		"options = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))",
-		"release.Selector",
+		"release.NewKitexCanaryLoadBalancer(cfg.ServiceName, ruleProvider, nil)",
 	} {
 		if !strings.Contains(clientTemplate, want) {
 			t.Errorf("kitex client template missing optional wiring anchor %q", want)
