@@ -1,7 +1,9 @@
 package main
 
 import (
+	"encoding/json"
 	"fmt"
+	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -32,6 +34,7 @@ type addInfraOptions struct {
 	force  bool
 	wire   bool
 	dryRun bool
+	output string
 }
 
 func newAddInfraCmd() *cobra.Command {
@@ -52,10 +55,17 @@ func newAddInfraCmd() *cobra.Command {
 	f.BoolVar(&opts.force, "force", false, "Overwrite existing generated add-on file")
 	f.BoolVar(&opts.wire, "wire", false, "Opt-in: update generated server/client wiring when supported")
 	f.BoolVar(&opts.dryRun, "dry-run", false, "Preview intended add-on writes and --wire changes without modifying files")
+	f.StringVar(&opts.output, "output", "text", "Output format: text or json")
 	return cmd
 }
 
 func runAddInfra(cmd *cobra.Command, kind string, opts *addInfraOptions) error {
+	if opts.output == "" {
+		opts.output = "text"
+	}
+	if opts.output != "text" && opts.output != "json" {
+		return fmt.Errorf("add infra: unsupported --output %q; want text or json", opts.output)
+	}
 	res, err := infra.Add(infra.Options{
 		Root:   opts.root,
 		Kind:   kind,
@@ -67,6 +77,9 @@ func runAddInfra(cmd *cobra.Command, kind string, opts *addInfraOptions) error {
 		return err
 	}
 	out := cmd.OutOrStdout()
+	if opts.output == "json" {
+		return writeAddInfraJSON(out, res)
+	}
 	writeVerb, wireVerb := "wrote", "wired"
 	if res.DryRun {
 		writeVerb, wireVerb = "would write", "would wire"
@@ -90,6 +103,30 @@ func runAddInfra(cmd *cobra.Command, kind string, opts *addInfraOptions) error {
 		fmt.Fprintf(out, "  $ %s\n", s)
 	}
 	return nil
+}
+
+type addInfraJSONResult struct {
+	DryRun       bool             `json:"dryRun"`
+	Updated      bool             `json:"updated"`
+	WrittenPath  string           `json:"writtenPath,omitempty"`
+	WrittenPaths []string         `json:"writtenPaths"`
+	WiredPaths   []string         `json:"wiredPaths"`
+	NextSteps    []string         `json:"nextSteps"`
+	Plan         []infra.PlanItem `json:"plan"`
+}
+
+func writeAddInfraJSON(out io.Writer, res *infra.Result) error {
+	enc := json.NewEncoder(out)
+	enc.SetIndent("", "  ")
+	return enc.Encode(addInfraJSONResult{
+		DryRun:       res.DryRun,
+		Updated:      res.Updated,
+		WrittenPath:  res.WrittenPath,
+		WrittenPaths: res.WrittenPaths,
+		WiredPaths:   res.WiredPaths,
+		NextSteps:    res.NextSteps,
+		Plan:         res.Plan,
+	})
 }
 
 func writtenInfraPaths(res *infra.Result) []string {

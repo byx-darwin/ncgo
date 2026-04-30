@@ -114,7 +114,14 @@ func callAddInfra(raw json.RawMessage) (map[string]any, error) {
 	for _, step := range res.NextSteps {
 		fmt.Fprintf(&b, "  $ %s\n", step)
 	}
-	return textResult(strings.TrimRight(b.String(), "\n"), false), nil
+	out := textResult(strings.TrimRight(b.String(), "\n"), false)
+	out["dryRun"] = res.DryRun
+	out["updated"] = res.Updated
+	out["writtenPaths"] = res.WrittenPaths
+	out["wiredPaths"] = res.WiredPaths
+	out["nextSteps"] = res.NextSteps
+	out["plan"] = res.Plan
+	return out, nil
 }
 
 func writtenInfraPaths(res *infra.Result) []string {

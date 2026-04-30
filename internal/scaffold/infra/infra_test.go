@@ -48,6 +48,15 @@ func TestAddRedisCopiesFileAndUpdatesManifest(t *testing.T) {
 	if !res.Updated {
 		t.Errorf("Updated = false, want true")
 	}
+	if !planContains(res.Plan, "file", "create", res.WrittenPath, "") {
+		t.Errorf("Plan missing file create for %s: %+v", res.WrittenPath, res.Plan)
+	}
+	if !planContains(res.Plan, "manifest", "add", filepath.Join(".ncgo", "manifest.yaml"), "") {
+		t.Errorf("Plan missing manifest add: %+v", res.Plan)
+	}
+	if !planContains(res.Plan, "next_step", "run", "", "go get github.com/redis/go-redis/v9") {
+		t.Errorf("Plan missing redis next step: %+v", res.Plan)
+	}
 	if want := filepath.Join(root, "internal", "base", "data", "redis.go"); res.WrittenPath != want {
 		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, want)
 	}
@@ -85,6 +94,12 @@ func TestAddIsIdempotent(t *testing.T) {
 	}
 	if res.Updated {
 		t.Errorf("Updated = true, want false (already in manifest)")
+	}
+	if !planContains(res.Plan, "file", "overwrite", dst, "") {
+		t.Errorf("Plan missing file overwrite for %s: %+v", dst, res.Plan)
+	}
+	if !planContains(res.Plan, "manifest", "already_present", filepath.Join(".ncgo", "manifest.yaml"), "") {
+		t.Errorf("Plan missing manifest already_present: %+v", res.Plan)
 	}
 	body, _ := os.ReadFile(dst)
 	if strings.Contains(string(body), "pre-existing") {
@@ -472,6 +487,9 @@ func TestAddLoggingWireDryRunForHertzDoesNotWrite(t *testing.T) {
 	if strings.Join(res.WiredPaths, "\n") != serverPath {
 		t.Fatalf("WiredPaths = %v, want [%s]", res.WiredPaths, serverPath)
 	}
+	if !planContains(res.Plan, "wire", "update", serverPath, "") {
+		t.Fatalf("Plan missing wire update for %s: %+v", serverPath, res.Plan)
+	}
 	for _, p := range wantWritten {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Fatalf("dry-run wrote %s: stat err = %v", p, err)
@@ -637,6 +655,15 @@ func readFile(t *testing.T, path string) string {
 		t.Fatalf("read %s: %v", path, err)
 	}
 	return string(body)
+}
+
+func planContains(plan []PlanItem, kind, action, path, detail string) bool {
+	for _, item := range plan {
+		if item.Kind == kind && item.Action == action && item.Path == path && item.Detail == detail {
+			return true
+		}
+	}
+	return false
 }
 
 func writeHertzServer(t *testing.T, root string) {

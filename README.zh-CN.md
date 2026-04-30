@@ -112,6 +112,7 @@ ncgo add infra logging --root .              # observability_logging alias
 ncgo add infra canary --root .               # release_canary alias
 ncgo add infra logging --root . --wire       # 可选：自动接入默认 server/client 模板
 ncgo add infra logging --root . --wire --dry-run  # 预览写入/接线，不修改文件
+ncgo add infra logging --root . --wire --dry-run --output json  # 输出机器可读 plan
 ncgo add infra registry_etcd --root .        # kitex only
 ```
 
@@ -147,7 +148,7 @@ ncgo extract domain device --root . --to services/device-rpc --apply
 ncgo version
 ```
 
-`ncgo mcp serve` 会启动 stdio MCP server。MVP 暴露 `ncgo_version`、`ncgo_doctor`、`ncgo_ai_sync`、`ncgo_add_infra`、`ncgo_add_method`。`ncgo_add_infra` 参数为 `root`、`kind`、`force`，支持与 CLI 相同的 infra kind，只打印依赖安装 next steps，不自动执行 `go get`。
+`ncgo mcp serve` 会启动 stdio MCP server。MVP 暴露 `ncgo_version`、`ncgo_doctor`、`ncgo_ai_sync`、`ncgo_add_infra`、`ncgo_add_method`。`ncgo_add_infra` 参数为 `root`、`kind`、`force`、`wire`、`dryRun`，支持与 CLI 相同的 infra kind，只打印依赖安装 next steps，不自动执行 `go get`，并返回结构化 `plan` 字段供 agent 预览。
 
 `upgrade` 当前只更新 ncgo/assets 版本元数据。`--plan` 会输出 root/workspace 与 service manifest 的详细只读升级计划；`--dry-run` 保留较简洁的无写入输出。`extract domain` 默认输出迁移计划；加 `--apply` 后会把计划中的 domain 文件复制到已存在的 Kitex 目标服务，并把域内 import 重写为目标 module。它不会删除源文件、覆盖目标文件或自动接好跨服务 client。
 

@@ -108,8 +108,17 @@ type Result struct {
 	WrittenPaths []string // absolute paths of all created/overwritten files
 	WiredPaths   []string // absolute paths of source files updated by --wire
 	NextSteps    []string // shell commands the user/agent should run next
-	Updated      bool     // true when manifest.Infra changed
-	DryRun       bool     // true when no files were modified
+	Plan         []PlanItem
+	Updated      bool // true when manifest.Infra changed
+	DryRun       bool // true when no files were modified
+}
+
+// PlanItem is a machine-readable summary of Add's intended or completed work.
+type PlanItem struct {
+	Kind   string `json:"kind"`
+	Action string `json:"action"`
+	Path   string `json:"path,omitempty"`
+	Detail string `json:"detail,omitempty"`
 }
 
 // Add validates opts, copies the embedded add-on into the project, and
@@ -140,17 +149,20 @@ func Add(opts Options) (*Result, error) {
 	}
 	bodies := make([][]byte, 0, len(files))
 	paths := make([]string, 0, len(files))
+	filePlans := make([]PlanItem, 0, len(files))
 	for _, file := range files {
 		body, err := fs.ReadFile(assets.FS(), file.SourcePath)
 		if err != nil {
 			return nil, fmt.Errorf("infra: read embedded %s: %w", file.SourcePath, err)
 		}
 		dst := filepath.Join(root, file.OutputRelPath)
-		if err := checkWritable(dst, opts.Force); err != nil {
+		action, err := plannedFileAction(dst, opts.Force)
+		if err != nil {
 			return nil, err
 		}
 		bodies = append(bodies, body)
 		paths = append(paths, dst)
+		filePlans = append(filePlans, PlanItem{Kind: "file", Action: action, Path: dst})
 	}
 	wiredPaths := []string(nil)
 	if opts.Wire {
@@ -166,7 +178,10 @@ func Add(opts Options) (*Result, error) {
 			}
 		}
 	}
-	updated := mergeInfra(m, kind)
+	updated := !manifestHasInfra(m, kind)
+	if updated {
+		mergeInfra(m, kind)
+	}
 	if updated && !opts.DryRun {
 		if err := manifest.Save(root, m); err != nil {
 			return nil, err
@@ -178,11 +193,13 @@ func Add(opts Options) (*Result, error) {
 			return nil, err
 		}
 	}
+	next := nextSteps(kind, m.Service.Name)
 	return &Result{
 		WrittenPath:  paths[0],
 		WrittenPaths: paths,
 		WiredPaths:   wiredPaths,
-		NextSteps:    nextSteps(kind, m.Service.Name),
+		NextSteps:    next,
+		Plan:         buildPlan(filePlans, updated, opts.Wire, wiredPaths, next),
 		Updated:      updated,
 		DryRun:       opts.DryRun,
 	}, nil
@@ -286,13 +303,15 @@ func outputPath(root, kind string) (string, error) {
 	return filepath.Join(root, rel), nil
 }
 
-func checkWritable(path string, force bool) error {
+func plannedFileAction(path string, force bool) (string, error) {
 	if _, err := os.Stat(path); err == nil && !force {
-		return fmt.Errorf("infra: %s already exists; rerun with --force to overwrite", path)
+		return "", fmt.Errorf("infra: %s already exists; rerun with --force to overwrite", path)
+	} else if err == nil {
+		return "overwrite", nil
 	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return fmt.Errorf("infra: stat %s: %w", path, err)
+		return "", fmt.Errorf("infra: stat %s: %w", path, err)
 	}
-	return nil
+	return "create", nil
 }
 
 func writeFile(path string, body []byte) error {
@@ -308,14 +327,42 @@ func writeFile(path string, body []byte) error {
 // mergeInfra appends kind to m.Infra if missing and keeps the slice sorted
 // for deterministic output. Returns true when the slice changed.
 func mergeInfra(m *manifest.Manifest, kind string) bool {
-	for _, k := range m.Infra {
-		if k == kind {
-			return false
-		}
+	if manifestHasInfra(m, kind) {
+		return false
 	}
 	m.Infra = append(m.Infra, kind)
 	sort.Strings(m.Infra)
 	return true
+}
+
+func manifestHasInfra(m *manifest.Manifest, kind string) bool {
+	for _, k := range m.Infra {
+		if k == kind {
+			return true
+		}
+	}
+	return false
+}
+
+func buildPlan(filePlans []PlanItem, manifestUpdated bool, wire bool, wiredPaths []string, next []string) []PlanItem {
+	plan := append([]PlanItem(nil), filePlans...)
+	manifestAction := "already_present"
+	if manifestUpdated {
+		manifestAction = "add"
+	}
+	plan = append(plan, PlanItem{Kind: "manifest", Action: manifestAction, Path: filepath.Join(".ncgo", "manifest.yaml")})
+	if wire {
+		if len(wiredPaths) == 0 {
+			plan = append(plan, PlanItem{Kind: "wire", Action: "already_wired"})
+		}
+		for _, path := range wiredPaths {
+			plan = append(plan, PlanItem{Kind: "wire", Action: "update", Path: path})
+		}
+	}
+	for _, step := range next {
+		plan = append(plan, PlanItem{Kind: "next_step", Action: "run", Detail: step})
+	}
+	return plan
 }
 
 func nextSteps(kind, serviceName string) []string {

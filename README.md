@@ -145,6 +145,7 @@ ncgo add infra logging --root .              # alias for observability_logging
 ncgo add infra canary --root .               # alias for release_canary
 ncgo add infra logging --root . --wire       # optional: patch generated server/client wiring
 ncgo add infra logging --root . --wire --dry-run  # preview writes/wiring without changes
+ncgo add infra logging --root . --wire --dry-run --output json  # machine-readable plan
 ncgo add infra registry_etcd --root .        # kitex only
 ```
 
@@ -207,8 +208,9 @@ ncgo version
 
 `ncgo mcp serve` starts a stdio MCP server. The MVP exposes `ncgo_version`,
 `ncgo_doctor`, `ncgo_ai_sync`, `ncgo_add_infra`, and `ncgo_add_method` tools.
-`ncgo_add_infra` accepts `root`, `kind`, and `force`; it supports the same infra
-kinds as the CLI and prints dependency next steps without running `go get`.
+`ncgo_add_infra` accepts `root`, `kind`, `force`, `wire`, and `dryRun`; it
+supports the same infra kinds as the CLI, prints dependency next steps without
+running `go get`, and returns structured `plan` fields for agent previews.
 
 `ncgo upgrade` updates ncgo/assets version metadata in `.ncgo/manifest.yaml` or
 `ncgo.workspace` (and listed micro service manifests). `--plan` prints a detailed

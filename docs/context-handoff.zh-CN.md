@@ -170,6 +170,8 @@ Usecase 文件中使用：
 - 已新增 `ncgo add infra canary --wire` / MCP `wire=true`，可 opt-in 挂载默认 traffic middleware；默认不改源码。
 - 方向 A：已为 `ncgo add infra ... --wire` 增加 `--dry-run` / MCP `dryRun=true` 预览能力；会输出 `would write` / `would wire`、manifest 预期更新，并保证不写 optional 文件、不保存 manifest、不修改 server/client 源码。
 - 已继续优化 `--wire`：真实写入前先做 `PreviewWire` preflight，避免 anchor/format 失败后留下 optional/manifest 半完成状态；logging wiring 的默认 middleware/init anchor 也从静默 no-op 改为缺失时报错，已接线场景保持幂等。
+- 已为 `infra.Add` 增加结构化 `Plan`，包含 file create/overwrite、manifest add/already_present、wire update/already_wired、next_step run；MCP `ncgo_add_infra` 保留 text，同时返回 `dryRun`、`updated`、`writtenPaths`、`wiredPaths`、`nextSteps`、`plan` 字段，方便 agent/前端消费。
+- CLI `ncgo add infra` 已新增 `--output text|json`（默认 text）；`--output json` 输出 `dryRun`、`updated`、`writtenPath(s)`、`wiredPaths`、`nextSteps`、`plan`，非法 output 会在调用核心写入逻辑前报错。
 - 后续编码建议做 Nacos / Polaris SDK adapter、config watch、Kitex selector adapter，并考虑把默认模板中的 `hlog` / `klog` access/recovery log 替换为 logging optional 的适配层。
 
 ## 注意事项

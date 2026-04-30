@@ -95,6 +95,18 @@ func TestServeToolCallAddInfra(t *testing.T) {
 	if result["isError"].(bool) {
 		t.Fatalf("add infra returned error: %s", resultText(result))
 	}
+	if result["dryRun"].(bool) {
+		t.Fatalf("dryRun = true, want false")
+	}
+	if !result["updated"].(bool) {
+		t.Fatalf("updated = false, want true")
+	}
+	if got := len(result["writtenPaths"].([]any)); got != 1 {
+		t.Fatalf("writtenPaths len = %d, want 1", got)
+	}
+	if got := len(result["plan"].([]any)); got == 0 {
+		t.Fatalf("plan is empty")
+	}
 	content := resultText(result)
 	for _, want := range []string{"wrote ", "loongsuite-go-agent", "otel go build ./..."} {
 		if !strings.Contains(content, want) {
@@ -130,6 +142,18 @@ func TestServeToolCallAddInfraDryRun(t *testing.T) {
 	result := responses[0].Result.(map[string]any)
 	if result["isError"].(bool) {
 		t.Fatalf("add infra dry-run returned error: %s", resultText(result))
+	}
+	if !result["dryRun"].(bool) {
+		t.Fatalf("dryRun = false, want true")
+	}
+	if !result["updated"].(bool) {
+		t.Fatalf("updated = false, want true")
+	}
+	if !mcpPlanContains(result["plan"].([]any), "file", "create") {
+		t.Fatalf("plan missing file create: %+v", result["plan"])
+	}
+	if !mcpPlanContains(result["plan"].([]any), "manifest", "add") {
+		t.Fatalf("plan missing manifest add: %+v", result["plan"])
 	}
 	content := resultText(result)
 	for _, want := range []string{"would write ", "dry-run: manifest would be updated", "dry-run: no files were written"} {
@@ -184,6 +208,16 @@ func seedMCPProject(t *testing.T, kind string) string {
 
 func resultText(result map[string]any) string {
 	return result["content"].([]any)[0].(map[string]any)["text"].(string)
+}
+
+func mcpPlanContains(plan []any, kind, action string) bool {
+	for _, raw := range plan {
+		item := raw.(map[string]any)
+		if item["kind"] == kind && item["action"] == action {
+			return true
+		}
+	}
+	return false
 }
 
 func contains(xs []string, want string) bool {
