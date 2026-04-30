@@ -122,9 +122,9 @@
 
 当前仍不引入真实 SDK 依赖；后续 adapter 只需提供 `ListInstances` / `LoadRules` 回调，把 Nacos / Polaris SDK 结果映射进统一 canary 模型。
 
-### P1（已开始）：故障排查文档
+### P1（已完成）：故障排查文档
 
-在 logging / canary 专题文档补 troubleshooting：
+已在 logging / canary 专题文档补 troubleshooting：
 
 - `--wire could not find ... anchor` 如何处理；
 - 已手动改过 server.go / client.go 怎么办；
@@ -169,6 +169,5 @@
 
 建议优先做：
 
-1. 故障排查文档；
-2. 扩展 plan 到其它 add 子命令；
-3. CI / release 工程化。
+1. 扩展 plan 到其它 add 子命令；
+2. CI / release 工程化。

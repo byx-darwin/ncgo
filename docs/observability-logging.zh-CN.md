@@ -557,11 +557,35 @@ next_step/run                # 需要用户手动执行的依赖安装命令
 
 #### 已手动改过 server/client
 
-如果已经手动接入 logging，再次执行 `--wire --plan` 可能返回 `wire/already_wired`。这表示 CLI 识别到目标调用已存在，不会重复插入。若只接入了一部分，建议手动补齐缺失部分，或恢复到带 marker 的默认模板片段后再执行 `--wire`。
+如果已经手动接入 logging，再次执行 `--wire --plan` 可能返回 `wire/already_wired`。这表示 CLI 识别到目标调用已存在，不会重复插入。
+
+- `wire/already_wired` 不是错误，不需要再执行 `--force`；
+- 如果只接入了一部分，CLI 不会猜测剩余改动，建议手动补齐缺失部分；
+- 如果希望继续由 CLI 自动接线，可恢复到带 marker 的默认模板片段后再执行 `--wire`。
 
 #### 什么时候使用 `--force`
 
 `--force` 只影响 optional 文件覆盖，例如 `internal/base/logging/logging.go`，不表示强制改写 server/client wiring。源码 wiring 仍遵守 marker / legacy anchor preflight，找不到安全 anchor 时会失败。
+
+建议只在明确要刷新 ncgo 管理的 optional 文件时使用 `--force`。如果 `server.go` / `client.go` 是手工维护的，优先用 `--wire --plan` 看计划，再决定手动修改，不要把 `--force` 当作“强制接线”。
+
+#### dry-run 与真实执行输出对照
+
+`--dry-run` 只预览，不写 optional 文件、不保存 manifest、不修改 server/client 源码；真实执行会写入文件并保存 manifest，若加 `--wire` 还会修改默认模板中的安全 anchor。
+
+```text
+$ ncgo add infra logging --root . --wire --dry-run
+would write .../internal/base/logging/logging.go
+would wire .../internal/base/server/server.go
+(dry-run: manifest would be updated)
+(dry-run: no files were written)
+
+$ ncgo add infra logging --root . --wire
+wrote .../internal/base/logging/logging.go
+wired .../internal/base/server/server.go
+```
+
+CI、agent 或前端应优先使用 `--plan` 或 `--wire --dry-run --output json`，读取 `plan` 中的 `file/*`、`manifest/*`、`wire/*` 和 `next_step/run` 后再决定是否真实执行。
 
 #### 为什么不自动执行 `go get`
 
