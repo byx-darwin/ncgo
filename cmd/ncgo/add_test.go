@@ -54,6 +54,34 @@ func TestRunAddInfraJSONDryRun(t *testing.T) {
 	}
 }
 
+func TestRunAddInfraPlanShorthand(t *testing.T) {
+	root := seedAddInfraProject(t)
+	var out bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+
+	err := runAddInfra(cmd, infra.KindRedis, &addInfraOptions{root: root, plan: true})
+	if err != nil {
+		t.Fatalf("runAddInfra --plan: %v", err)
+	}
+	var got struct {
+		DryRun bool             `json:"dryRun"`
+		Plan   []infra.PlanItem `json:"plan"`
+	}
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("--plan output is not valid json: %v\n%s", err, out.String())
+	}
+	if !got.DryRun {
+		t.Fatalf("dryRun = false, want true")
+	}
+	if !planHas(got.Plan, "file", "create") || !planHas(got.Plan, "manifest", "add") {
+		t.Fatalf("plan missing expected items: %+v", got.Plan)
+	}
+	if _, err := os.Stat(filepath.Join(root, "internal", "base", "data", "redis.go")); !os.IsNotExist(err) {
+		t.Fatalf("--plan wrote redis file: stat err = %v", err)
+	}
+}
+
 func TestRunAddInfraDefaultTextOutput(t *testing.T) {
 	root := seedAddInfraProject(t)
 	var out bytes.Buffer

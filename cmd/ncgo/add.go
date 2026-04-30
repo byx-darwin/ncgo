@@ -34,6 +34,7 @@ type addInfraOptions struct {
 	force  bool
 	wire   bool
 	dryRun bool
+	plan   bool
 	output string
 }
 
@@ -55,11 +56,16 @@ func newAddInfraCmd() *cobra.Command {
 	f.BoolVar(&opts.force, "force", false, "Overwrite existing generated add-on file")
 	f.BoolVar(&opts.wire, "wire", false, "Opt-in: update generated server/client wiring when supported")
 	f.BoolVar(&opts.dryRun, "dry-run", false, "Preview intended add-on writes and --wire changes without modifying files")
+	f.BoolVar(&opts.plan, "plan", false, "Shorthand for --dry-run --output json")
 	f.StringVar(&opts.output, "output", "text", "Output format: text or json")
 	return cmd
 }
 
 func runAddInfra(cmd *cobra.Command, kind string, opts *addInfraOptions) error {
+	if opts.plan {
+		opts.dryRun = true
+		opts.output = "json"
+	}
 	if opts.output == "" {
 		opts.output = "text"
 	}

@@ -146,6 +146,7 @@ ncgo add infra canary --root .               # alias for release_canary
 ncgo add infra logging --root . --wire       # optional: patch generated server/client wiring
 ncgo add infra logging --root . --wire --dry-run  # preview writes/wiring without changes
 ncgo add infra logging --root . --wire --dry-run --output json  # machine-readable plan
+ncgo add infra logging --root . --wire --plan  # shorthand for --dry-run --output json
 ncgo add infra registry_etcd --root .        # kitex only
 ```
 

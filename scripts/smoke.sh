@@ -45,6 +45,7 @@ grep -q -- '--apply' "$TMP_DIR/extract-help.out"
 grep -q -- '--wire' "$TMP_DIR/add-infra-help.out"
 grep -q -- '--dry-run' "$TMP_DIR/add-infra-help.out"
 grep -q -- '--output' "$TMP_DIR/add-infra-help.out"
+grep -q -- '--plan' "$TMP_DIR/add-infra-help.out"
 
 log "MCP tools/list exposes expected tools"
 NCGO_BIN="$BIN" python3 - <<'PY'

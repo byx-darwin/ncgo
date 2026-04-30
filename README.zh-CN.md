@@ -113,6 +113,7 @@ ncgo add infra canary --root .               # release_canary alias
 ncgo add infra logging --root . --wire       # 可选：自动接入默认 server/client 模板
 ncgo add infra logging --root . --wire --dry-run  # 预览写入/接线，不修改文件
 ncgo add infra logging --root . --wire --dry-run --output json  # 输出机器可读 plan
+ncgo add infra logging --root . --wire --plan  # --dry-run --output json 简写
 ncgo add infra registry_etcd --root .        # kitex only
 ```
 

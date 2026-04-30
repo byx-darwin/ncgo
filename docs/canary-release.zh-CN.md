@@ -547,12 +547,13 @@ ncgo add infra canary --root .  # alias
 ncgo add infra canary --root . --wire  # 可选：自动挂载默认 traffic middleware
 ncgo add infra canary --root . --wire --dry-run  # 预览，不修改文件
 ncgo add infra canary --root . --wire --dry-run --output json  # 输出机器可读 plan
+ncgo add infra canary --root . --wire --plan  # --dry-run --output json 简写
 ```
 
 推荐落地流程：
 
 1. 先执行 `--wire --dry-run`，确认会创建的 optional 文件、manifest 更新以及将修改的 server/client 文件；
-2. CI / agent / 前端可使用 `--output json` 读取结构化 `plan`；
+2. CI / agent / 前端可使用 `--output json` 读取结构化 `plan`，或直接使用 `--plan` 简写；
 3. 确认 plan 符合预期后再执行不带 `--dry-run` 的 `--wire`；
 4. 如后续引入 Nacos / Polaris SDK adapter，再按 adapter 文档手动补依赖，ncgo 不会自动执行依赖安装。
 

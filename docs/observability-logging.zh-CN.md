@@ -514,12 +514,13 @@ ncgo add infra logging --root .  # alias
 ncgo add infra logging --root . --wire  # 可选：自动修改默认 server/client wiring
 ncgo add infra logging --root . --wire --dry-run  # 预览，不修改文件
 ncgo add infra logging --root . --wire --dry-run --output json  # 输出机器可读 plan
+ncgo add infra logging --root . --wire --plan  # --dry-run --output json 简写
 ```
 
 推荐落地流程：
 
 1. 先执行 `--wire --dry-run`，确认会创建的 optional 文件、manifest 更新以及将修改的 server/client 文件；
-2. 若需要给 CI / agent / 前端消费，使用 `--output json` 读取结构化 `plan`；
+2. 若需要给 CI / agent / 前端消费，使用 `--output json` 读取结构化 `plan`，或直接使用 `--plan` 简写；
 3. 确认无误后再执行不带 `--dry-run` 的 `--wire`；
 4. 最后按 next steps 手动执行 `go get ...` / `go mod tidy`，ncgo 不会自动安装依赖。
 
