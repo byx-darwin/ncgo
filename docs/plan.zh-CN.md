@@ -74,14 +74,15 @@
 
 后续可继续把 `detail` 从简短描述升级为结构化字段，例如 `from` / `to` / `anchor` / `insertAfter`，让 `--plan` 更接近真实 patch preview。
 
-### P0：继续完善模板 wiring marker
+### P0（基础版已完成）：继续完善模板 wiring marker
 
 基础 marker 已加入默认模板，例如：
 
 ```text
 // ncgo:wire:logging:init
-// ncgo:wire:logging:middleware
-// ncgo:wire:canary:traffic
+// ncgo:wire:logging:server-middleware
+// ncgo:wire:canary:server-traffic
+// ncgo:wire:kitex-client:middleware
 ```
 
 当前要求：仍需兼容旧模板，不能只依赖 marker。
@@ -118,7 +119,7 @@
 
 建议先做 skeleton 和文档，不急于引入真实 SDK 依赖。
 
-### P1：故障排查文档
+### P1（已开始）：故障排查文档
 
 在 logging / canary 专题文档补 troubleshooting：
 

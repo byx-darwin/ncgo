@@ -574,6 +574,29 @@ wire/insert_client_middleware # Kitex client 将插入 release traffic middlewar
 next_step/run                # 需要用户手动执行的后续命令
 ```
 
+### 14.1 故障排查
+
+#### `--wire could not find ... anchor`
+
+说明当前 `server.go` / `client.go` 已偏离 ncgo 默认模板，CLI 找不到安全插入点。处理方式：
+
+1. 先运行 `ncgo add infra canary --root . --wire --plan` 查看失败前的预期文件；
+2. 对照本章后续示例手动补 import 和 traffic middleware；
+3. 或在自定义模板中保留 `// ncgo:wire:canary:server-traffic`、`// ncgo:wire:kitex-client:middleware` marker；
+4. 不建议让 CLI 猜测非默认代码结构，避免误改流量治理 middleware / interceptor 顺序。
+
+#### 已手动改过 server/client
+
+如果已经手动接入 canary，再次执行 `--wire --plan` 可能返回 `wire/already_wired`。这表示 CLI 识别到目标调用已存在，不会重复插入。若只接入了一部分，建议手动补齐缺失部分，或恢复到带 marker 的默认模板片段后再执行 `--wire`。
+
+#### 什么时候使用 `--force`
+
+`--force` 只影响 optional 文件覆盖，例如 `internal/base/release/canary.go`，不表示强制改写 server/client wiring。源码 wiring 仍遵守 marker / legacy anchor preflight，找不到安全 anchor 时会失败。
+
+#### 为什么不自动安装 SDK
+
+当前 canary optional 是 SDK-neutral MVP，不自动引入 Nacos / Polaris SDK，也不自动执行 `go get`。后续接真实 SDK adapter 时，请先审阅 `--plan`，再按 adapter 文档手动补依赖。
+
 当前生成：
 
 ```text

@@ -542,6 +542,29 @@ wire/insert_client_middleware # Kitex client 将插入 logging middleware
 next_step/run                # 需要用户手动执行的依赖安装命令
 ```
 
+### 17.1 故障排查
+
+#### `--wire could not find ... anchor`
+
+说明当前 `server.go` / `client.go` 已偏离 ncgo 默认模板，CLI 找不到安全插入点。处理方式：
+
+1. 先运行 `ncgo add infra logging --root . --wire --plan` 查看失败前的预期文件；
+2. 对照本章“安全 wiring 示例”手动补 import、`logging.Init` 和 middleware；
+3. 或在自定义模板中保留 `// ncgo:wire:logging:init`、`// ncgo:wire:logging:server-middleware`、`// ncgo:wire:kitex-client:middleware` marker；
+4. 不建议让 CLI 猜测非默认代码结构，避免误改业务 middleware 顺序。
+
+#### 已手动改过 server/client
+
+如果已经手动接入 logging，再次执行 `--wire --plan` 可能返回 `wire/already_wired`。这表示 CLI 识别到目标调用已存在，不会重复插入。若只接入了一部分，建议手动补齐缺失部分，或恢复到带 marker 的默认模板片段后再执行 `--wire`。
+
+#### 什么时候使用 `--force`
+
+`--force` 只影响 optional 文件覆盖，例如 `internal/base/logging/logging.go`，不表示强制改写 server/client wiring。源码 wiring 仍遵守 marker / legacy anchor preflight，找不到安全 anchor 时会失败。
+
+#### 为什么不自动执行 `go get`
+
+ncgo 只生成代码和 next steps，不自动安装依赖，避免在 agent / CI / 本地 dry-run 中隐式修改 `go.mod` / `go.sum`。请在确认 plan 后手动执行 `next_step/run` 中的命令。
+
 manifest 记录：
 
 ```yaml
