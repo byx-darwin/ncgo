@@ -162,6 +162,8 @@ go test ./... -count=1
 ./scripts/smoke.sh
 ```
 
+CI 会在 GitHub Actions 中运行同一组核心检查。Release 构建由 tag 触发；人工发布流程见 [docs/release.zh-CN.md](docs/release.zh-CN.md)。
+
 模板或脚手架发生有意变更后，更新 golden：
 
 ```bash

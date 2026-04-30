@@ -234,6 +234,9 @@ go test ./... -count=1
 ./scripts/smoke.sh
 ```
 
+CI runs the same core checks on GitHub Actions. Release builds are tag-driven;
+see [docs/release.zh-CN.md](docs/release.zh-CN.md) for the manual release flow.
+
 Update scaffold goldens after intentional template/scaffold changes:
 
 ```bash

@@ -154,19 +154,16 @@
 
 同时抽取 `internal/scaffold/plan.Item` 作为共享 plan schema，`infra.PlanItem` 保持类型别名兼容。
 
-### P2：CI / release 工程化
+### P2（已完成）：CI / release 工程化
 
-建议补：
+已补：
 
-- GitHub Actions：`go test ./...`；
-- smoke 脚本执行；
-- `go build ./cmd/ncgo`；
-- release / tag 流程文档。
+- GitHub Actions CI：`gofmt`、`go vet ./...`、`go test ./... -count=1`、`go build ./cmd/ncgo`、`./scripts/smoke.sh`；
+- tag-driven Release workflow：跨平台二进制、`checksums.txt`、GitHub Release；
+- release / tag 流程文档：`docs/release.zh-CN.md`。
 
 注意：部署、发布、push、tag 均需人工确认后执行。
 
 ## 3. 建议下一步
 
-建议优先做：
-
-1. CI / release 工程化。
+CI / release 工程化已完成。下一步建议从真实 SDK adapter、更多 plan patch 细节或生成项目 release metadata 注入中择一推进。
