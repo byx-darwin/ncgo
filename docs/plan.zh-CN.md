@@ -1,0 +1,149 @@
+# ncgo 后续计划
+
+本文记录当前已完成能力、未完成任务和建议优先级，作为后续开发的路线图。
+
+## 1. 当前已完成
+
+### 1.1 基础能力
+
+- 已完成初始仓库提交：`feat: initialize ncgo scaffold CLI`。
+- 已支持 Hertz / Kitex mono scaffold、micro workspace、add rpc / bff / domain / method、doctor、upgrade、extract domain、MCP server。
+
+### 1.2 Optional infra
+
+- 已支持 `redis`、`kafka`、`es`、`clickhouse`、`registry_etcd`。
+- 已支持 LoongSuite Go Agent 方向的 `observability_otel` / `otel`。
+- 已支持 `observability_logging` / `logging`：
+  - `slog`；
+  - console / file / both / none；
+  - lumberjack rotate + gzip；
+  - category routing；
+  - `samber/oops` 结构化；
+  - request / trace / release / canary 字段；
+  - Hertz / Kitex adapter。
+- 已支持 `release_canary` / `canary`：
+  - release metadata；
+  - traffic context；
+  - Hertz header adapter；
+  - Kitex metadata adapter；
+  - canary rules；
+  - Nacos / Polaris provider 标识；
+  - `Discoverer` / `RuleProvider` / `Selector` 抽象；
+  - stable / canary pool；
+  - weighted / sticky selection；
+  - `fallback=stable|fail_fast`。
+
+### 1.3 Wiring / preview / plan
+
+- 已支持 `ncgo add infra logging --wire`。
+- 已支持 `ncgo add infra canary --wire`。
+- 已支持 `--dry-run`，不写 optional 文件、不保存 manifest、不修改 server/client 源码。
+- 已支持 `--output json`，输出机器可读结果。
+- 已支持 `--plan`，等价于 `--dry-run --output json`。
+- 已支持 `infra.Result.Plan`：
+  - `file/create`；
+  - `file/overwrite`；
+  - `manifest/add`；
+  - `manifest/already_present`；
+  - `wire/update`；
+  - `wire/already_wired`；
+  - `next_step/run`。
+- 已支持 MCP `ncgo_add_infra` 返回结构化字段：
+  - `dryRun`；
+  - `updated`；
+  - `writtenPaths`；
+  - `wiredPaths`；
+  - `nextSteps`；
+  - `plan`。
+
+## 2. 推荐优先级
+
+### P0：更细粒度 wiring plan actions
+
+当前 wiring plan 只有 `wire/update` / `wire/already_wired`。建议细化为：
+
+- `wire/add_import`；
+- `wire/insert_logging_init`；
+- `wire/replace_middleware`；
+- `wire/insert_traffic_middleware`；
+- `wire/insert_client_middleware`。
+
+收益：`--plan` 更像真实 patch preview，agent / UI 可以展示具体会改什么。
+
+### P0：标准化模板 wiring marker
+
+在默认模板中加入显式 marker，例如：
+
+```text
+// ncgo:wire:logging:init
+// ncgo:wire:logging:middleware
+// ncgo:wire:canary:traffic
+```
+
+要求：仍需兼容旧模板，不能只依赖 marker。
+
+收益：减少对具体源码片段的脆弱匹配，降低模板演进成本。
+
+### P1：Kitex canary selector adapter MVP
+
+基于已有 `Selector` / `Discoverer` / `RuleProvider` 抽象，补 Kitex client selector adapter skeleton。
+
+注意：优先保持 SDK-neutral，避免引入重依赖导致生成模板不可编译。
+
+### P1：Nacos / Polaris adapter skeleton
+
+补 SDK adapter seam 或 skeleton：
+
+- Nacos config / adapter 接口；
+- Polaris config / adapter 接口；
+- 文档说明如何接真实 SDK。
+
+建议先做 skeleton 和文档，不急于引入真实 SDK 依赖。
+
+### P1：故障排查文档
+
+在 logging / canary 专题文档补 troubleshooting：
+
+- `--wire could not find ... anchor` 如何处理；
+- 已手动改过 server.go / client.go 怎么办；
+- 什么时候使用 `--force`；
+- `wire/already_wired` 的含义；
+- 为什么 ncgo 不自动执行 `go get`；
+- dry-run 与真实执行输出对照。
+
+### P2：CLI / MCP 统一 result renderer
+
+当前 CLI 和 MCP 各自渲染 add infra 结果。建议抽共享 formatter / DTO，减少重复逻辑。
+
+注意包依赖方向，避免 `internal` 反向依赖 `cmd`。
+
+### P2：扩展 plan 到其它 add 子命令
+
+后续可考虑：
+
+- `ncgo add domain --plan`；
+- `ncgo add rpc --plan`；
+- `ncgo add bff --plan`。
+
+需要先统一各 scaffold 的 plan schema。
+
+### P2：CI / release 工程化
+
+建议补：
+
+- GitHub Actions：`go test ./...`；
+- smoke 脚本执行；
+- `go build ./cmd/ncgo`；
+- release / tag 流程文档。
+
+注意：部署、发布、push、tag 均需人工确认后执行。
+
+## 3. 建议下一步
+
+建议优先做：
+
+1. 更细粒度 wiring plan actions；
+2. 模板 `// ncgo:wire:*` marker 标准化；
+3. logging / canary troubleshooting 文档。
+
+其中第 1 项改动相对集中，最适合接着当前 `Plan` 能力继续推进。
