@@ -1,0 +1,789 @@
+package infra
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+	"time"
+
+	"github.com/byx-darwin/ncgo/internal/manifest"
+)
+
+func seedProject(t *testing.T, infra []string) string {
+	t.Helper()
+	return seedProjectKind(t, manifest.KindHertz, "idl/app/demo.proto", infra)
+}
+
+func seedKitexProject(t *testing.T, infra []string) string {
+	t.Helper()
+	return seedProjectKind(t, manifest.KindKitex, "idl/demo.proto", infra)
+}
+
+func seedProjectKind(t *testing.T, kind, idl string, infra []string) string {
+	t.Helper()
+	root := t.TempDir()
+	m := &manifest.Manifest{
+		Ncgo:   manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test"},
+		Mode:   manifest.ModeMono,
+		Module: "github.com/x/demo",
+		Service: manifest.Service{
+			Name: "demo", Kind: kind, IDL: idl,
+		},
+		Infra:       infra,
+		GeneratedAt: time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC),
+	}
+	if err := manifest.Save(root, m); err != nil {
+		t.Fatalf("seed: %v", err)
+	}
+	return root
+}
+
+func TestAddRedisCopiesFileAndUpdatesManifest(t *testing.T) {
+	root := seedProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindRedis})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if !res.Updated {
+		t.Errorf("Updated = false, want true")
+	}
+	if want := filepath.Join(root, "internal", "base", "data", "redis.go"); res.WrittenPath != want {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, want)
+	}
+	body, err := os.ReadFile(res.WrittenPath)
+	if err != nil {
+		t.Fatalf("read written: %v", err)
+	}
+	if !strings.Contains(string(body), "package data") {
+		t.Errorf("written file missing package data:\n%s", body)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 1 || m.Infra[0] != KindRedis {
+		t.Errorf("manifest.Infra = %v, want [redis]", m.Infra)
+	}
+}
+
+func TestAddIsIdempotent(t *testing.T) {
+	root := seedProject(t, []string{KindRedis})
+	dst := filepath.Join(root, "internal", "base", "data", "redis.go")
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	if err := os.WriteFile(dst, []byte("// pre-existing\n"), 0o644); err != nil {
+		t.Fatalf("seed file: %v", err)
+	}
+	if _, err := Add(Options{Root: root, Kind: KindRedis}); err == nil {
+		t.Fatalf("expected error for existing file without --force")
+	}
+	res, err := Add(Options{Root: root, Kind: KindRedis, Force: true})
+	if err != nil {
+		t.Fatalf("Add force: %v", err)
+	}
+	if res.Updated {
+		t.Errorf("Updated = true, want false (already in manifest)")
+	}
+	body, _ := os.ReadFile(dst)
+	if strings.Contains(string(body), "pre-existing") {
+		t.Errorf("force did not overwrite file")
+	}
+}
+
+func TestAddDedupesAndSorts(t *testing.T) {
+	root := seedProject(t, []string{KindKafka})
+	if _, err := Add(Options{Root: root, Kind: KindClickHouse}); err != nil {
+		t.Fatalf("Add clickhouse: %v", err)
+	}
+	if _, err := Add(Options{Root: root, Kind: KindRedis}); err != nil {
+		t.Fatalf("Add redis: %v", err)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	want := []string{"clickhouse", "kafka", "redis"}
+	if len(m.Infra) != len(want) {
+		t.Fatalf("Infra = %v, want %v", m.Infra, want)
+	}
+	for i := range want {
+		if m.Infra[i] != want[i] {
+			t.Errorf("Infra[%d] = %q, want %q", i, m.Infra[i], want[i])
+		}
+	}
+}
+
+func TestAddRejectsUnknownKind(t *testing.T) {
+	root := seedProject(t, nil)
+	if _, err := Add(Options{Root: root, Kind: "mongo"}); err == nil {
+		t.Fatalf("expected error for unknown kind")
+	}
+}
+
+func TestAddRequiresManifest(t *testing.T) {
+	root := t.TempDir()
+	if _, err := Add(Options{Root: root, Kind: KindRedis}); err == nil {
+		t.Fatalf("expected error when manifest missing")
+	}
+}
+
+func TestAddNextStepsContainGoGet(t *testing.T) {
+	root := seedProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindRedis})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	for _, want := range []string{
+		"go get github.com/redis/go-redis/v9",
+		"go get github.com/samber/oops",
+		"go mod tidy",
+	} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("NextSteps missing %q in:\n%s", want, joined)
+		}
+	}
+}
+
+func TestAddKitexOnlyRegistryEtcd(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindRegistryEtcd})
+	if err != nil {
+		t.Fatalf("Add registry_etcd: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "base", "registry", "etcd.go")
+	if res.WrittenPath != wantPath {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
+	}
+	body, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("read registry file: %v", err)
+	}
+	if !strings.Contains(string(body), "package registry") {
+		t.Errorf("registry_etcd should write package registry")
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	if !strings.Contains(joined, "go get github.com/kitex-contrib/registry-etcd") {
+		t.Errorf("next steps missing registry-etcd dep:\n%s", joined)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 1 || m.Infra[0] != KindRegistryEtcd {
+		t.Errorf("manifest.Infra = %v, want [registry_etcd]", m.Infra)
+	}
+}
+
+func TestAddObservabilityOtelForKitex(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindObservabilityOtel})
+	if err != nil {
+		t.Fatalf("Add observability_otel: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "base", "observability", "otel.go")
+	if res.WrittenPath != wantPath {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
+	}
+	body, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("read observability file: %v", err)
+	}
+	if !strings.Contains(string(body), "package observability") {
+		t.Errorf("observability_otel should write package observability")
+	}
+	if !strings.Contains(string(body), "type LoongSuiteConfig struct") {
+		t.Errorf("observability_otel should expose LoongSuiteConfig")
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	if !strings.Contains(joined, "loongsuite-go-agent") || !strings.Contains(joined, "otel go build ./...") {
+		t.Errorf("next steps missing LoongSuite setup:\n%s", joined)
+	}
+}
+
+func TestAddObservabilityOtelForHertz(t *testing.T) {
+	root := seedProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindObservabilityOtel})
+	if err != nil {
+		t.Fatalf("Add observability_otel: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "base", "observability", "otel.go")
+	if res.WrittenPath != wantPath {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
+	}
+	body, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("read observability file: %v", err)
+	}
+	if !strings.Contains(string(body), "type LoongSuiteConfig struct") || !strings.Contains(string(body), "func DefaultLoongSuiteConfig") {
+		t.Errorf("observability_otel missing expected API")
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 1 || m.Infra[0] != KindObservabilityOtel {
+		t.Errorf("manifest.Infra = %v, want [observability_otel]", m.Infra)
+	}
+	if _, err := Add(Options{Root: root, Kind: KindObservabilityOtel}); err == nil {
+		t.Fatalf("expected existing file error without --force")
+	}
+	res, err = Add(Options{Root: root, Kind: KindObservabilityOtel, Force: true})
+	if err != nil {
+		t.Fatalf("Add observability_otel --force: %v", err)
+	}
+	if res.Updated {
+		t.Errorf("Updated = true, want false after dedup")
+	}
+}
+
+func TestAddOtelAliasRecordsCanonicalKind(t *testing.T) {
+	root := seedProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindOtelAlias})
+	if err != nil {
+		t.Fatalf("Add otel alias: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "base", "observability", "otel.go")
+	if res.WrittenPath != wantPath {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 1 || m.Infra[0] != KindObservabilityOtel {
+		t.Errorf("manifest.Infra = %v, want [observability_otel]", m.Infra)
+	}
+}
+
+func TestAddObservabilityLoggingForHertz(t *testing.T) {
+	root := seedProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindObservabilityLog})
+	if err != nil {
+		t.Fatalf("Add observability_logging: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "base", "logging", "logging.go")
+	if res.WrittenPath != wantPath {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
+	}
+	wantAdapterPath := filepath.Join(root, "internal", "base", "logging", "hertz.go")
+	if strings.Join(res.WrittenPaths, "\n") != strings.Join([]string{wantPath, wantAdapterPath}, "\n") {
+		t.Errorf("WrittenPaths = %v, want [%s %s]", res.WrittenPaths, wantPath, wantAdapterPath)
+	}
+	body, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("read logging file: %v", err)
+	}
+	for _, want := range []string{"package logging", "type Config struct", "func ErrorAttrs", "lumberjack.Logger", "oops.AsOops"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("logging template missing %q", want)
+		}
+	}
+	adapterBody, err := os.ReadFile(wantAdapterPath)
+	if err != nil {
+		t.Fatalf("read hertz logging adapter: %v", err)
+	}
+	for _, want := range []string{"func HertzRequestID", "func HertzAccessLog", "func HertzRecovery"} {
+		if !strings.Contains(string(adapterBody), want) {
+			t.Errorf("hertz logging adapter missing %q", want)
+		}
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	for _, want := range []string{"go get github.com/samber/oops", "go get gopkg.in/natefinch/lumberjack.v2", "go get go.opentelemetry.io/otel/trace", "go mod tidy"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("next steps missing %q in:\n%s", want, joined)
+		}
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 1 || m.Infra[0] != KindObservabilityLog {
+		t.Errorf("manifest.Infra = %v, want [observability_logging]", m.Infra)
+	}
+}
+
+func TestAddLoggingAliasRecordsCanonicalKind(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindLoggingAlias})
+	if err != nil {
+		t.Fatalf("Add logging alias: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "base", "logging", "logging.go")
+	if res.WrittenPath != wantPath {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
+	}
+	wantAdapterPath := filepath.Join(root, "internal", "base", "logging", "kitex.go")
+	if strings.Join(res.WrittenPaths, "\n") != strings.Join([]string{wantPath, wantAdapterPath}, "\n") {
+		t.Errorf("WrittenPaths = %v, want [%s %s]", res.WrittenPaths, wantPath, wantAdapterPath)
+	}
+	adapterBody, err := os.ReadFile(wantAdapterPath)
+	if err != nil {
+		t.Fatalf("read kitex logging adapter: %v", err)
+	}
+	for _, want := range []string{"func KitexRequestID", "func KitexAccessLog", "func KitexRecovery"} {
+		if !strings.Contains(string(adapterBody), want) {
+			t.Errorf("kitex logging adapter missing %q", want)
+		}
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 1 || m.Infra[0] != KindObservabilityLog {
+		t.Errorf("manifest.Infra = %v, want [observability_logging]", m.Infra)
+	}
+}
+
+func TestAddReleaseCanaryForHertz(t *testing.T) {
+	root := seedProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindReleaseCanary})
+	if err != nil {
+		t.Fatalf("Add release_canary: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "base", "release", "canary.go")
+	if res.WrittenPath != wantPath {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
+	}
+	wantAdapterPath := filepath.Join(root, "internal", "base", "release", "hertz.go")
+	if strings.Join(res.WrittenPaths, "\n") != strings.Join([]string{wantPath, wantAdapterPath}, "\n") {
+		t.Errorf("WrittenPaths = %v, want [%s %s]", res.WrittenPaths, wantPath, wantAdapterPath)
+	}
+	body, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("read canary file: %v", err)
+	}
+	for _, want := range []string{"package release", "type ReleaseInfo struct", "type RuleSet struct", "type Selector struct", "func Select(", "func SplitInstances", "ProviderNacos", "ProviderPolaris"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("release canary template missing %q", want)
+		}
+	}
+	adapterBody, err := os.ReadFile(wantAdapterPath)
+	if err != nil {
+		t.Fatalf("read hertz canary adapter: %v", err)
+	}
+	for _, want := range []string{"func HertzTraffic", "func TrafficFromHertz", "func HertzDecision"} {
+		if !strings.Contains(string(adapterBody), want) {
+			t.Errorf("hertz canary adapter missing %q", want)
+		}
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	if !strings.Contains(joined, "go mod tidy") {
+		t.Errorf("next steps missing go mod tidy in:\n%s", joined)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 1 || m.Infra[0] != KindReleaseCanary {
+		t.Errorf("manifest.Infra = %v, want [release_canary]", m.Infra)
+	}
+}
+
+func TestAddCanaryAliasRecordsCanonicalKind(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindCanaryAlias})
+	if err != nil {
+		t.Fatalf("Add canary alias: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "base", "release", "canary.go")
+	if res.WrittenPath != wantPath {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
+	}
+	wantAdapterPath := filepath.Join(root, "internal", "base", "release", "kitex.go")
+	if strings.Join(res.WrittenPaths, "\n") != strings.Join([]string{wantPath, wantAdapterPath}, "\n") {
+		t.Errorf("WrittenPaths = %v, want [%s %s]", res.WrittenPaths, wantPath, wantAdapterPath)
+	}
+	adapterBody, err := os.ReadFile(wantAdapterPath)
+	if err != nil {
+		t.Fatalf("read kitex canary adapter: %v", err)
+	}
+	for _, want := range []string{"func KitexTraffic", "func TrafficFromKitex", "func InjectKitexTraffic"} {
+		if !strings.Contains(string(adapterBody), want) {
+			t.Errorf("kitex canary adapter missing %q", want)
+		}
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 1 || m.Infra[0] != KindReleaseCanary {
+		t.Errorf("manifest.Infra = %v, want [release_canary]", m.Infra)
+	}
+}
+
+func TestAddLoggingWireForHertz(t *testing.T) {
+	root := seedProject(t, nil)
+	writeHertzServer(t, root)
+	res, err := Add(Options{Root: root, Kind: KindLoggingAlias, Wire: true})
+	if err != nil {
+		t.Fatalf("Add logging --wire: %v", err)
+	}
+	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
+	if strings.Join(res.WiredPaths, "\n") != serverPath {
+		t.Fatalf("WiredPaths = %v, want [%s]", res.WiredPaths, serverPath)
+	}
+	body := readFile(t, serverPath)
+	for _, want := range []string{
+		`"github.com/x/demo/internal/base/logging"`,
+		"logging.Init(logging.DefaultConfig()",
+		"h.Use(logging.HertzRecovery())",
+		"h.Use(logging.HertzRequestID())",
+		"h.Use(logging.HertzAccessLog())",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("hertz logging wiring missing %q\n---\n%s", want, body)
+		}
+	}
+	if strings.Contains(body, "h.Use(middleware.AccessLog())") {
+		t.Errorf("default access log should be replaced\n---\n%s", body)
+	}
+	res, err = Add(Options{Root: root, Kind: KindLoggingAlias, Force: true, Wire: true})
+	if err != nil {
+		t.Fatalf("Add logging --wire again: %v", err)
+	}
+	if len(res.WiredPaths) != 0 {
+		t.Errorf("second --wire should be idempotent, got %v", res.WiredPaths)
+	}
+}
+
+func TestAddLoggingWireDryRunForHertzDoesNotWrite(t *testing.T) {
+	root := seedProject(t, nil)
+	writeHertzServer(t, root)
+	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
+	originalServer := readFile(t, serverPath)
+
+	res, err := Add(Options{Root: root, Kind: KindLoggingAlias, Wire: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("Add logging --wire --dry-run: %v", err)
+	}
+	if !res.DryRun {
+		t.Fatalf("DryRun = false, want true")
+	}
+	wantWritten := []string{
+		filepath.Join(root, "internal", "base", "logging", "logging.go"),
+		filepath.Join(root, "internal", "base", "logging", "hertz.go"),
+	}
+	if strings.Join(res.WrittenPaths, "\n") != strings.Join(wantWritten, "\n") {
+		t.Fatalf("WrittenPaths = %v, want %v", res.WrittenPaths, wantWritten)
+	}
+	if strings.Join(res.WiredPaths, "\n") != serverPath {
+		t.Fatalf("WiredPaths = %v, want [%s]", res.WiredPaths, serverPath)
+	}
+	for _, p := range wantWritten {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("dry-run wrote %s: stat err = %v", p, err)
+		}
+	}
+	if got := readFile(t, serverPath); got != originalServer {
+		t.Fatalf("dry-run modified server.go\n--- got ---\n%s\n--- want ---\n%s", got, originalServer)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 0 {
+		t.Fatalf("dry-run updated manifest infra = %v, want empty", m.Infra)
+	}
+}
+
+func TestAddLoggingWirePreflightFailureDoesNotWrite(t *testing.T) {
+	root := seedProject(t, nil)
+	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
+	body := `package server
+
+import (
+	"time"
+
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/samber/do/v2"
+
+	"github.com/x/demo/internal/base/conf"
+	"github.com/x/demo/internal/pkg/middleware"
+)
+
+func Run() {
+	injector := do.New()
+	cfg := conf.Get()
+	if cfg == nil {
+		cfg = conf.Default()
+	}
+	do.ProvideValue(injector, cfg)
+	h := server.Default()
+	h.Use(middleware.Recovery())
+	h.Use(middleware.RequestID())
+	h.Use(middleware.RequestTimeout(time.Second))
+}
+`
+	writeTestFile(t, serverPath, body)
+
+	_, err := Add(Options{Root: root, Kind: KindLoggingAlias, Wire: true})
+	if err == nil || !strings.Contains(err.Error(), "h.Use(middleware.AccessLog())") {
+		t.Fatalf("err = %v, want missing access log anchor", err)
+	}
+	for _, p := range []string{
+		filepath.Join(root, "internal", "base", "logging", "logging.go"),
+		filepath.Join(root, "internal", "base", "logging", "hertz.go"),
+	} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("preflight failure wrote %s: stat err = %v", p, err)
+		}
+	}
+	if got := readFile(t, serverPath); got != body {
+		t.Fatalf("preflight failure modified server.go\n--- got ---\n%s\n--- want ---\n%s", got, body)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 0 {
+		t.Fatalf("preflight failure updated manifest infra = %v, want empty", m.Infra)
+	}
+}
+
+func TestAddCanaryWireForHertz(t *testing.T) {
+	root := seedProject(t, nil)
+	writeHertzServer(t, root)
+	_, err := Add(Options{Root: root, Kind: KindCanaryAlias, Wire: true})
+	if err != nil {
+		t.Fatalf("Add canary --wire: %v", err)
+	}
+	body := readFile(t, filepath.Join(root, "internal", "base", "server", "server.go"))
+	for _, want := range []string{`"github.com/x/demo/internal/base/release"`, "h.Use(release.HertzTraffic())"} {
+		if !strings.Contains(body, want) {
+			t.Errorf("hertz canary wiring missing %q\n---\n%s", want, body)
+		}
+	}
+}
+
+func TestAddLoggingWireForKitexServerAndClient(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	writeKitexServer(t, root)
+	writeKitexClient(t, root)
+	res, err := Add(Options{Root: root, Kind: KindLoggingAlias, Wire: true})
+	if err != nil {
+		t.Fatalf("Add kitex logging --wire: %v", err)
+	}
+	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
+	clientPath := filepath.Join(root, "pkg", "client", "demo", "client.go")
+	if strings.Join(res.WiredPaths, "\n") != strings.Join([]string{serverPath, clientPath}, "\n") {
+		t.Fatalf("WiredPaths = %v, want [%s %s]", res.WiredPaths, serverPath, clientPath)
+	}
+	serverBody := readFile(t, serverPath)
+	for _, want := range []string{
+		`"github.com/x/demo/internal/base/logging"`,
+		"logging.Init(logging.DefaultConfig()",
+		"logging.KitexRequestID(),",
+		"logging.KitexAccessLog(),",
+		"logging.KitexRecovery(),",
+	} {
+		if !strings.Contains(serverBody, want) {
+			t.Errorf("kitex server logging wiring missing %q\n---\n%s", want, serverBody)
+		}
+	}
+	clientBody := readFile(t, clientPath)
+	for _, want := range []string{`"github.com/x/demo/internal/base/logging"`, "logging.KitexRequestID()", "logging.KitexAccessLog()"} {
+		if !strings.Contains(clientBody, want) {
+			t.Errorf("kitex client logging wiring missing %q\n---\n%s", want, clientBody)
+		}
+	}
+}
+
+func TestAddCanaryWireForKitexServerAndClient(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	writeKitexServer(t, root)
+	writeKitexClient(t, root)
+	_, err := Add(Options{Root: root, Kind: KindCanaryAlias, Wire: true})
+	if err != nil {
+		t.Fatalf("Add kitex canary --wire: %v", err)
+	}
+	serverBody := readFile(t, filepath.Join(root, "internal", "base", "server", "server.go"))
+	clientBody := readFile(t, filepath.Join(root, "pkg", "client", "demo", "client.go"))
+	for _, body := range []string{serverBody, clientBody} {
+		for _, want := range []string{`"github.com/x/demo/internal/base/release"`, "release.KitexTraffic()"} {
+			if !strings.Contains(body, want) {
+				t.Errorf("kitex canary wiring missing %q\n---\n%s", want, body)
+			}
+		}
+	}
+}
+
+func TestAddWireRejectsUnsupportedKind(t *testing.T) {
+	root := seedProject(t, nil)
+	writeHertzServer(t, root)
+	_, err := Add(Options{Root: root, Kind: KindRedis, Wire: true})
+	if err == nil || !strings.Contains(err.Error(), "--wire is only supported") {
+		t.Fatalf("err = %v, want unsupported --wire error", err)
+	}
+}
+
+func TestAddKitexOnlyRejectedForHertz(t *testing.T) {
+	root := seedProject(t, nil)
+	_, err := Add(Options{Root: root, Kind: KindRegistryEtcd})
+	if err == nil {
+		t.Fatalf("expected registry_etcd to be rejected for hertz")
+	}
+	if !strings.Contains(err.Error(), "only supported for kitex") {
+		t.Errorf("unexpected error: %v", err)
+	}
+}
+
+func readFile(t *testing.T, path string) string {
+	t.Helper()
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read %s: %v", path, err)
+	}
+	return string(body)
+}
+
+func writeHertzServer(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "internal", "base", "server", "server.go")
+	body := `package server
+
+import (
+	"time"
+
+	"github.com/cloudwego/hertz/pkg/app/server"
+	"github.com/samber/do/v2"
+
+	"github.com/x/demo/internal/base/conf"
+	"github.com/x/demo/internal/pkg/middleware"
+)
+
+func Run() {
+	injector := do.New()
+	cfg := conf.Get()
+	if cfg == nil {
+		cfg = conf.Default()
+	}
+	do.ProvideValue(injector, cfg)
+	h := server.Default()
+	h.Use(middleware.Recovery())
+	h.Use(middleware.RequestID())
+	h.Use(middleware.AccessLog())
+	h.Use(middleware.RequestTimeout(time.Second))
+}
+`
+	writeTestFile(t, path, body)
+}
+
+func writeKitexServer(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "internal", "base", "server", "server.go")
+	body := `package server
+
+import (
+	"context"
+	"log"
+
+	"github.com/cloudwego/kitex/pkg/endpoint"
+	kitexserver "github.com/cloudwego/kitex/server"
+
+	"github.com/x/demo/internal/base/conf"
+	"github.com/x/demo/internal/pkg/interceptor"
+)
+
+func Run() {
+	cfg := conf.Get()
+	if cfg == nil {
+		cfg = conf.Default()
+	}
+	_ = log.Flags()
+	opts := []kitexserver.Option{
+		kitexserver.WithMiddleware(endpoint.Chain(
+			interceptor.RequestID(),
+			interceptor.AccessLog(),
+			interceptor.Recovery(),
+			interceptor.RequestTimeout(0),
+		)),
+		kitexserver.WithErrorHandler(func(ctx context.Context, err error) error { return err }),
+	}
+	_ = opts
+}
+`
+	writeTestFile(t, path, body)
+}
+
+func writeKitexClient(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "pkg", "client", "demo", "client.go")
+	body := `package democlient
+
+import (
+	"context"
+
+	kitexclient "github.com/cloudwego/kitex/client"
+	"github.com/cloudwego/kitex/pkg/endpoint"
+	"github.com/cloudwego/kitex/pkg/transmeta"
+)
+
+type Config struct {
+	EnableMetaInfo bool
+}
+
+func New(ctx context.Context, cfg Config, opts ...kitexclient.Option) {
+	_ = ctx
+	options := make([]kitexclient.Option, 0, len(opts)+6)
+	if cfg.EnableMetaInfo {
+		options = append(options, kitexclient.WithMetaHandler(transmeta.ClientTTHeaderHandler))
+	}
+	options = append(options, opts...)
+	_ = options
+}
+
+func callerServiceMiddleware(caller string) endpoint.Middleware {
+	_ = caller
+	return func(next endpoint.Endpoint) endpoint.Endpoint { return next }
+}
+`
+	writeTestFile(t, path, body)
+}
+
+func writeTestFile(t *testing.T, path, body string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(body), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+func TestAddAllSupportedKindsCopySuccessfully(t *testing.T) {
+	for _, kind := range commonKinds() {
+		t.Run(kind, func(t *testing.T) {
+			root := seedProject(t, nil)
+			res, err := Add(Options{Root: root, Kind: kind})
+			if err != nil {
+				t.Fatalf("Add %s: %v", kind, err)
+			}
+			body, err := os.ReadFile(res.WrittenPath)
+			if err != nil {
+				t.Fatalf("read %s: %v", kind, err)
+			}
+			if !strings.Contains(string(body), "package ") {
+				t.Errorf("%s missing package declaration", kind)
+			}
+		})
+	}
+	for _, kind := range kitexOnlyKinds() {
+		t.Run(kind, func(t *testing.T) {
+			root := seedKitexProject(t, nil)
+			res, err := Add(Options{Root: root, Kind: kind})
+			if err != nil {
+				t.Fatalf("Add %s: %v", kind, err)
+			}
+			body, err := os.ReadFile(res.WrittenPath)
+			if err != nil {
+				t.Fatalf("read %s: %v", kind, err)
+			}
+			if !strings.Contains(string(body), "package ") {
+				t.Errorf("%s missing package declaration", kind)
+			}
+		})
+	}
+}

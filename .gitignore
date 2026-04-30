@@ -1,0 +1,14 @@
+# Built binary
+/ncgo
+
+# Editor / OS
+.idea/
+.DS_Store
+*.swp
+
+# Go
+/dist/
+/bin/
+*.test
+*.out
+coverage.txt

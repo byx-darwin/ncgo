@@ -1,0 +1,8 @@
+{
+  "*": {
+    "GoModule": "your/module",
+    "ServiceName": "your-service",
+    "WithDatabase": false
+  }
+}
+

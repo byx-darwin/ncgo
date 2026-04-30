@@ -1,0 +1,28 @@
+# Kitex custom template — local config
+path: conf/dev/conf.yaml
+update_behavior:
+  type: skip
+body: |-
+  env: dev
+  debug: true
+  server:
+    name: {{ToLower .ServiceInfo.ServiceName}}
+    addr: ":8888"
+    read_write_timeout_seconds: 30
+    exit_wait_time_seconds: 10
+  rpc:
+    request_timeout_seconds: 3
+  auth:
+    caller_allowlist:
+      enabled: false
+      header: x-caller-service
+      allowed_callers: []
+      allow_missing: false
+  database:
+    enabled: false
+    dsn: ""
+    max_conns: 20
+    min_conns: 2
+    max_conn_lifetime_seconds: 1800
+    max_conn_idle_time_seconds: 300
+    health_check_period_seconds: 30

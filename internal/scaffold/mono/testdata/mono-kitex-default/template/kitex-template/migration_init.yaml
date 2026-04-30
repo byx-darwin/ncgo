@@ -1,0 +1,17 @@
+# Kitex custom template — initial goose migration template
+path: internal/db/migrations/000001_init.sql
+update_behavior:
+  type: skip
+body: |-
+  -- +goose Up
+  -- Add initial schema here.
+  -- Example:
+  -- CREATE TABLE example (
+  --     id BIGSERIAL PRIMARY KEY,
+  --     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+  -- );
+
+  -- +goose Down
+  -- Drop initial schema here.
+  -- Example:
+  -- DROP TABLE IF EXISTS example;

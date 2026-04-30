@@ -1,0 +1,85 @@
+# Kitex custom template — caller-side client factory tests
+path: pkg/client/{{ToLower .ServiceInfo.ServiceName}}/client_test.go
+update_behavior:
+  type: cover
+loop_service: true
+body: |-
+  package {{.ServiceInfo.ServiceName | ToLower}}client
+
+  import (
+      "context"
+      "testing"
+
+      "github.com/bytedance/gopkg/cloud/metainfo"
+      "github.com/cloudwego/kitex/pkg/endpoint"
+  )
+
+  func TestDefaultConfig(t *testing.T) {
+      cfg := DefaultConfig()
+      if cfg.ServiceName == "" {
+          t.Fatal("service name is empty")
+      }
+      if cfg.RPCTimeoutSeconds <= 0 || cfg.ConnectTimeoutMilliseconds <= 0 {
+          t.Fatalf("timeouts must be positive: %+v", cfg)
+      }
+      if !cfg.EnableMetaInfo {
+          t.Fatal("metainfo should be enabled by default")
+      }
+      if cfg.Retry.Enabled {
+          t.Fatal("retry should be disabled by default")
+      }
+  }
+
+  func TestConfigValidate(t *testing.T) {
+      if err := (Config{}).Validate(); err == nil {
+          t.Fatal("expected empty service name to fail")
+      }
+      cfg := DefaultConfig()
+      cfg.RPCTimeoutSeconds = -1
+      if err := cfg.Validate(); err == nil {
+          t.Fatal("expected negative rpc timeout to fail")
+      }
+  }
+
+  func TestRetryConfigValidate(t *testing.T) {
+      cfg := DefaultConfig()
+      cfg.Retry.Enabled = true
+      if err := cfg.Validate(); err != nil {
+          t.Fatalf("default retry config should be valid when enabled: %v", err)
+      }
+      if policy := cfg.Retry.failurePolicy(); policy == nil {
+          t.Fatal("expected retry policy")
+      }
+
+      cfg.Retry.MaxRetryTimes = 6
+      if err := cfg.Validate(); err == nil {
+          t.Fatal("expected too many retries to fail")
+      }
+
+      cfg = DefaultConfig()
+      cfg.Retry.Enabled = true
+      cfg.Retry.Backoff = "fixed"
+      if err := cfg.Validate(); err == nil {
+          t.Fatal("expected invalid fixed backoff to fail")
+      }
+
+      cfg = DefaultConfig()
+      cfg.Retry.Enabled = true
+      cfg.Retry.Backoff = "random"
+      cfg.Retry.RandomBackoffMinMilliseconds = 50
+      cfg.Retry.RandomBackoffMaxMilliseconds = 10
+      if err := cfg.Validate(); err == nil {
+          t.Fatal("expected invalid random backoff to fail")
+      }
+  }
+
+  func TestCallerServiceMiddleware(t *testing.T) {
+      var got string
+      err := callerServiceMiddleware("bff-api")(endpoint.Endpoint(func(ctx context.Context, req, resp interface{}) error {
+          got, _ = metainfo.GetPersistentValue(ctx, "x-caller-service")
+          return nil
+      }))(context.Background(), nil, nil)
+      if err != nil || got != "bff-api" {
+          t.Fatalf("caller service = %q err=%v", got, err)
+      }
+  }
