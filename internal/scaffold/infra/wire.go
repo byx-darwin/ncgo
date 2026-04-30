@@ -69,6 +69,11 @@ func unsupportedWireError() error {
 const (
 	manifestKindHertz = "hertz"
 	manifestKindKitex = "kitex"
+
+	markerLoggingInit             = "// ncgo:wire:logging:init"
+	markerLoggingServerMiddleware = "// ncgo:wire:logging:server-middleware"
+	markerCanaryServerTraffic     = "// ncgo:wire:canary:server-traffic"
+	markerKitexClientMiddleware   = "// ncgo:wire:kitex-client:middleware"
 )
 
 func wireHertz(root, module, kind string, dryRun bool) (*wireResult, error) {
@@ -85,7 +90,7 @@ func wireHertz(root, module, kind string, dryRun bool) (*wireResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		s, err = insertOnceStrictWithPlan(s, "logging.Init(", "\tdo.ProvideValue(injector, cfg)\n", hertzLoggingInit(), path, &plan, "insert_logging_init", "logging.Init")
+		s, err = insertOnceMarkerOrAnchorWithPlan(s, "logging.Init(", markerLoggingInit, "\tdo.ProvideValue(injector, cfg)\n", hertzLoggingInit(), path, &plan, "insert_logging_init", "logging.Init")
 		if err != nil {
 			return nil, err
 		}
@@ -106,7 +111,7 @@ func wireHertz(root, module, kind string, dryRun bool) (*wireResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		s, err = insertAfterAnyOnceWithPlan(s, "release.HertzTraffic()", []string{
+		s, err = insertAfterMarkerOrAnyWithPlan(s, "release.HertzTraffic()", markerCanaryServerTraffic, []string{
 			"\th.Use(logging.HertzRequestID())\n",
 			"\th.Use(middleware.RequestID())\n",
 		}, "\th.Use(release.HertzTraffic())\n", path, &plan, "insert_traffic_middleware", "release.HertzTraffic")
@@ -137,7 +142,7 @@ func wireKitex(root, module, kind string, dryRun bool) (*wireResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		s, err = insertOnceStrictWithPlan(s, "logging.Init(", "\tif cfg == nil {\n\t\tcfg = conf.Default()\n\t}\n", kitexLoggingInit(), serverPath, &serverPlan, "insert_logging_init", "logging.Init")
+		s, err = insertOnceMarkerOrAnchorWithPlan(s, "logging.Init(", markerLoggingInit, "\tif cfg == nil {\n\t\tcfg = conf.Default()\n\t}\n", kitexLoggingInit(), serverPath, &serverPlan, "insert_logging_init", "logging.Init")
 		if err != nil {
 			return nil, err
 		}
@@ -158,7 +163,7 @@ func wireKitex(root, module, kind string, dryRun bool) (*wireResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		s, err = insertAfterAnyOnceWithPlan(s, "release.KitexTraffic()", []string{
+		s, err = insertAfterMarkerOrAnyWithPlan(s, "release.KitexTraffic()", markerCanaryServerTraffic, []string{
 			"\t\t\tlogging.KitexRequestID(),\n",
 			"\t\t\tinterceptor.RequestID(),\n",
 		}, "\t\t\trelease.KitexTraffic(),\n", serverPath, &serverPlan, "insert_traffic_middleware", "release.KitexTraffic")
@@ -204,7 +209,7 @@ func wireKitexClient(path, module, kind string, dryRun bool) (*wireResult, error
 			return nil, err
 		}
 		loggingBlock := "\toptions = append(options, kitexclient.WithMiddleware(endpoint.Chain(\n\t\tlogging.KitexRequestID(),\n\t\tlogging.KitexAccessLog(),\n\t)))\n"
-		s, err = insertOnceStrictWithPlan(s, "logging.KitexAccessLog()", anchor, loggingBlock, path, &plan, "insert_client_middleware", "logging.KitexAccessLog")
+		s, err = insertOnceMarkerOrAnchorWithPlan(s, "logging.KitexAccessLog()", markerKitexClientMiddleware, anchor, loggingBlock, path, &plan, "insert_client_middleware", "logging.KitexAccessLog")
 		if err != nil {
 			return nil, err
 		}
@@ -213,7 +218,7 @@ func wireKitexClient(path, module, kind string, dryRun bool) (*wireResult, error
 		if err != nil {
 			return nil, err
 		}
-		s, err = insertOnceStrictWithPlan(s, "release.KitexTraffic()", anchor, "\toptions = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))\n", path, &plan, "insert_client_middleware", "release.KitexTraffic")
+		s, err = insertOnceMarkerOrAnchorWithPlan(s, "release.KitexTraffic()", markerKitexClientMiddleware, anchor, "\toptions = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))\n", path, &plan, "insert_client_middleware", "release.KitexTraffic")
 		if err != nil {
 			return nil, err
 		}
@@ -306,6 +311,17 @@ func insertOnceStrictWithPlan(src, exists, anchor, addition, path string, plan *
 	return out, nil
 }
 
+func insertOnceMarkerOrAnchorWithPlan(src, exists, marker, anchor, addition, path string, plan *[]PlanItem, action, detail string) (string, error) {
+	out, changed, err := insertOnceMarkerOrAnchorTracked(src, exists, marker, anchor, addition)
+	if err != nil {
+		return "", err
+	}
+	if changed {
+		*plan = append(*plan, wirePlan(path, action, detail))
+	}
+	return out, nil
+}
+
 func replaceOnceStrictWithPlan(src, exists, old, new, path string, plan *[]PlanItem, detail string) (string, error) {
 	out, changed, err := replaceOnceStrictTracked(src, exists, old, new)
 	if err != nil {
@@ -319,6 +335,17 @@ func replaceOnceStrictWithPlan(src, exists, old, new, path string, plan *[]PlanI
 
 func insertAfterAnyOnceWithPlan(src, exists string, anchors []string, addition, path string, plan *[]PlanItem, action, detail string) (string, error) {
 	out, changed, err := insertAfterAnyOnceTracked(src, exists, anchors, addition)
+	if err != nil {
+		return "", err
+	}
+	if changed {
+		*plan = append(*plan, wirePlan(path, action, detail))
+	}
+	return out, nil
+}
+
+func insertAfterMarkerOrAnyWithPlan(src, exists, marker string, anchors []string, addition, path string, plan *[]PlanItem, action, detail string) (string, error) {
+	out, changed, err := insertAfterMarkerOrAnyTracked(src, exists, marker, anchors, addition)
 	if err != nil {
 		return "", err
 	}
@@ -361,6 +388,16 @@ func insertOnceStrictTracked(src, exists, anchor, addition string) (string, bool
 	return strings.Replace(src, anchor, anchor+addition, 1), true, nil
 }
 
+func insertOnceMarkerOrAnchorTracked(src, exists, marker, anchor, addition string) (string, bool, error) {
+	if strings.Contains(src, exists) {
+		return src, false, nil
+	}
+	if markerLine, ok := lineContaining(src, marker); ok {
+		return strings.Replace(src, markerLine, markerLine+addition, 1), true, nil
+	}
+	return insertOnceStrictTracked(src, exists, anchor, addition)
+}
+
 func replaceOnceStrict(src, exists, old, new string) (string, error) {
 	out, _, err := replaceOnceStrictTracked(src, exists, old, new)
 	return out, err
@@ -391,4 +428,27 @@ func insertAfterAnyOnceTracked(src, exists string, anchors []string, addition st
 		}
 	}
 	return "", false, fmt.Errorf("infra: --wire could not find middleware anchor for %s", strings.TrimSpace(addition))
+}
+
+func insertAfterMarkerOrAnyTracked(src, exists, marker string, anchors []string, addition string) (string, bool, error) {
+	if strings.Contains(src, exists) {
+		return src, false, nil
+	}
+	if markerLine, ok := lineContaining(src, marker); ok {
+		return strings.Replace(src, markerLine, markerLine+addition, 1), true, nil
+	}
+	return insertAfterAnyOnceTracked(src, exists, anchors, addition)
+}
+
+func lineContaining(src, marker string) (string, bool) {
+	idx := strings.Index(src, marker)
+	if idx < 0 {
+		return "", false
+	}
+	start := strings.LastIndex(src[:idx], "\n") + 1
+	endRel := strings.Index(src[idx:], "\n")
+	if endRel < 0 {
+		return src[start:], true
+	}
+	return src[start : idx+endRel+1], true
 }

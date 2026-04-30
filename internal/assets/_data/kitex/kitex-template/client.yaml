@@ -88,6 +88,7 @@ body: |-
       // options = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))
       // Adapt release.Selector behind a Kitex resolver/selector when adding a
       // concrete Nacos/Polaris SDK adapter for instance-level canary routing.
+	      // ncgo:wire:kitex-client:middleware
       if cfg.CallerService != "" {
           options = append(options, kitexclient.WithMiddleware(callerServiceMiddleware(cfg.CallerService)))
       }

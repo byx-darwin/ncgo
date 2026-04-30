@@ -173,6 +173,7 @@ Usecase 文件中使用：
 - 已为 `infra.Add` 增加结构化 `Plan`，包含 file create/overwrite、manifest add/already_present、wire update/already_wired、next_step run；MCP `ncgo_add_infra` 保留 text，同时返回 `dryRun`、`updated`、`writtenPaths`、`wiredPaths`、`nextSteps`、`plan` 字段，方便 agent/前端消费。
 - CLI `ncgo add infra` 已新增 `--output text|json`（默认 text）和 `--plan`（等价 `--dry-run --output json`）；JSON 输出 `dryRun`、`updated`、`writtenPath(s)`、`wiredPaths`、`nextSteps`、`plan`，非法 output 会在调用核心写入逻辑前报错。
 - Wiring plan 已保留 `wire/update` 兼容项，并增加细粒度 action：`wire/add_import`、`wire/insert_logging_init`、`wire/replace_middleware`、`wire/insert_traffic_middleware`、`wire/insert_client_middleware`。
+- 默认 Hertz / Kitex 模板已加入基础 `// ncgo:wire:*` marker；`wire.go` 优先 marker、缺失时 fallback legacy anchor，并同步更新 mono golden testdata 与 marker path 测试。
 - 专题文档 `docs/observability-logging.zh-CN.md` 与 `docs/canary-release.zh-CN.md` 已补 `--wire --dry-run`、`--output json`、preflight 失败语义和推荐的“先预览 plan 再真实执行”流程。
 - 后续编码建议做 Nacos / Polaris SDK adapter、config watch、Kitex selector adapter，并考虑把默认模板中的 `hlog` / `klog` access/recovery log 替换为 logging optional 的适配层。
 

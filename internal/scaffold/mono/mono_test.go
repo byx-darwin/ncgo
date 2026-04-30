@@ -71,11 +71,14 @@ func TestGenerateHertzTemplateIncludesSafeOptionalWiringAnchors(t *testing.T) {
 	s := string(body)
 	for _, want := range []string{
 		"Optional structured logging wiring",
+		"// ncgo:wire:logging:init",
+		"// ncgo:wire:logging:server-middleware",
 		"import \"{{.GoModule}}/internal/base/logging\"",
 		"h.Use(logging.HertzRecovery())",
 		"h.Use(logging.HertzRequestID())",
 		"h.Use(logging.HertzAccessLog())",
 		"Optional release canary wiring",
+		"// ncgo:wire:canary:server-traffic",
 		"import \"{{.GoModule}}/internal/base/release\"",
 		"h.Use(release.HertzTraffic())",
 	} {
@@ -234,11 +237,14 @@ func TestGenerateKitexTemplatesIncludeSafeOptionalWiringAnchors(t *testing.T) {
 	serverTemplate := string(serverBody)
 	for _, want := range []string{
 		"Optional structured logging wiring",
+		"// ncgo:wire:logging:init",
+		"// ncgo:wire:logging:server-middleware",
 		"import \"{{.Module}}/internal/base/logging\"",
 		"logging.KitexRequestID()",
 		"logging.KitexAccessLog()",
 		"logging.KitexRecovery()",
 		"Optional release canary wiring",
+		"// ncgo:wire:canary:server-traffic",
 		"import \"{{.Module}}/internal/base/release\"",
 		"release.KitexTraffic()",
 	} {
@@ -249,6 +255,7 @@ func TestGenerateKitexTemplatesIncludeSafeOptionalWiringAnchors(t *testing.T) {
 	clientTemplate := string(clientBody)
 	for _, want := range []string{
 		"Optional client-side structured RPC logs",
+		"// ncgo:wire:kitex-client:middleware",
 		"options = append(options, kitexclient.WithMiddleware(endpoint.Chain(",
 		"logging.KitexRequestID()",
 		"logging.KitexAccessLog()",

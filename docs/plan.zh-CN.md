@@ -60,6 +60,11 @@
   - `wiredPaths`；
   - `nextSteps`；
   - `plan`。
+- 已在默认 Hertz / Kitex 模板中加入基础 `// ncgo:wire:*` marker，并让 `wire.go` 优先使用 marker、缺失时回退 legacy anchor：
+  - `// ncgo:wire:logging:init`；
+  - `// ncgo:wire:logging:server-middleware`；
+  - `// ncgo:wire:canary:server-traffic`；
+  - `// ncgo:wire:kitex-client:middleware`。
 
 ## 2. 推荐优先级
 
@@ -69,9 +74,9 @@
 
 后续可继续把 `detail` 从简短描述升级为结构化字段，例如 `from` / `to` / `anchor` / `insertAfter`，让 `--plan` 更接近真实 patch preview。
 
-### P0：标准化模板 wiring marker
+### P0：继续完善模板 wiring marker
 
-在默认模板中加入显式 marker，例如：
+基础 marker 已加入默认模板，例如：
 
 ```text
 // ncgo:wire:logging:init
@@ -79,9 +84,23 @@
 // ncgo:wire:canary:traffic
 ```
 
-要求：仍需兼容旧模板，不能只依赖 marker。
+当前要求：仍需兼容旧模板，不能只依赖 marker。
 
 收益：减少对具体源码片段的脆弱匹配，降低模板演进成本。
+
+已完成：
+
+- Hertz / Kitex 默认模板已加入 marker；
+- mono golden testdata 已同步；
+- `wire.go` 已优先使用 marker，缺失时 fallback legacy anchor；
+- 已补 marker path 和 legacy fallback 测试；
+- smoke 与全量 `go test ./...` 已验证通过。
+
+后续可继续：
+
+1. plan detail 标明命中的 anchor 类型，例如 `marker` / `legacy`；
+2. 将 marker helper 抽象得更通用，便于后续 registry / selector / otel wiring 复用；
+3. 继续减少对具体 middleware 行的字符串替换依赖。
 
 ### P1：Kitex canary selector adapter MVP
 
@@ -141,6 +160,6 @@
 
 建议优先做：
 
-1. 模板 `// ncgo:wire:*` marker 标准化；
+1. logging / canary troubleshooting 文档；
 2. 继续细化 wiring plan detail 为结构化 patch 信息；
-3. logging / canary troubleshooting 文档。
+3. Kitex canary selector adapter MVP。

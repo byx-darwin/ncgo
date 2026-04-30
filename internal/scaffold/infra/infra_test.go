@@ -590,6 +590,41 @@ func TestAddCanaryWireForHertz(t *testing.T) {
 	}
 }
 
+func TestAddCanaryWireForHertzUsesMarkerAnchor(t *testing.T) {
+	root := seedProject(t, nil)
+	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
+	body := `package server
+
+import (
+	"time"
+
+	"github.com/cloudwego/hertz/pkg/app/server"
+
+	"github.com/x/demo/internal/pkg/middleware"
+)
+
+func Run() {
+	h := server.Default()
+	// ncgo:wire:canary:server-traffic
+	h.Use(middleware.AccessLog())
+	h.Use(middleware.RequestTimeout(time.Second))
+}
+`
+	writeTestFile(t, serverPath, body)
+
+	_, err := Add(Options{Root: root, Kind: KindCanaryAlias, Wire: true})
+	if err != nil {
+		t.Fatalf("Add hertz canary --wire with marker: %v", err)
+	}
+	got := readFile(t, serverPath)
+	if !strings.Contains(got, "h.Use(release.HertzTraffic())") {
+		t.Fatalf("marker anchor did not insert canary traffic\n---\n%s", got)
+	}
+	if strings.Index(got, "h.Use(release.HertzTraffic())") > strings.Index(got, "h.Use(middleware.AccessLog())") {
+		t.Fatalf("canary traffic should be inserted before access log\n---\n%s", got)
+	}
+}
+
 func TestAddLoggingWireForKitexServerAndClient(t *testing.T) {
 	root := seedKitexProject(t, nil)
 	writeKitexServer(t, root)

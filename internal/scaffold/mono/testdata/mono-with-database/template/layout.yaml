@@ -3155,6 +3155,7 @@ layouts:
               cfg = conf.Default()
           }
           do.ProvideValue(injector, cfg)
+	          // ncgo:wire:logging:init
 
           h := server.Default(
               server.WithHostPorts(cfg.Server.Addr),
@@ -3171,11 +3172,13 @@ layouts:
           // h.Use(logging.HertzRecovery())
           // h.Use(logging.HertzRequestID())
           // h.Use(logging.HertzAccessLog())
+	          // ncgo:wire:logging:server-middleware
           h.Use(middleware.Recovery())
           h.Use(middleware.RequestID())
           // Optional release canary wiring (after `ncgo add infra canary`):
           // import "{{.GoModule}}/internal/base/release"
           // h.Use(release.HertzTraffic()) // reads X-Traffic-Lane/X-User-ID/X-Tenant-ID
+	          // ncgo:wire:canary:server-traffic
           h.Use(middleware.AccessLog())
           h.Use(middleware.RequestTimeout(serverDurationSeconds(cfg.Server.RequestTimeoutSeconds)))
           h.Use(middleware.InternalOnly(cfg.Security.InternalPaths, cfg.Security.InternalCIDRs))
