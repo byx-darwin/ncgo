@@ -512,6 +512,29 @@ BUILD_TIME=2026-04-30T10:00:00Z
 ncgo add infra observability_logging --root .
 ncgo add infra logging --root .  # alias
 ncgo add infra logging --root . --wire  # 可选：自动修改默认 server/client wiring
+ncgo add infra logging --root . --wire --dry-run  # 预览，不修改文件
+ncgo add infra logging --root . --wire --dry-run --output json  # 输出机器可读 plan
+```
+
+推荐落地流程：
+
+1. 先执行 `--wire --dry-run`，确认会创建的 optional 文件、manifest 更新以及将修改的 server/client 文件；
+2. 若需要给 CI / agent / 前端消费，使用 `--output json` 读取结构化 `plan`；
+3. 确认无误后再执行不带 `--dry-run` 的 `--wire`；
+4. 最后按 next steps 手动执行 `go get ...` / `go mod tidy`，ncgo 不会自动安装依赖。
+
+`--wire` 在真实写入 optional 文件、manifest 和源码前会先做 preflight：如果默认模板 anchor 缺失、import block 找不到或格式化失败，会直接报错，并避免留下“optional 已写但 wiring 失败”的半完成状态。`--dry-run` 保证不写 optional 文件、不保存 manifest、不修改 server/client 源码。
+
+JSON plan 常见条目：
+
+```text
+file/create                  # 将创建 logging.go / hertz.go / kitex.go
+file/overwrite               # 加 --force 时将覆盖已存在 optional 文件
+manifest/add                 # manifest 将记录 observability_logging
+manifest/already_present     # manifest 已记录该 optional
+wire/update                  # 将修改默认 server/client wiring
+wire/already_wired           # 已接线，无需再次修改源码
+next_step/run                # 需要用户手动执行的依赖安装命令
 ```
 
 manifest 记录：
@@ -540,7 +563,7 @@ go get go.opentelemetry.io/otel/trace
 go mod tidy
 ```
 
-默认 Hertz / Kitex 模板已经预留安全 wiring 注释：未启用 `observability_logging` 时不会 import `internal/base/logging`，项目仍可正常编译；执行 `ncgo add infra logging --root .` 后，再按注释或下方示例手动替换默认 access/recovery 日志。若希望由 CLI 自动替换默认生成代码，可显式加 `--wire`；该选项只支持已知的 ncgo 默认模板片段，失败时会报错并提示无法找到 anchor。
+默认 Hertz / Kitex 模板已经预留安全 wiring 注释：未启用 `observability_logging` 时不会 import `internal/base/logging`，项目仍可正常编译；执行 `ncgo add infra logging --root .` 后，再按注释或下方示例手动替换默认 access/recovery 日志。若希望由 CLI 自动替换默认生成代码，可显式加 `--wire`；该选项只支持已知的 ncgo 默认模板片段，失败时会报错并提示无法找到 anchor。建议真实执行前先用 `--wire --dry-run --output json` 审阅 plan。
 
 ## 18. 安全 wiring 示例
 

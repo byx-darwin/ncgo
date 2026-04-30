@@ -545,6 +545,29 @@ OTEL_METRICS_EXPORTER=otlp \
 ncgo add infra release_canary --root .
 ncgo add infra canary --root .  # alias
 ncgo add infra canary --root . --wire  # 可选：自动挂载默认 traffic middleware
+ncgo add infra canary --root . --wire --dry-run  # 预览，不修改文件
+ncgo add infra canary --root . --wire --dry-run --output json  # 输出机器可读 plan
+```
+
+推荐落地流程：
+
+1. 先执行 `--wire --dry-run`，确认会创建的 optional 文件、manifest 更新以及将修改的 server/client 文件；
+2. CI / agent / 前端可使用 `--output json` 读取结构化 `plan`；
+3. 确认 plan 符合预期后再执行不带 `--dry-run` 的 `--wire`；
+4. 如后续引入 Nacos / Polaris SDK adapter，再按 adapter 文档手动补依赖，ncgo 不会自动执行依赖安装。
+
+`--wire` 在真实写入 optional 文件、manifest 和源码前会先做 preflight：如果默认模板 anchor 缺失、import block 找不到或格式化失败，会直接报错，并避免留下“optional 已写但 wiring 失败”的半完成状态。`--dry-run` 保证不写 optional 文件、不保存 manifest、不修改 server/client 源码。
+
+JSON plan 常见条目：
+
+```text
+file/create                  # 将创建 canary.go / hertz.go / kitex.go
+file/overwrite               # 加 --force 时将覆盖已存在 optional 文件
+manifest/add                 # manifest 将记录 release_canary
+manifest/already_present     # manifest 已记录该 optional
+wire/update                  # 将挂载默认 traffic middleware
+wire/already_wired           # 已接线，无需再次修改源码
+next_step/run                # 需要用户手动执行的后续命令
 ```
 
 当前生成：
@@ -557,7 +580,7 @@ internal/base/release/kitex.go  # Kitex 服务额外生成
 
 说明：第一版是 SDK-neutral MVP，不直接依赖 Nacos / Polaris SDK。它先固化统一模型、规则引擎、metadata、framework context adapter、selector seam 和 instance pool 选择逻辑；后续可以在不改变业务约定的前提下新增 `nacos.go`、`polaris.go`、Kitex selector adapter 和部署示例。
 
-默认 Hertz / Kitex 模板已经预留安全 wiring 注释：未启用 `release_canary` 时不会 import `internal/base/release`，项目仍可正常编译；执行 `ncgo add infra canary --root .` 后，再按注释或下方示例手动取消注释并补 import。若希望由 CLI 自动接入默认生成代码，可显式加 `--wire`；该选项只支持已知的 ncgo 默认模板片段，失败时会报错并提示无法找到 anchor。
+默认 Hertz / Kitex 模板已经预留安全 wiring 注释：未启用 `release_canary` 时不会 import `internal/base/release`，项目仍可正常编译；执行 `ncgo add infra canary --root .` 后，再按注释或下方示例手动取消注释并补 import。若希望由 CLI 自动接入默认生成代码，可显式加 `--wire`；该选项只支持已知的 ncgo 默认模板片段，失败时会报错并提示无法找到 anchor。建议真实执行前先用 `--wire --dry-run --output json` 审阅 plan。
 
 ### 14.1 release info
 
