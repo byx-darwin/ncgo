@@ -5,6 +5,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
@@ -14,6 +15,7 @@ import (
 	"github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scaffold/mono"
+	planpkg "github.com/byx-darwin/ncgo/internal/scaffold/plan"
 )
 
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
@@ -27,6 +29,7 @@ type Options struct {
 	AssetsVersion string      // recorded into the service manifest
 	NCGOVersion   string      // recorded into the service manifest
 	NoGenerate    bool        // skip hz invocation
+	DryRun        bool        // report intended service writes without modifying files
 	Runner        exec.Runner // injected exec; nil means mono default
 	Now           time.Time   // injected clock for tests
 }
@@ -37,8 +40,10 @@ type Result struct {
 	ServiceRel  string
 	Module      string
 	NextSteps   []string
+	Plan        []planpkg.Item
 	Updated     bool
 	RanGenerate bool
+	DryRun      bool
 }
 
 // Add creates a Hertz BFF service under a micro workspace and records it in
@@ -66,6 +71,21 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 	if module == "" {
 		module = defaultModule(w.Module, serviceRel)
 	}
+	if opts.DryRun {
+		if err := ensureServiceDirAvailable(serviceDir); err != nil {
+			return nil, err
+		}
+		next := dryRunNextSteps(serviceRel)
+		return &Result{
+			ServiceDir: serviceDir,
+			ServiceRel: serviceRel,
+			Module:     module,
+			NextSteps:  next,
+			Plan:       buildPlan(serviceDir, opts.Name, true, opts.NoGenerate, next),
+			Updated:    true,
+			DryRun:     true,
+		}, nil
+	}
 	monoRes, err := mono.Generate(ctx, mono.Options{
 		Name:          opts.Name,
 		Module:        module,
@@ -91,6 +111,7 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 		ServiceRel:  serviceRel,
 		Module:      module,
 		NextSteps:   monoRes.NextSteps,
+		Plan:        buildPlan(serviceDir, opts.Name, updated, opts.NoGenerate, monoRes.NextSteps),
 		Updated:     updated,
 		RanGenerate: monoRes.RanGenerate,
 	}, nil
@@ -152,4 +173,49 @@ func mergeService(w *manifest.Workspace, service manifest.WorkspaceService) bool
 	w.Services = append(w.Services, service)
 	sort.Slice(w.Services, func(i, j int) bool { return w.Services[i].Dir < w.Services[j].Dir })
 	return true
+}
+
+func ensureServiceDirAvailable(dir string) error {
+	info, err := os.Stat(dir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("bff: stat %s: %w", dir, err)
+	}
+	if !info.IsDir() {
+		return fmt.Errorf("bff: %s exists and is not a directory", dir)
+	}
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		return fmt.Errorf("bff: read %s: %w", dir, err)
+	}
+	if len(entries) > 0 {
+		return fmt.Errorf("bff: %s is not empty", dir)
+	}
+	return nil
+}
+
+func dryRunNextSteps(serviceRel string) []string {
+	return []string{fmt.Sprintf("rerun without --plan to create %s", serviceRel)}
+}
+
+func buildPlan(serviceDir, name string, workspaceUpdated, noGenerate bool, next []string) []planpkg.Item {
+	items := []planpkg.Item{
+		{Kind: "directory", Action: "create", Path: serviceDir, Detail: "hertz service scaffold"},
+	}
+	workspaceAction := "already_present"
+	if workspaceUpdated {
+		workspaceAction = "add"
+	}
+	items = append(items, planpkg.Item{Kind: "workspace", Action: workspaceAction, Path: "ncgo.workspace", Detail: name})
+	generatorAction, generatorDetail := "run", "hz"
+	if noGenerate {
+		generatorAction, generatorDetail = "skip", "--no-generate"
+	}
+	items = append(items, planpkg.Item{Kind: "generator", Action: generatorAction, Detail: generatorDetail})
+	for _, step := range next {
+		items = append(items, planpkg.Item{Kind: "next_step", Action: "run", Detail: step})
+	}
+	return items
 }

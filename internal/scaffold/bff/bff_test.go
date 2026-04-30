@@ -10,6 +10,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	planpkg "github.com/byx-darwin/ncgo/internal/scaffold/plan"
 )
 
 type fakeRunner struct {
@@ -87,6 +88,33 @@ func TestAddNoGenerateCreatesHertzServiceAndUpdatesWorkspace(t *testing.T) {
 	}
 }
 
+func TestAddDryRunPlansWithoutWriting(t *testing.T) {
+	root := seedWorkspace(t, nil)
+	opts := baseOpts(root)
+	opts.NoGenerate = false
+	opts.DryRun = true
+	res, err := Add(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Add dry-run: %v", err)
+	}
+	if !res.DryRun || !res.Updated || res.RanGenerate {
+		t.Fatalf("DryRun/Updated/RanGenerate = %v/%v/%v, want true/true/false", res.DryRun, res.Updated, res.RanGenerate)
+	}
+	if _, err := os.Stat(res.ServiceDir); !os.IsNotExist(err) {
+		t.Fatalf("dry-run created service dir: stat err = %v", err)
+	}
+	w, err := manifest.LoadWorkspace(root)
+	if err != nil {
+		t.Fatalf("reload workspace: %v", err)
+	}
+	if len(w.Services) != 0 {
+		t.Fatalf("dry-run updated workspace services = %+v, want empty", w.Services)
+	}
+	if !planContains(res.Plan, "directory", "create") || !planContains(res.Plan, "workspace", "add") || !planContains(res.Plan, "generator", "run") {
+		t.Fatalf("plan missing expected items: %+v", res.Plan)
+	}
+}
+
 func TestAddSupportsModuleAndDirOverride(t *testing.T) {
 	root := seedWorkspace(t, nil)
 	opts := baseOpts(root)
@@ -143,4 +171,13 @@ func TestAddInvokesHZViaRunner(t *testing.T) {
 			t.Errorf("hz args missing %q in %q", want, args)
 		}
 	}
+}
+
+func planContains(items []planpkg.Item, kind, action string) bool {
+	for _, item := range items {
+		if item.Kind == kind && item.Action == action {
+			return true
+		}
+	}
+	return false
 }

@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	planpkg "github.com/byx-darwin/ncgo/internal/scaffold/plan"
 )
 
 const testModule = "github.com/x/demo"
@@ -97,6 +98,31 @@ func TestAddHappyPath(t *testing.T) {
 	}
 }
 
+func TestAddDryRunPlansWithoutWriting(t *testing.T) {
+	root := seedManifest(t, nil)
+	res, err := Add(Options{Root: root, Name: "device", DryRun: true})
+	if err != nil {
+		t.Fatalf("Add dry-run: %v", err)
+	}
+	if !res.DryRun || !res.Updated {
+		t.Fatalf("DryRun/Updated = %v/%v, want true/true", res.DryRun, res.Updated)
+	}
+	wantPath := filepath.Join(root, "internal", "usecase", "device", "device.go")
+	if _, err := os.Stat(wantPath); !os.IsNotExist(err) {
+		t.Fatalf("dry-run wrote usecase file: stat err = %v", err)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Domains) != 0 {
+		t.Fatalf("dry-run updated manifest domains = %v, want empty", m.Domains)
+	}
+	if !planContains(res.Plan, "file", "create") || !planContains(res.Plan, "manifest", "add") || !planContains(res.Plan, "next_step", "run") {
+		t.Fatalf("plan missing expected items: %+v", res.Plan)
+	}
+}
+
 func TestAddRefusesOverwriteWithoutForce(t *testing.T) {
 	root := seedManifest(t, nil)
 	if _, err := Add(Options{Root: root, Name: "device"}); err != nil {
@@ -169,4 +195,13 @@ func TestExportName(t *testing.T) {
 			t.Errorf("exportName(%q) = %q, want %q", in, got, want)
 		}
 	}
+}
+
+func planContains(items []planpkg.Item, kind, action string) bool {
+	for _, item := range items {
+		if item.Kind == kind && item.Action == action {
+			return true
+		}
+	}
+	return false
 }

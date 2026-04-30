@@ -144,15 +144,15 @@
 
 注意包依赖方向，避免 `internal` 反向依赖 `cmd`。
 
-### P2：扩展 plan 到其它 add 子命令
+### P2（已完成）：扩展 plan 到其它 add 子命令
 
-后续可考虑：
+已扩展：
 
 - `ncgo add domain --plan`；
 - `ncgo add rpc --plan`；
 - `ncgo add bff --plan`。
 
-需要先统一各 scaffold 的 plan schema。
+同时抽取 `internal/scaffold/plan.Item` 作为共享 plan schema，`infra.PlanItem` 保持类型别名兼容。
 
 ### P2：CI / release 工程化
 
@@ -169,5 +169,4 @@
 
 建议优先做：
 
-1. 扩展 plan 到其它 add 子命令；
-2. CI / release 工程化。
+1. CI / release 工程化。

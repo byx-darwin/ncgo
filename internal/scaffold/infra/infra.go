@@ -19,6 +19,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	planpkg "github.com/byx-darwin/ncgo/internal/scaffold/plan"
 )
 
 // Kind values supported by `ncgo add infra`. The corresponding template files
@@ -114,14 +115,7 @@ type Result struct {
 }
 
 // PlanItem is a machine-readable summary of Add's intended or completed work.
-type PlanItem struct {
-	Kind         string `json:"kind"`
-	Action       string `json:"action"`
-	Path         string `json:"path,omitempty"`
-	Detail       string `json:"detail,omitempty"`
-	Anchor       string `json:"anchor,omitempty"`
-	AnchorSource string `json:"anchorSource,omitempty"`
-}
+type PlanItem = planpkg.Item
 
 // Add validates opts, copies the embedded add-on into the project, and
 // updates the manifest. It does NOT call `go get`; the caller is expected to
