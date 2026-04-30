@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"strings"
 
 	"github.com/byx-darwin/ncgo/internal/ai"
 	"github.com/byx-darwin/ncgo/internal/doctor"
@@ -91,44 +90,11 @@ func callAddInfra(raw json.RawMessage) (map[string]any, error) {
 	if err != nil {
 		return textResult(err.Error(), true), nil
 	}
-	var b strings.Builder
-	writeVerb, wireVerb := "wrote", "wired"
-	if res.DryRun {
-		writeVerb, wireVerb = "would write", "would wire"
+	out := textResult(infra.FormatAddResultText(res), false)
+	for key, value := range infra.AddResultFields(res) {
+		out[key] = value
 	}
-	for _, p := range writtenInfraPaths(res) {
-		fmt.Fprintf(&b, "%s %s\n", writeVerb, p)
-	}
-	for _, p := range res.WiredPaths {
-		fmt.Fprintf(&b, "%s %s\n", wireVerb, p)
-	}
-	if res.DryRun && res.Updated {
-		b.WriteString("(dry-run: manifest would be updated)\n")
-	} else if !res.Updated {
-		b.WriteString("(manifest already lists this infra)\n")
-	}
-	if res.DryRun {
-		b.WriteString("(dry-run: no files were written)\n")
-	}
-	b.WriteString("\nnext steps:\n")
-	for _, step := range res.NextSteps {
-		fmt.Fprintf(&b, "  $ %s\n", step)
-	}
-	out := textResult(strings.TrimRight(b.String(), "\n"), false)
-	out["dryRun"] = res.DryRun
-	out["updated"] = res.Updated
-	out["writtenPaths"] = res.WrittenPaths
-	out["wiredPaths"] = res.WiredPaths
-	out["nextSteps"] = res.NextSteps
-	out["plan"] = res.Plan
 	return out, nil
-}
-
-func writtenInfraPaths(res *infra.Result) []string {
-	if len(res.WrittenPaths) > 0 {
-		return res.WrittenPaths
-	}
-	return []string{res.WrittenPath}
 }
 
 func callAddMethod(raw json.RawMessage) (map[string]any, error) {

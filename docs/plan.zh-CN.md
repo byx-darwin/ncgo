@@ -133,9 +133,14 @@
 - 为什么 ncgo 不自动执行 `go get`；
 - dry-run 与真实执行输出对照。
 
-### P2：CLI / MCP 统一 result renderer
+### P2（已完成）：CLI / MCP 统一 result renderer
 
-当前 CLI 和 MCP 各自渲染 add infra 结果。建议抽共享 formatter / DTO，减少重复逻辑。
+已将 `ncgo add infra` 的 CLI / MCP 输出统一到 `internal/scaffold/infra` 的共享 renderer：
+
+- CLI JSON 复用 `WriteAddResultJSON`；
+- CLI text / MCP text 复用 `FormatAddResultText`；
+- MCP 结构化字段复用 `AddResultFields`；
+- 保持 `dryRun` / `updated` / `writtenPath(s)` / `wiredPaths` / `nextSteps` / `plan` 等现有字段兼容。
 
 注意包依赖方向，避免 `internal` 反向依赖 `cmd`。
 
@@ -164,6 +169,6 @@
 
 建议优先做：
 
-1. Nacos / Polaris adapter skeleton；
-2. CLI / MCP 统一 add infra result renderer；
+1. 故障排查文档；
+2. 扩展 plan 到其它 add 子命令；
 3. CI / release 工程化。

@@ -1,9 +1,7 @@
 package main
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/spf13/cobra"
@@ -84,62 +82,10 @@ func runAddInfra(cmd *cobra.Command, kind string, opts *addInfraOptions) error {
 	}
 	out := cmd.OutOrStdout()
 	if opts.output == "json" {
-		return writeAddInfraJSON(out, res)
+		return infra.WriteAddResultJSON(out, res)
 	}
-	writeVerb, wireVerb := "wrote", "wired"
-	if res.DryRun {
-		writeVerb, wireVerb = "would write", "would wire"
-	}
-	for _, p := range writtenInfraPaths(res) {
-		fmt.Fprintf(out, "%s %s\n", writeVerb, p)
-	}
-	for _, p := range res.WiredPaths {
-		fmt.Fprintf(out, "%s %s\n", wireVerb, p)
-	}
-	if res.DryRun && res.Updated {
-		fmt.Fprintln(out, "(dry-run: manifest would be updated)")
-	} else if !res.Updated {
-		fmt.Fprintln(out, "(manifest already lists this infra)")
-	}
-	if res.DryRun {
-		fmt.Fprintln(out, "(dry-run: no files were written)")
-	}
-	fmt.Fprintln(out, "\nnext steps:")
-	for _, s := range res.NextSteps {
-		fmt.Fprintf(out, "  $ %s\n", s)
-	}
+	fmt.Fprintln(out, infra.FormatAddResultText(res))
 	return nil
-}
-
-type addInfraJSONResult struct {
-	DryRun       bool             `json:"dryRun"`
-	Updated      bool             `json:"updated"`
-	WrittenPath  string           `json:"writtenPath,omitempty"`
-	WrittenPaths []string         `json:"writtenPaths"`
-	WiredPaths   []string         `json:"wiredPaths"`
-	NextSteps    []string         `json:"nextSteps"`
-	Plan         []infra.PlanItem `json:"plan"`
-}
-
-func writeAddInfraJSON(out io.Writer, res *infra.Result) error {
-	enc := json.NewEncoder(out)
-	enc.SetIndent("", "  ")
-	return enc.Encode(addInfraJSONResult{
-		DryRun:       res.DryRun,
-		Updated:      res.Updated,
-		WrittenPath:  res.WrittenPath,
-		WrittenPaths: res.WrittenPaths,
-		WiredPaths:   res.WiredPaths,
-		NextSteps:    res.NextSteps,
-		Plan:         res.Plan,
-	})
-}
-
-func writtenInfraPaths(res *infra.Result) []string {
-	if len(res.WrittenPaths) > 0 {
-		return res.WrittenPaths
-	}
-	return []string{res.WrittenPath}
 }
 
 type addDomainOptions struct {
