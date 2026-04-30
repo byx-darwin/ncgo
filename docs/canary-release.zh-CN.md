@@ -574,6 +574,8 @@ wire/insert_client_middleware # Kitex client 将插入 release traffic middlewar
 next_step/run                # 需要用户手动执行的后续命令
 ```
 
+其中 wire operation-level 条目会保留原有 `detail`，并在适用时额外返回 `anchorSource` / `anchor`：`anchorSource=marker` 表示命中 `// ncgo:wire:*` marker，`anchorSource=legacy` 表示回退到旧模板源码片段。
+
 ### 14.1 故障排查
 
 #### `--wire could not find ... anchor`

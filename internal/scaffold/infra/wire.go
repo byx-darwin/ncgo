@@ -70,6 +70,9 @@ const (
 	manifestKindHertz = "hertz"
 	manifestKindKitex = "kitex"
 
+	anchorSourceMarker = "marker"
+	anchorSourceLegacy = "legacy"
+
 	markerLoggingInit             = "// ncgo:wire:logging:init"
 	markerLoggingServerMiddleware = "// ncgo:wire:logging:server-middleware"
 	markerCanaryServerTraffic     = "// ncgo:wire:canary:server-traffic"
@@ -289,6 +292,13 @@ func wirePlan(path, action, detail string) PlanItem {
 	return PlanItem{Kind: "wire", Action: action, Path: path, Detail: detail}
 }
 
+func wirePlanWithAnchor(path, action, detail, anchorSource, anchor string) PlanItem {
+	item := wirePlan(path, action, detail)
+	item.AnchorSource = anchorSource
+	item.Anchor = anchor
+	return item
+}
+
 func addGoImportWithPlan(src, importPath, path string, plan *[]PlanItem) (string, error) {
 	out, changed, err := addGoImportTracked(src, importPath)
 	if err != nil {
@@ -306,18 +316,18 @@ func insertOnceStrictWithPlan(src, exists, anchor, addition, path string, plan *
 		return "", err
 	}
 	if changed {
-		*plan = append(*plan, wirePlan(path, action, detail))
+		*plan = append(*plan, wirePlanWithAnchor(path, action, detail, anchorSourceLegacy, anchor))
 	}
 	return out, nil
 }
 
 func insertOnceMarkerOrAnchorWithPlan(src, exists, marker, anchor, addition, path string, plan *[]PlanItem, action, detail string) (string, error) {
-	out, changed, err := insertOnceMarkerOrAnchorTracked(src, exists, marker, anchor, addition)
+	out, changed, anchorSource, anchorValue, err := insertOnceMarkerOrAnchorTracked(src, exists, marker, anchor, addition)
 	if err != nil {
 		return "", err
 	}
 	if changed {
-		*plan = append(*plan, wirePlan(path, action, detail))
+		*plan = append(*plan, wirePlanWithAnchor(path, action, detail, anchorSource, anchorValue))
 	}
 	return out, nil
 }
@@ -328,7 +338,7 @@ func replaceOnceStrictWithPlan(src, exists, old, new, path string, plan *[]PlanI
 		return "", err
 	}
 	if changed {
-		*plan = append(*plan, wirePlan(path, "replace_middleware", detail))
+		*plan = append(*plan, wirePlanWithAnchor(path, "replace_middleware", detail, anchorSourceLegacy, old))
 	}
 	return out, nil
 }
@@ -345,12 +355,12 @@ func insertAfterAnyOnceWithPlan(src, exists string, anchors []string, addition, 
 }
 
 func insertAfterMarkerOrAnyWithPlan(src, exists, marker string, anchors []string, addition, path string, plan *[]PlanItem, action, detail string) (string, error) {
-	out, changed, err := insertAfterMarkerOrAnyTracked(src, exists, marker, anchors, addition)
+	out, changed, anchorSource, anchorValue, err := insertAfterMarkerOrAnyTracked(src, exists, marker, anchors, addition)
 	if err != nil {
 		return "", err
 	}
 	if changed {
-		*plan = append(*plan, wirePlan(path, action, detail))
+		*plan = append(*plan, wirePlanWithAnchor(path, action, detail, anchorSource, anchorValue))
 	}
 	return out, nil
 }
@@ -388,14 +398,18 @@ func insertOnceStrictTracked(src, exists, anchor, addition string) (string, bool
 	return strings.Replace(src, anchor, anchor+addition, 1), true, nil
 }
 
-func insertOnceMarkerOrAnchorTracked(src, exists, marker, anchor, addition string) (string, bool, error) {
+func insertOnceMarkerOrAnchorTracked(src, exists, marker, anchor, addition string) (string, bool, string, string, error) {
 	if strings.Contains(src, exists) {
-		return src, false, nil
+		return src, false, "", "", nil
 	}
 	if markerLine, ok := lineContaining(src, marker); ok {
-		return strings.Replace(src, markerLine, markerLine+addition, 1), true, nil
+		return strings.Replace(src, markerLine, markerLine+addition, 1), true, anchorSourceMarker, marker, nil
 	}
-	return insertOnceStrictTracked(src, exists, anchor, addition)
+	out, changed, err := insertOnceStrictTracked(src, exists, anchor, addition)
+	if err != nil {
+		return "", false, "", "", err
+	}
+	return out, changed, anchorSourceLegacy, anchor, nil
 }
 
 func replaceOnceStrict(src, exists, old, new string) (string, error) {
@@ -430,14 +444,19 @@ func insertAfterAnyOnceTracked(src, exists string, anchors []string, addition st
 	return "", false, fmt.Errorf("infra: --wire could not find middleware anchor for %s", strings.TrimSpace(addition))
 }
 
-func insertAfterMarkerOrAnyTracked(src, exists, marker string, anchors []string, addition string) (string, bool, error) {
+func insertAfterMarkerOrAnyTracked(src, exists, marker string, anchors []string, addition string) (string, bool, string, string, error) {
 	if strings.Contains(src, exists) {
-		return src, false, nil
+		return src, false, "", "", nil
 	}
 	if markerLine, ok := lineContaining(src, marker); ok {
-		return strings.Replace(src, markerLine, markerLine+addition, 1), true, nil
+		return strings.Replace(src, markerLine, markerLine+addition, 1), true, anchorSourceMarker, marker, nil
 	}
-	return insertAfterAnyOnceTracked(src, exists, anchors, addition)
+	for _, anchor := range anchors {
+		if strings.Contains(src, anchor) {
+			return strings.Replace(src, anchor, anchor+addition, 1), true, anchorSourceLegacy, anchor, nil
+		}
+	}
+	return "", false, "", "", fmt.Errorf("infra: --wire could not find middleware anchor for %s", strings.TrimSpace(addition))
 }
 
 func lineContaining(src, marker string) (string, bool) {

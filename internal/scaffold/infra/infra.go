@@ -115,10 +115,12 @@ type Result struct {
 
 // PlanItem is a machine-readable summary of Add's intended or completed work.
 type PlanItem struct {
-	Kind   string `json:"kind"`
-	Action string `json:"action"`
-	Path   string `json:"path,omitempty"`
-	Detail string `json:"detail,omitempty"`
+	Kind         string `json:"kind"`
+	Action       string `json:"action"`
+	Path         string `json:"path,omitempty"`
+	Detail       string `json:"detail,omitempty"`
+	Anchor       string `json:"anchor,omitempty"`
+	AnchorSource string `json:"anchorSource,omitempty"`
 }
 
 // Add validates opts, copies the embedded add-on into the project, and

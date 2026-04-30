@@ -504,6 +504,9 @@ func TestAddLoggingWireDryRunForHertzDoesNotWrite(t *testing.T) {
 			t.Fatalf("Plan missing %s/%s for %s: %+v", want.action, want.detail, serverPath, res.Plan)
 		}
 	}
+	if !planContainsAnchor(res.Plan, "wire", "insert_logging_init", serverPath, "logging.Init", anchorSourceLegacy, "do.ProvideValue(injector, cfg)") {
+		t.Fatalf("Plan missing legacy anchor source for logging init: %+v", res.Plan)
+	}
 	for _, p := range wantWritten {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Fatalf("dry-run wrote %s: stat err = %v", p, err)
@@ -612,9 +615,12 @@ func Run() {
 `
 	writeTestFile(t, serverPath, body)
 
-	_, err := Add(Options{Root: root, Kind: KindCanaryAlias, Wire: true})
+	res, err := Add(Options{Root: root, Kind: KindCanaryAlias, Wire: true})
 	if err != nil {
 		t.Fatalf("Add hertz canary --wire with marker: %v", err)
+	}
+	if !planContainsAnchor(res.Plan, "wire", "insert_traffic_middleware", serverPath, "release.HertzTraffic", anchorSourceMarker, markerCanaryServerTraffic) {
+		t.Fatalf("Plan missing marker anchor source for canary traffic: %+v", res.Plan)
 	}
 	got := readFile(t, serverPath)
 	if !strings.Contains(got, "h.Use(release.HertzTraffic())") {
@@ -871,6 +877,15 @@ func readFile(t *testing.T, path string) string {
 func planContains(plan []PlanItem, kind, action, path, detail string) bool {
 	for _, item := range plan {
 		if item.Kind == kind && item.Action == action && item.Path == path && item.Detail == detail {
+			return true
+		}
+	}
+	return false
+}
+
+func planContainsAnchor(plan []PlanItem, kind, action, path, detail, anchorSource, anchorSnippet string) bool {
+	for _, item := range plan {
+		if item.Kind == kind && item.Action == action && item.Path == path && item.Detail == detail && item.AnchorSource == anchorSource && strings.Contains(item.Anchor, anchorSnippet) {
 			return true
 		}
 	}

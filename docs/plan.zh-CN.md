@@ -53,6 +53,7 @@
   - `wire/insert_traffic_middleware`；
   - `wire/insert_client_middleware`；
   - `next_step/run`。
+- 已为 wire operation-level plan 增加 `anchorSource` / `anchor` 字段，用于标明命中的是 `marker` 还是 `legacy` anchor。
 - 已支持 MCP `ncgo_add_infra` 返回结构化字段：
   - `dryRun`；
   - `updated`；
@@ -72,7 +73,7 @@
 
 当前已在 `wire/update` / `wire/already_wired` 之外补充 operation-level action：`wire/add_import`、`wire/insert_logging_init`、`wire/replace_middleware`、`wire/insert_traffic_middleware`、`wire/insert_client_middleware`。
 
-后续可继续把 `detail` 从简短描述升级为结构化字段，例如 `from` / `to` / `anchor` / `insertAfter`，让 `--plan` 更接近真实 patch preview。
+基础结构化字段已补：wire operation-level plan 保留原有 `detail`，并增加 `anchorSource` / `anchor` 标明命中 `marker` 还是 `legacy` anchor。后续可继续补 `from` / `to` / `insertAfter`，让 `--plan` 更接近真实 patch preview。
 
 ### P0（基础版已完成）：继续完善模板 wiring marker
 
@@ -95,13 +96,14 @@
 - mono golden testdata 已同步；
 - `wire.go` 已优先使用 marker，缺失时 fallback legacy anchor；
 - 已补 marker path 和 legacy fallback 测试；
+- wire plan 已通过 `anchorSource` / `anchor` 暴露 marker/legacy 来源；
 - smoke 与全量 `go test ./...` 已验证通过。
 
 后续可继续：
 
-1. plan detail 标明命中的 anchor 类型，例如 `marker` / `legacy`；
-2. 将 marker helper 抽象得更通用，便于后续 registry / selector / otel wiring 复用；
-3. 继续减少对具体 middleware 行的字符串替换依赖。
+1. 将 marker helper 抽象得更通用，便于后续 registry / selector / otel wiring 复用；
+2. 继续减少对具体 middleware 行的字符串替换依赖；
+3. 继续扩展 plan patch 信息，例如 `from` / `to` / `insertAfter`。
 
 ### P1：Kitex canary selector adapter MVP
 
