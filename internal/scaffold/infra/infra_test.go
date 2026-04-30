@@ -609,6 +609,51 @@ func TestAddLoggingWireForKitexServerAndClient(t *testing.T) {
 	}
 }
 
+func TestAddLoggingWireDryRunForKitexServerAndClientDoesNotWrite(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	writeKitexServer(t, root)
+	writeKitexClient(t, root)
+	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
+	clientPath := filepath.Join(root, "pkg", "client", "demo", "client.go")
+	originalServer := readFile(t, serverPath)
+	originalClient := readFile(t, clientPath)
+
+	res, err := Add(Options{Root: root, Kind: KindLoggingAlias, Wire: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("Add kitex logging --wire --dry-run: %v", err)
+	}
+	wantWritten := []string{
+		filepath.Join(root, "internal", "base", "logging", "logging.go"),
+		filepath.Join(root, "internal", "base", "logging", "kitex.go"),
+	}
+	if strings.Join(res.WrittenPaths, "\n") != strings.Join(wantWritten, "\n") {
+		t.Fatalf("WrittenPaths = %v, want %v", res.WrittenPaths, wantWritten)
+	}
+	if strings.Join(res.WiredPaths, "\n") != strings.Join([]string{serverPath, clientPath}, "\n") {
+		t.Fatalf("WiredPaths = %v, want [%s %s]", res.WiredPaths, serverPath, clientPath)
+	}
+	for _, p := range wantWritten {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("dry-run wrote %s: stat err = %v", p, err)
+		}
+	}
+	if got := readFile(t, serverPath); got != originalServer {
+		t.Fatalf("dry-run modified kitex server.go\n--- got ---\n%s", got)
+	}
+	if got := readFile(t, clientPath); got != originalClient {
+		t.Fatalf("dry-run modified kitex client.go\n--- got ---\n%s", got)
+	}
+	if !planContains(res.Plan, "file", "create", wantWritten[0], "") || !planContains(res.Plan, "manifest", "add", filepath.Join(".ncgo", "manifest.yaml"), "") {
+		t.Fatalf("Plan missing file/manifest items: %+v", res.Plan)
+	}
+	for _, p := range []string{serverPath, clientPath} {
+		if !planContains(res.Plan, "wire", "update", p, "") {
+			t.Fatalf("Plan missing wire update for %s: %+v", p, res.Plan)
+		}
+	}
+	assertManifestInfra(t, root)
+}
+
 func TestAddCanaryWireForKitexServerAndClient(t *testing.T) {
 	root := seedKitexProject(t, nil)
 	writeKitexServer(t, root)
@@ -626,6 +671,114 @@ func TestAddCanaryWireForKitexServerAndClient(t *testing.T) {
 			}
 		}
 	}
+}
+
+func TestAddCanaryWireDryRunForKitexServerAndClientDoesNotWrite(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	writeKitexServer(t, root)
+	writeKitexClient(t, root)
+	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
+	clientPath := filepath.Join(root, "pkg", "client", "demo", "client.go")
+	originalServer := readFile(t, serverPath)
+	originalClient := readFile(t, clientPath)
+
+	res, err := Add(Options{Root: root, Kind: KindCanaryAlias, Wire: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("Add kitex canary --wire --dry-run: %v", err)
+	}
+	wantWritten := []string{
+		filepath.Join(root, "internal", "base", "release", "canary.go"),
+		filepath.Join(root, "internal", "base", "release", "kitex.go"),
+	}
+	if strings.Join(res.WrittenPaths, "\n") != strings.Join(wantWritten, "\n") {
+		t.Fatalf("WrittenPaths = %v, want %v", res.WrittenPaths, wantWritten)
+	}
+	if strings.Join(res.WiredPaths, "\n") != strings.Join([]string{serverPath, clientPath}, "\n") {
+		t.Fatalf("WiredPaths = %v, want [%s %s]", res.WiredPaths, serverPath, clientPath)
+	}
+	for _, p := range wantWritten {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("dry-run wrote %s: stat err = %v", p, err)
+		}
+	}
+	if got := readFile(t, serverPath); got != originalServer {
+		t.Fatalf("dry-run modified kitex server.go\n--- got ---\n%s", got)
+	}
+	if got := readFile(t, clientPath); got != originalClient {
+		t.Fatalf("dry-run modified kitex client.go\n--- got ---\n%s", got)
+	}
+	for _, p := range []string{serverPath, clientPath} {
+		if !planContains(res.Plan, "wire", "update", p, "") {
+			t.Fatalf("Plan missing wire update for %s: %+v", p, res.Plan)
+		}
+	}
+	assertManifestInfra(t, root)
+}
+
+func TestAddKitexWireDryRunWithoutClientsReportsServerOnly(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	writeKitexServer(t, root)
+	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
+
+	res, err := Add(Options{Root: root, Kind: KindLoggingAlias, Wire: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("Add kitex logging --wire --dry-run without clients: %v", err)
+	}
+	if strings.Join(res.WiredPaths, "\n") != serverPath {
+		t.Fatalf("WiredPaths = %v, want [%s]", res.WiredPaths, serverPath)
+	}
+	if !planContains(res.Plan, "wire", "update", serverPath, "") {
+		t.Fatalf("Plan missing server wire update: %+v", res.Plan)
+	}
+	assertManifestInfra(t, root)
+}
+
+func TestAddKitexWireClientPreflightFailureDoesNotWrite(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	writeKitexServer(t, root)
+	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
+	clientPath := filepath.Join(root, "pkg", "client", "demo", "client.go")
+	badClient := `package democlient
+
+import (
+	"context"
+
+	kitexclient "github.com/cloudwego/kitex/client"
+)
+
+type Config struct {
+	EnableMetaInfo bool
+}
+
+func New(ctx context.Context, cfg Config, opts ...kitexclient.Option) {
+	_ = ctx
+	_ = cfg
+	options := append([]kitexclient.Option{}, opts...)
+	_ = options
+}
+`
+	writeTestFile(t, clientPath, badClient)
+	originalServer := readFile(t, serverPath)
+
+	_, err := Add(Options{Root: root, Kind: KindLoggingAlias, Wire: true})
+	if err == nil || !strings.Contains(err.Error(), "could not find insertion anchor") {
+		t.Fatalf("err = %v, want missing client insertion anchor", err)
+	}
+	for _, p := range []string{
+		filepath.Join(root, "internal", "base", "logging", "logging.go"),
+		filepath.Join(root, "internal", "base", "logging", "kitex.go"),
+	} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Fatalf("preflight failure wrote %s: stat err = %v", p, err)
+		}
+	}
+	if got := readFile(t, serverPath); got != originalServer {
+		t.Fatalf("preflight failure modified server.go\n--- got ---\n%s", got)
+	}
+	if got := readFile(t, clientPath); got != badClient {
+		t.Fatalf("preflight failure modified client.go\n--- got ---\n%s", got)
+	}
+	assertManifestInfra(t, root)
 }
 
 func TestAddWireRejectsUnsupportedKind(t *testing.T) {
@@ -664,6 +817,17 @@ func planContains(plan []PlanItem, kind, action, path, detail string) bool {
 		}
 	}
 	return false
+}
+
+func assertManifestInfra(t *testing.T, root string, want ...string) {
+	t.Helper()
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if strings.Join(m.Infra, "\n") != strings.Join(want, "\n") {
+		t.Fatalf("manifest.Infra = %v, want %v", m.Infra, want)
+	}
 }
 
 func writeHertzServer(t *testing.T, root string) {
