@@ -125,7 +125,7 @@ common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_otel`（
 
 默认 Hertz / Kitex 模板只预留 logging wiring 注释，不会在未启用 optional 时 import `internal/base/logging`；也可以使用 opt-in 的 `--wire` 自动替换默认 access/recovery 日志。加 `--dry-run` 可预览 optional 文件、manifest 更新和 wiring 目标，不会修改文件。接入示例见 `docs/observability-logging.zh-CN.md`。
 
-`release_canary` 会生成 `internal/base/release/canary.go`，并按服务类型额外生成 `hertz.go` 或 `kitex.go`。MVP 是 SDK-neutral helper，支持 release metadata、traffic context、Hertz Header adapter、Kitex metadata adapter、统一 canary rule、Nacos/Polaris discovery instance 模型、`Discoverer` / `RuleProvider` / `Selector` 抽象、stable/canary pool 拆分、权重选择和 `fallback=stable|fail_fast`；后续再接 Nacos/Polaris SDK adapter。
+`release_canary` 会生成 `internal/base/release/canary.go`，并按服务类型额外生成 `hertz.go` 或 `kitex.go`。MVP 是 SDK-neutral helper，支持 release metadata、traffic context、Hertz Header adapter、Kitex metadata adapter、统一 canary rule、Nacos/Polaris discovery instance 模型、`Discoverer` / `RuleProvider` / `Selector` 抽象、stable/canary pool 拆分、权重选择、`fallback=stable|fail_fast`、Kitex load balancer 以及 Nacos/Polaris discoverer / rule-provider skeleton；后续再接真实 SDK adapter。
 
 默认 Hertz / Kitex 模板只预留 canary wiring 注释，不会在未启用 optional 时 import `internal/base/release`；也可以使用 opt-in 的 `--wire` 自动挂载 traffic middleware。加 `--dry-run` 可预览会被接线修改的源码。接入示例见 `docs/canary-release.zh-CN.md`。
 

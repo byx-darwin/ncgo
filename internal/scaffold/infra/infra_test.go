@@ -370,7 +370,7 @@ func TestAddReleaseCanaryForHertz(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read canary file: %v", err)
 	}
-	for _, want := range []string{"package release", "type ReleaseInfo struct", "type RuleSet struct", "type Selector struct", "func Select(", "func SplitInstances", "ProviderNacos", "ProviderPolaris"} {
+	for _, want := range []string{"package release", "type ReleaseInfo struct", "type RuleSet struct", "type Selector struct", "func Select(", "func SplitInstances", "ProviderNacos", "ProviderPolaris", "type NacosDiscoverer struct", "type PolarisDiscoverer struct", "type NacosRuleProvider struct", "type PolarisRuleProvider struct", "func InstancesFromNacos", "func InstancesFromPolaris"} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("release canary template missing %q", want)
 		}

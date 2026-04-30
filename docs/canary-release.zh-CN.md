@@ -234,6 +234,8 @@ discover user-rpc instances from Nacos
 - 监听实例变更并刷新本地 instance cache；
 - 配置中心不可用时，仍可基于服务发现 metadata 默认路由到 stable。
 
+生成代码已提供 SDK-neutral seam：真实 Nacos SDK adapter 可把 SDK instance 映射为 `release.NacosInstance`，再由 `release.NacosDiscoverer` / `release.InstancesFromNacos` 转成统一 `release.Instance`。
+
 ### 8.3 Nacos 配置中心
 
 建议按环境、服务、灰度主题拆分配置：
@@ -273,6 +275,8 @@ rules:
         stable: 95
         canary: 5
 ```
+
+生成代码已提供 `release.NacosRuleProvider` skeleton。真实 SDK adapter 只需实现 `LoadRules(ctx, release.NacosRuleConfig) (release.RuleSet, error)`；未显式配置时默认 group 为 `NCGO_CANARY`，dataId 为 `<service>.canary.yaml`。
 
 ### 8.4 Nacos 动态刷新
 
@@ -331,6 +335,8 @@ discover user-rpc instances from Polaris
 - 订阅实例变更并刷新本地 instance cache；
 - 与 Polaris 路由能力协同，避免本地 selector 和控制面规则冲突。
 
+生成代码已提供 SDK-neutral seam：真实 Polaris SDK adapter 可把 SDK instance 映射为 `release.PolarisInstance`，再由 `release.PolarisDiscoverer` / `release.InstancesFromPolaris` 转成统一 `release.Instance`。
+
 ### 9.3 Polaris 配置中心
 
 建议配置组织方式：
@@ -370,6 +376,8 @@ rules:
         stable: 90
         canary: 10
 ```
+
+生成代码已提供 `release.PolarisRuleProvider` skeleton。真实 SDK adapter 只需实现 `LoadRules(ctx, release.PolarisRuleConfig) (release.RuleSet, error)`；未显式配置时默认 group 为 `ncgo-canary`，fileName 为 `<service>.canary.yaml`。
 
 ### 9.4 Polaris 路由能力
 
@@ -647,12 +655,14 @@ internal/base/release/kitex.go  # Kitex 服务额外生成
 - 已支持：按权重与 sticky key 选择实例。
 - 已支持：`Discoverer` / `RuleProvider` / `Selector` 抽象，便于后续接入 Nacos / Polaris SDK。
 - 已支持：SDK-neutral Kitex client load balancer adapter，可复用 `Selector` 对 Kitex discovery instances 做 stable / canary 选路。
-- 待增强：Nacos / Polaris SDK adapter、watch、本地缓存。
+- 已支持：Nacos / Polaris SDK-neutral adapter skeleton（instance DTO、discoverer、rule provider、mapper）。
+- 待增强：真实 Nacos / Polaris SDK adapter、watch、本地缓存。
 
 ### 14.5 config adapter
 
 职责：
 
+- 已支持：Nacos / Polaris rule provider skeleton。
 - 待增强：Nacos config watch。
 - 待增强：Polaris config watch。
 - 待增强：本地缓存和配置校验。
@@ -716,6 +726,7 @@ options = append(options, kitexclient.WithLoadBalancer(
 - 待增强：Nacos config watch。
 - 待增强：Polaris config watch。
 - 已完成：本地 rule engine。
+- 已完成：Nacos / Polaris rule provider skeleton。
 - 待增强：动态调整 canary 规则。
 
 ### Phase 4：Kitex client selector

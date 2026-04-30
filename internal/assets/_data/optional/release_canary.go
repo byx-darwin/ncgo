@@ -301,6 +301,200 @@ type PolarisDiscoveryConfig struct {
 	Service   string `json:"service" yaml:"service"`
 }
 
+const (
+	DefaultNacosCanaryGroup   = "NCGO_CANARY"
+	DefaultPolarisCanaryGroup = "ncgo-canary"
+)
+
+type NacosRuleConfig struct {
+	NamespaceID string `json:"namespace_id" yaml:"namespace_id"`
+	GroupName   string `json:"group_name" yaml:"group_name"`
+	DataID      string `json:"data_id" yaml:"data_id"`
+}
+
+type PolarisRuleConfig struct {
+	Namespace string `json:"namespace" yaml:"namespace"`
+	Group     string `json:"group" yaml:"group"`
+	FileName  string `json:"file_name" yaml:"file_name"`
+}
+
+type NacosInstance struct {
+	ID          string            `json:"id" yaml:"id"`
+	ServiceName string            `json:"service_name" yaml:"service_name"`
+	GroupName   string            `json:"group_name" yaml:"group_name"`
+	ClusterName string            `json:"cluster_name" yaml:"cluster_name"`
+	IP          string            `json:"ip" yaml:"ip"`
+	Port        int               `json:"port" yaml:"port"`
+	Weight      int               `json:"weight" yaml:"weight"`
+	Healthy     bool              `json:"healthy" yaml:"healthy"`
+	Enabled     bool              `json:"enabled" yaml:"enabled"`
+	Metadata    map[string]string `json:"metadata" yaml:"metadata"`
+}
+
+type PolarisInstance struct {
+	ID        string            `json:"id" yaml:"id"`
+	Namespace string            `json:"namespace" yaml:"namespace"`
+	Service   string            `json:"service" yaml:"service"`
+	Host      string            `json:"host" yaml:"host"`
+	Port      int               `json:"port" yaml:"port"`
+	Weight    int               `json:"weight" yaml:"weight"`
+	Healthy   bool              `json:"healthy" yaml:"healthy"`
+	Isolate   bool              `json:"isolate" yaml:"isolate"`
+	Metadata  map[string]string `json:"metadata" yaml:"metadata"`
+}
+
+type NacosInstanceLister func(ctx context.Context, cfg NacosDiscoveryConfig) ([]NacosInstance, error)
+type PolarisInstanceLister func(ctx context.Context, cfg PolarisDiscoveryConfig) ([]PolarisInstance, error)
+type NacosRuleLoader func(ctx context.Context, cfg NacosRuleConfig) (RuleSet, error)
+type PolarisRuleLoader func(ctx context.Context, cfg PolarisRuleConfig) (RuleSet, error)
+
+type NacosDiscoverer struct {
+	Config        NacosDiscoveryConfig
+	ListInstances NacosInstanceLister
+}
+
+func (d NacosDiscoverer) Discover(ctx context.Context, serviceName string) ([]Instance, error) {
+	if d.ListInstances == nil {
+		return nil, errors.New("release nacos discoverer: ListInstances is nil")
+	}
+	cfg := d.Config
+	if cfg.ServiceName == "" {
+		cfg.ServiceName = serviceName
+	}
+	instances, err := d.ListInstances(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return InstancesFromNacos(instances, cfg), nil
+}
+
+type PolarisDiscoverer struct {
+	Config        PolarisDiscoveryConfig
+	ListInstances PolarisInstanceLister
+}
+
+func (d PolarisDiscoverer) Discover(ctx context.Context, serviceName string) ([]Instance, error) {
+	if d.ListInstances == nil {
+		return nil, errors.New("release polaris discoverer: ListInstances is nil")
+	}
+	cfg := d.Config
+	if cfg.Service == "" {
+		cfg.Service = serviceName
+	}
+	instances, err := d.ListInstances(ctx, cfg)
+	if err != nil {
+		return nil, err
+	}
+	return InstancesFromPolaris(instances, cfg), nil
+}
+
+type NacosRuleProvider struct {
+	Config    NacosRuleConfig
+	LoadRules NacosRuleLoader
+}
+
+func (p NacosRuleProvider) Rules(ctx context.Context, serviceName string) (RuleSet, error) {
+	if p.LoadRules == nil {
+		return RuleSet{}, errors.New("release nacos rule provider: LoadRules is nil")
+	}
+	cfg := p.Config
+	if cfg.GroupName == "" {
+		cfg.GroupName = DefaultNacosCanaryGroup
+	}
+	if cfg.DataID == "" {
+		cfg.DataID = CanaryRuleFileName(serviceName)
+	}
+	rules, err := p.LoadRules(ctx, cfg)
+	if err != nil {
+		return RuleSet{}, err
+	}
+	if rules.Service == "" {
+		rules.Service = serviceName
+	}
+	return rules, nil
+}
+
+type PolarisRuleProvider struct {
+	Config    PolarisRuleConfig
+	LoadRules PolarisRuleLoader
+}
+
+func (p PolarisRuleProvider) Rules(ctx context.Context, serviceName string) (RuleSet, error) {
+	if p.LoadRules == nil {
+		return RuleSet{}, errors.New("release polaris rule provider: LoadRules is nil")
+	}
+	cfg := p.Config
+	if cfg.Group == "" {
+		cfg.Group = DefaultPolarisCanaryGroup
+	}
+	if cfg.FileName == "" {
+		cfg.FileName = CanaryRuleFileName(serviceName)
+	}
+	rules, err := p.LoadRules(ctx, cfg)
+	if err != nil {
+		return RuleSet{}, err
+	}
+	if rules.Service == "" {
+		rules.Service = serviceName
+	}
+	return rules, nil
+}
+
+func InstancesFromNacos(instances []NacosInstance, cfg NacosDiscoveryConfig) []Instance {
+	out := make([]Instance, 0, len(instances))
+	for _, ins := range instances {
+		metadata := copyMetadata(ins.Metadata)
+		serviceName := firstNonEmpty(ins.ServiceName, cfg.ServiceName, metadata[MetadataServiceName])
+		address := hostPort(ins.IP, ins.Port)
+		putDefault(metadata, MetadataServiceName, serviceName)
+		weight := firstPositive(ins.Weight, MetadataWeight(metadata))
+		out = append(out, Instance{
+			ID:          firstNonEmpty(ins.ID, address),
+			Provider:    ProviderNacos,
+			ServiceName: serviceName,
+			Namespace:   cfg.NamespaceID,
+			Group:       firstNonEmpty(ins.GroupName, cfg.GroupName),
+			Cluster:     firstNonEmpty(ins.ClusterName, cfg.ClusterName),
+			Address:     address,
+			Weight:      weight,
+			Healthy:     ins.Healthy,
+			Enabled:     ins.Enabled,
+			Metadata:    metadata,
+		})
+	}
+	return out
+}
+
+func InstancesFromPolaris(instances []PolarisInstance, cfg PolarisDiscoveryConfig) []Instance {
+	out := make([]Instance, 0, len(instances))
+	for _, ins := range instances {
+		metadata := copyMetadata(ins.Metadata)
+		serviceName := firstNonEmpty(ins.Service, cfg.Service, metadata[MetadataServiceName])
+		address := hostPort(ins.Host, ins.Port)
+		putDefault(metadata, MetadataServiceName, serviceName)
+		weight := firstPositive(ins.Weight, MetadataWeight(metadata))
+		out = append(out, Instance{
+			ID:          firstNonEmpty(ins.ID, address),
+			Provider:    ProviderPolaris,
+			ServiceName: serviceName,
+			Namespace:   firstNonEmpty(ins.Namespace, cfg.Namespace),
+			Address:     address,
+			Weight:      weight,
+			Healthy:     ins.Healthy,
+			Enabled:     !ins.Isolate,
+			Metadata:    metadata,
+		})
+	}
+	return out
+}
+
+func CanaryRuleFileName(serviceName string) string {
+	if strings.TrimSpace(serviceName) == "" {
+		return "canary.yaml"
+	}
+	return strings.TrimSpace(serviceName) + ".canary.yaml"
+}
+
 func NormalizeFallback(fallback string) string {
 	switch strings.ToLower(strings.TrimSpace(fallback)) {
 	case FallbackFailFast:
@@ -401,6 +595,39 @@ func put(m map[string]string, key, value string) {
 	if value != "" {
 		m[key] = value
 	}
+}
+
+func putDefault(m map[string]string, key, value string) {
+	if m[key] == "" {
+		put(m, key, value)
+	}
+}
+
+func copyMetadata(metadata map[string]string) map[string]string {
+	out := make(map[string]string, len(metadata)+1)
+	for k, v := range metadata {
+		out[k] = v
+	}
+	return out
+}
+
+func hostPort(host string, port int) string {
+	if port <= 0 || host == "" {
+		return host
+	}
+	if strings.Contains(host, ":") && !strings.HasPrefix(host, "[") {
+		return "[" + host + "]:" + strconv.Itoa(port)
+	}
+	return host + ":" + strconv.Itoa(port)
+}
+
+func firstPositive(values ...int) int {
+	for _, v := range values {
+		if v > 0 {
+			return v
+		}
+	}
+	return 0
 }
 
 func firstNonEmpty(values ...string) string {

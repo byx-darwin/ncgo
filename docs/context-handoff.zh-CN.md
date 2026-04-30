@@ -164,6 +164,7 @@ Usecase 文件中使用：
 - 支持 Hertz Header adapter 读取 `X-Traffic-Lane` / `X-User-ID` / `X-Tenant-ID`，以及 Kitex metadata adapter 读取/透传 `traffic.lane` / `traffic.user_id` / `traffic.tenant_id`。
 - 支持 Nacos / Polaris provider 标识与 discovery config，统一 `Instance` 模型，按 `release.track` 拆分 stable / canary / unknown pool。
 - 支持 `Discoverer` / `RuleProvider` / `Selector` 抽象，后续 Nacos / Polaris SDK adapter 可直接接入。
+- 支持 Nacos / Polaris SDK-neutral adapter skeleton：`NacosDiscoverer` / `PolarisDiscoverer`、`NacosRuleProvider` / `PolarisRuleProvider` 和 instance mapper。
 - 支持实例权重选择、sticky key、一致回退语义：`fallback=stable` / `fallback=fail_fast`。
 - 已补 infra unit tests、`scripts/smoke.sh` canary 冒烟，并确认模板在临时 Go module 中可编译。
 - 已在默认 Hertz / Kitex 模板中加入安全 wiring 注释，标出 `release.HertzTraffic()`、`release.KitexTraffic()` 与 `release.NewKitexCanaryLoadBalancer(...)` 的插入位置；默认项目不会 import optional 的 `internal/base/release` 包。

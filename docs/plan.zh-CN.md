@@ -111,15 +111,16 @@
 
 注意：当前仍不引入 Nacos / Polaris SDK；真实服务发现需要后续 adapter 通过 Kitex resolver 提供带 `release.track` metadata 的实例。
 
-### P1：Nacos / Polaris adapter skeleton
+### P1（skeleton 已完成）：Nacos / Polaris adapter skeleton
 
-补 SDK adapter seam 或 skeleton：
+已补 SDK-neutral adapter seam / skeleton：
 
-- Nacos config / adapter 接口；
-- Polaris config / adapter 接口；
-- 文档说明如何接真实 SDK。
+- `NacosInstance` / `PolarisInstance` DTO；
+- `NacosDiscoverer` / `PolarisDiscoverer`；
+- `NacosRuleProvider` / `PolarisRuleProvider`；
+- `InstancesFromNacos` / `InstancesFromPolaris` mapper。
 
-建议先做 skeleton 和文档，不急于引入真实 SDK 依赖。
+当前仍不引入真实 SDK 依赖；后续 adapter 只需提供 `ListInstances` / `LoadRules` 回调，把 Nacos / Polaris SDK 结果映射进统一 canary 模型。
 
 ### P1（已开始）：故障排查文档
 

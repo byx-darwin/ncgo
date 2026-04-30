@@ -178,7 +178,8 @@ adapter (`hertz.go` or `kitex.go`). The MVP is an SDK-neutral helper for release
 metadata, traffic context, Hertz header extraction, Kitex metadata propagation,
 unified canary rules, Nacos/Polaris discovery instance models,
 `Discoverer`/`RuleProvider`/`Selector` abstractions, stable/canary pool
-splitting, weighted selection, and `fallback=stable|fail_fast`. Concrete
+splitting, weighted selection, `fallback=stable|fail_fast`, SDK-neutral Kitex
+load balancing, and Nacos/Polaris discoverer/rule-provider skeletons. Concrete
 Nacos/Polaris SDK adapters can be layered on later.
 
 The default Hertz/Kitex templates only include commented canary wiring anchors,
