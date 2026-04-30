@@ -490,6 +490,20 @@ func TestAddLoggingWireDryRunForHertzDoesNotWrite(t *testing.T) {
 	if !planContains(res.Plan, "wire", "update", serverPath, "") {
 		t.Fatalf("Plan missing wire update for %s: %+v", serverPath, res.Plan)
 	}
+	for _, want := range []struct {
+		action string
+		detail string
+	}{
+		{action: "add_import", detail: "github.com/x/demo/internal/base/logging"},
+		{action: "insert_logging_init", detail: "logging.Init"},
+		{action: "replace_middleware", detail: "hertz recovery"},
+		{action: "replace_middleware", detail: "hertz request id"},
+		{action: "replace_middleware", detail: "hertz access log"},
+	} {
+		if !planContains(res.Plan, "wire", want.action, serverPath, want.detail) {
+			t.Fatalf("Plan missing %s/%s for %s: %+v", want.action, want.detail, serverPath, res.Plan)
+		}
+	}
 	for _, p := range wantWritten {
 		if _, err := os.Stat(p); !os.IsNotExist(err) {
 			t.Fatalf("dry-run wrote %s: stat err = %v", p, err)
@@ -651,6 +665,9 @@ func TestAddLoggingWireDryRunForKitexServerAndClientDoesNotWrite(t *testing.T) {
 			t.Fatalf("Plan missing wire update for %s: %+v", p, res.Plan)
 		}
 	}
+	if !planContains(res.Plan, "wire", "insert_client_middleware", clientPath, "logging.KitexAccessLog") {
+		t.Fatalf("Plan missing kitex logging client middleware insert: %+v", res.Plan)
+	}
 	assertManifestInfra(t, root)
 }
 
@@ -711,6 +728,12 @@ func TestAddCanaryWireDryRunForKitexServerAndClientDoesNotWrite(t *testing.T) {
 		if !planContains(res.Plan, "wire", "update", p, "") {
 			t.Fatalf("Plan missing wire update for %s: %+v", p, res.Plan)
 		}
+	}
+	if !planContains(res.Plan, "wire", "insert_traffic_middleware", serverPath, "release.KitexTraffic") {
+		t.Fatalf("Plan missing kitex canary server traffic middleware insert: %+v", res.Plan)
+	}
+	if !planContains(res.Plan, "wire", "insert_client_middleware", clientPath, "release.KitexTraffic") {
+		t.Fatalf("Plan missing kitex canary client middleware insert: %+v", res.Plan)
 	}
 	assertManifestInfra(t, root)
 }

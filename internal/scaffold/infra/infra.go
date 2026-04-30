@@ -165,8 +165,9 @@ func Add(opts Options) (*Result, error) {
 		filePlans = append(filePlans, PlanItem{Kind: "file", Action: action, Path: dst})
 	}
 	wiredPaths := []string(nil)
+	wirePlans := []PlanItem(nil)
 	if opts.Wire {
-		wiredPaths, err = PreviewWire(root, m.Module, m.Service.Kind, kind)
+		wiredPaths, wirePlans, err = PreviewWirePlan(root, m.Module, m.Service.Kind, kind)
 		if err != nil {
 			return nil, err
 		}
@@ -199,7 +200,7 @@ func Add(opts Options) (*Result, error) {
 		WrittenPaths: paths,
 		WiredPaths:   wiredPaths,
 		NextSteps:    next,
-		Plan:         buildPlan(filePlans, updated, opts.Wire, wiredPaths, next),
+		Plan:         buildPlan(filePlans, updated, opts.Wire, wiredPaths, wirePlans, next),
 		Updated:      updated,
 		DryRun:       opts.DryRun,
 	}, nil
@@ -344,7 +345,7 @@ func manifestHasInfra(m *manifest.Manifest, kind string) bool {
 	return false
 }
 
-func buildPlan(filePlans []PlanItem, manifestUpdated bool, wire bool, wiredPaths []string, next []string) []PlanItem {
+func buildPlan(filePlans []PlanItem, manifestUpdated bool, wire bool, wiredPaths []string, wirePlans []PlanItem, next []string) []PlanItem {
 	plan := append([]PlanItem(nil), filePlans...)
 	manifestAction := "already_present"
 	if manifestUpdated {
@@ -358,6 +359,7 @@ func buildPlan(filePlans []PlanItem, manifestUpdated bool, wire bool, wiredPaths
 		for _, path := range wiredPaths {
 			plan = append(plan, PlanItem{Kind: "wire", Action: "update", Path: path})
 		}
+		plan = append(plan, wirePlans...)
 	}
 	for _, step := range next {
 		plan = append(plan, PlanItem{Kind: "next_step", Action: "run", Detail: step})

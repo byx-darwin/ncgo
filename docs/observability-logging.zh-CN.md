@@ -535,6 +535,10 @@ manifest/add                 # manifest 将记录 observability_logging
 manifest/already_present     # manifest 已记录该 optional
 wire/update                  # 将修改默认 server/client wiring
 wire/already_wired           # 已接线，无需再次修改源码
+wire/add_import              # 将补充 internal/base/logging import
+wire/insert_logging_init     # 将插入 logging.Init 初始化
+wire/replace_middleware      # 将默认 access/recovery/request id 替换为 logging adapter
+wire/insert_client_middleware # Kitex client 将插入 logging middleware
 next_step/run                # 需要用户手动执行的依赖安装命令
 ```
 

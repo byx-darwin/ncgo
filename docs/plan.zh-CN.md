@@ -47,6 +47,11 @@
   - `manifest/already_present`；
   - `wire/update`；
   - `wire/already_wired`；
+  - `wire/add_import`；
+  - `wire/insert_logging_init`；
+  - `wire/replace_middleware`；
+  - `wire/insert_traffic_middleware`；
+  - `wire/insert_client_middleware`；
   - `next_step/run`。
 - 已支持 MCP `ncgo_add_infra` 返回结构化字段：
   - `dryRun`；
@@ -58,17 +63,11 @@
 
 ## 2. 推荐优先级
 
-### P0：更细粒度 wiring plan actions
+### P0：继续细化 wiring plan detail
 
-当前 wiring plan 只有 `wire/update` / `wire/already_wired`。建议细化为：
+当前已在 `wire/update` / `wire/already_wired` 之外补充 operation-level action：`wire/add_import`、`wire/insert_logging_init`、`wire/replace_middleware`、`wire/insert_traffic_middleware`、`wire/insert_client_middleware`。
 
-- `wire/add_import`；
-- `wire/insert_logging_init`；
-- `wire/replace_middleware`；
-- `wire/insert_traffic_middleware`；
-- `wire/insert_client_middleware`。
-
-收益：`--plan` 更像真实 patch preview，agent / UI 可以展示具体会改什么。
+后续可继续把 `detail` 从简短描述升级为结构化字段，例如 `from` / `to` / `anchor` / `insertAfter`，让 `--plan` 更接近真实 patch preview。
 
 ### P0：标准化模板 wiring marker
 
@@ -142,8 +141,6 @@
 
 建议优先做：
 
-1. 更细粒度 wiring plan actions；
-2. 模板 `// ncgo:wire:*` marker 标准化；
+1. 模板 `// ncgo:wire:*` marker 标准化；
+2. 继续细化 wiring plan detail 为结构化 patch 信息；
 3. logging / canary troubleshooting 文档。
-
-其中第 1 项改动相对集中，最适合接着当前 `Plan` 能力继续推进。

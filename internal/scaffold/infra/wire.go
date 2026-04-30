@@ -12,16 +12,39 @@ import (
 // files. It is intentionally opt-in and conservative: only known ncgo template
 // snippets are patched, and unsupported add-ons return an error.
 func Wire(root, module, serviceKind, kind string) ([]string, error) {
-	return wire(root, module, serviceKind, kind, false)
+	res, err := wire(root, module, serviceKind, kind, false)
+	if err != nil {
+		return nil, err
+	}
+	return res.paths, nil
 }
 
 // PreviewWire reports which generated startup files would change for --wire,
 // without writing the formatted result back to disk.
 func PreviewWire(root, module, serviceKind, kind string) ([]string, error) {
-	return wire(root, module, serviceKind, kind, true)
+	res, err := wire(root, module, serviceKind, kind, true)
+	if err != nil {
+		return nil, err
+	}
+	return res.paths, nil
 }
 
-func wire(root, module, serviceKind, kind string, dryRun bool) ([]string, error) {
+// PreviewWirePlan reports path-level and operation-level wiring changes without
+// writing the formatted result back to disk.
+func PreviewWirePlan(root, module, serviceKind, kind string) ([]string, []PlanItem, error) {
+	res, err := wire(root, module, serviceKind, kind, true)
+	if err != nil {
+		return nil, nil, err
+	}
+	return res.paths, res.plan, nil
+}
+
+type wireResult struct {
+	paths []string
+	plan  []PlanItem
+}
+
+func wire(root, module, serviceKind, kind string, dryRun bool) (*wireResult, error) {
 	if !wireSupportedKind(kind) {
 		return nil, unsupportedWireError()
 	}
@@ -48,90 +71,97 @@ const (
 	manifestKindKitex = "kitex"
 )
 
-func wireHertz(root, module, kind string, dryRun bool) ([]string, error) {
+func wireHertz(root, module, kind string, dryRun bool) (*wireResult, error) {
 	path := filepath.Join(root, "internal", "base", "server", "server.go")
 	body, err := readSource(path)
 	if err != nil {
 		return nil, err
 	}
 	s := string(body)
+	plan := []PlanItem(nil)
 	switch kind {
 	case KindObservabilityLog:
-		s, err = addGoImport(s, module+"/internal/base/logging")
+		s, err = addGoImportWithPlan(s, module+"/internal/base/logging", path, &plan)
 		if err != nil {
 			return nil, err
 		}
-		s, err = insertOnceStrict(s, "logging.Init(", "\tdo.ProvideValue(injector, cfg)\n", hertzLoggingInit())
+		s, err = insertOnceStrictWithPlan(s, "logging.Init(", "\tdo.ProvideValue(injector, cfg)\n", hertzLoggingInit(), path, &plan, "insert_logging_init", "logging.Init")
 		if err != nil {
 			return nil, err
 		}
-		s, err = replaceOnceStrict(s, "h.Use(logging.HertzRecovery())", "h.Use(middleware.Recovery())", "h.Use(logging.HertzRecovery())")
+		s, err = replaceOnceStrictWithPlan(s, "h.Use(logging.HertzRecovery())", "h.Use(middleware.Recovery())", "h.Use(logging.HertzRecovery())", path, &plan, "hertz recovery")
 		if err != nil {
 			return nil, err
 		}
-		s, err = replaceOnceStrict(s, "h.Use(logging.HertzRequestID())", "h.Use(middleware.RequestID())", "h.Use(logging.HertzRequestID())")
+		s, err = replaceOnceStrictWithPlan(s, "h.Use(logging.HertzRequestID())", "h.Use(middleware.RequestID())", "h.Use(logging.HertzRequestID())", path, &plan, "hertz request id")
 		if err != nil {
 			return nil, err
 		}
-		s, err = replaceOnceStrict(s, "h.Use(logging.HertzAccessLog())", "h.Use(middleware.AccessLog())", "h.Use(logging.HertzAccessLog())")
+		s, err = replaceOnceStrictWithPlan(s, "h.Use(logging.HertzAccessLog())", "h.Use(middleware.AccessLog())", "h.Use(logging.HertzAccessLog())", path, &plan, "hertz access log")
 		if err != nil {
 			return nil, err
 		}
 	case KindReleaseCanary:
-		s, err = addGoImport(s, module+"/internal/base/release")
+		s, err = addGoImportWithPlan(s, module+"/internal/base/release", path, &plan)
 		if err != nil {
 			return nil, err
 		}
-		s, err = insertAfterAnyOnce(s, "release.HertzTraffic()", []string{
+		s, err = insertAfterAnyOnceWithPlan(s, "release.HertzTraffic()", []string{
 			"\th.Use(logging.HertzRequestID())\n",
 			"\th.Use(middleware.RequestID())\n",
-		}, "\th.Use(release.HertzTraffic())\n")
+		}, "\th.Use(release.HertzTraffic())\n", path, &plan, "insert_traffic_middleware", "release.HertzTraffic")
 		if err != nil {
 			return nil, err
 		}
 	}
-	return writeFormatted(path, []byte(s), dryRun)
+	written, err := writeFormatted(path, []byte(s), dryRun)
+	if err != nil {
+		return nil, err
+	}
+	return wireResultFor(written, plan), nil
 }
 
-func wireKitex(root, module, kind string, dryRun bool) ([]string, error) {
+func wireKitex(root, module, kind string, dryRun bool) (*wireResult, error) {
 	paths := []string{}
+	plan := []PlanItem(nil)
 	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
 	body, err := readSource(serverPath)
 	if err != nil {
 		return nil, err
 	}
 	s := string(body)
+	serverPlan := []PlanItem(nil)
 	switch kind {
 	case KindObservabilityLog:
-		s, err = addGoImport(s, module+"/internal/base/logging")
+		s, err = addGoImportWithPlan(s, module+"/internal/base/logging", serverPath, &serverPlan)
 		if err != nil {
 			return nil, err
 		}
-		s, err = insertOnceStrict(s, "logging.Init(", "\tif cfg == nil {\n\t\tcfg = conf.Default()\n\t}\n", kitexLoggingInit())
+		s, err = insertOnceStrictWithPlan(s, "logging.Init(", "\tif cfg == nil {\n\t\tcfg = conf.Default()\n\t}\n", kitexLoggingInit(), serverPath, &serverPlan, "insert_logging_init", "logging.Init")
 		if err != nil {
 			return nil, err
 		}
-		s, err = replaceOnceStrict(s, "logging.KitexRequestID(),", "interceptor.RequestID(),", "logging.KitexRequestID(),")
+		s, err = replaceOnceStrictWithPlan(s, "logging.KitexRequestID(),", "interceptor.RequestID(),", "logging.KitexRequestID(),", serverPath, &serverPlan, "kitex request id")
 		if err != nil {
 			return nil, err
 		}
-		s, err = replaceOnceStrict(s, "logging.KitexAccessLog(),", "interceptor.AccessLog(),", "logging.KitexAccessLog(),")
+		s, err = replaceOnceStrictWithPlan(s, "logging.KitexAccessLog(),", "interceptor.AccessLog(),", "logging.KitexAccessLog(),", serverPath, &serverPlan, "kitex access log")
 		if err != nil {
 			return nil, err
 		}
-		s, err = replaceOnceStrict(s, "logging.KitexRecovery(),", "interceptor.Recovery(),", "logging.KitexRecovery(),")
+		s, err = replaceOnceStrictWithPlan(s, "logging.KitexRecovery(),", "interceptor.Recovery(),", "logging.KitexRecovery(),", serverPath, &serverPlan, "kitex recovery")
 		if err != nil {
 			return nil, err
 		}
 	case KindReleaseCanary:
-		s, err = addGoImport(s, module+"/internal/base/release")
+		s, err = addGoImportWithPlan(s, module+"/internal/base/release", serverPath, &serverPlan)
 		if err != nil {
 			return nil, err
 		}
-		s, err = insertAfterAnyOnce(s, "release.KitexTraffic()", []string{
+		s, err = insertAfterAnyOnceWithPlan(s, "release.KitexTraffic()", []string{
 			"\t\t\tlogging.KitexRequestID(),\n",
 			"\t\t\tinterceptor.RequestID(),\n",
-		}, "\t\t\trelease.KitexTraffic(),\n")
+		}, "\t\t\trelease.KitexTraffic(),\n", serverPath, &serverPlan, "insert_traffic_middleware", "release.KitexTraffic")
 		if err != nil {
 			return nil, err
 		}
@@ -141,49 +171,58 @@ func wireKitex(root, module, kind string, dryRun bool) ([]string, error) {
 		return nil, err
 	}
 	paths = append(paths, written...)
+	if len(written) > 0 {
+		plan = append(plan, serverPlan...)
+	}
 	clientPaths, err := filepath.Glob(filepath.Join(root, "pkg", "client", "*", "client.go"))
 	if err != nil {
 		return nil, err
 	}
 	for _, p := range clientPaths {
-		written, err := wireKitexClient(p, module, kind, dryRun)
+		res, err := wireKitexClient(p, module, kind, dryRun)
 		if err != nil {
 			return nil, err
 		}
-		paths = append(paths, written...)
+		paths = append(paths, res.paths...)
+		plan = append(plan, res.plan...)
 	}
-	return paths, nil
+	return &wireResult{paths: paths, plan: plan}, nil
 }
 
-func wireKitexClient(path, module, kind string, dryRun bool) ([]string, error) {
+func wireKitexClient(path, module, kind string, dryRun bool) (*wireResult, error) {
 	body, err := readSource(path)
 	if err != nil {
 		return nil, err
 	}
 	s := string(body)
+	plan := []PlanItem(nil)
 	anchor := "\tif cfg.EnableMetaInfo {\n\t\toptions = append(options, kitexclient.WithMetaHandler(transmeta.ClientTTHeaderHandler))\n\t}\n"
 	switch kind {
 	case KindObservabilityLog:
-		s, err = addGoImport(s, module+"/internal/base/logging")
+		s, err = addGoImportWithPlan(s, module+"/internal/base/logging", path, &plan)
 		if err != nil {
 			return nil, err
 		}
 		loggingBlock := "\toptions = append(options, kitexclient.WithMiddleware(endpoint.Chain(\n\t\tlogging.KitexRequestID(),\n\t\tlogging.KitexAccessLog(),\n\t)))\n"
-		s, err = insertOnceStrict(s, "logging.KitexAccessLog()", anchor, loggingBlock)
+		s, err = insertOnceStrictWithPlan(s, "logging.KitexAccessLog()", anchor, loggingBlock, path, &plan, "insert_client_middleware", "logging.KitexAccessLog")
 		if err != nil {
 			return nil, err
 		}
 	case KindReleaseCanary:
-		s, err = addGoImport(s, module+"/internal/base/release")
+		s, err = addGoImportWithPlan(s, module+"/internal/base/release", path, &plan)
 		if err != nil {
 			return nil, err
 		}
-		s, err = insertOnceStrict(s, "release.KitexTraffic()", anchor, "\toptions = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))\n")
+		s, err = insertOnceStrictWithPlan(s, "release.KitexTraffic()", anchor, "\toptions = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))\n", path, &plan, "insert_client_middleware", "release.KitexTraffic")
 		if err != nil {
 			return nil, err
 		}
 	}
-	return writeFormatted(path, []byte(s), dryRun)
+	written, err := writeFormatted(path, []byte(s), dryRun)
+	if err != nil {
+		return nil, err
+	}
+	return wireResultFor(written, plan), nil
 }
 
 func hertzLoggingInit() string {
@@ -234,47 +273,122 @@ func writeFormatted(path string, body []byte, dryRun bool) ([]string, error) {
 	return []string{path}, nil
 }
 
+func wireResultFor(paths []string, plan []PlanItem) *wireResult {
+	if len(paths) == 0 {
+		return &wireResult{}
+	}
+	return &wireResult{paths: paths, plan: plan}
+}
+
+func wirePlan(path, action, detail string) PlanItem {
+	return PlanItem{Kind: "wire", Action: action, Path: path, Detail: detail}
+}
+
+func addGoImportWithPlan(src, importPath, path string, plan *[]PlanItem) (string, error) {
+	out, changed, err := addGoImportTracked(src, importPath)
+	if err != nil {
+		return "", err
+	}
+	if changed {
+		*plan = append(*plan, wirePlan(path, "add_import", importPath))
+	}
+	return out, nil
+}
+
+func insertOnceStrictWithPlan(src, exists, anchor, addition, path string, plan *[]PlanItem, action, detail string) (string, error) {
+	out, changed, err := insertOnceStrictTracked(src, exists, anchor, addition)
+	if err != nil {
+		return "", err
+	}
+	if changed {
+		*plan = append(*plan, wirePlan(path, action, detail))
+	}
+	return out, nil
+}
+
+func replaceOnceStrictWithPlan(src, exists, old, new, path string, plan *[]PlanItem, detail string) (string, error) {
+	out, changed, err := replaceOnceStrictTracked(src, exists, old, new)
+	if err != nil {
+		return "", err
+	}
+	if changed {
+		*plan = append(*plan, wirePlan(path, "replace_middleware", detail))
+	}
+	return out, nil
+}
+
+func insertAfterAnyOnceWithPlan(src, exists string, anchors []string, addition, path string, plan *[]PlanItem, action, detail string) (string, error) {
+	out, changed, err := insertAfterAnyOnceTracked(src, exists, anchors, addition)
+	if err != nil {
+		return "", err
+	}
+	if changed {
+		*plan = append(*plan, wirePlan(path, action, detail))
+	}
+	return out, nil
+}
+
 func addGoImport(src, importPath string) (string, error) {
+	out, _, err := addGoImportTracked(src, importPath)
+	return out, err
+}
+
+func addGoImportTracked(src, importPath string) (string, bool, error) {
 	quoted := "\"" + importPath + "\""
 	if strings.Contains(src, quoted) {
-		return src, nil
+		return src, false, nil
 	}
 	idx := strings.Index(src, "import (\n")
 	if idx < 0 {
-		return "", fmt.Errorf("infra: --wire could not find import block for %s", importPath)
+		return "", false, fmt.Errorf("infra: --wire could not find import block for %s", importPath)
 	}
 	insertAt := idx + len("import (\n")
-	return src[:insertAt] + "\t" + quoted + "\n" + src[insertAt:], nil
+	return src[:insertAt] + "\t" + quoted + "\n" + src[insertAt:], true, nil
 }
 
 func insertOnceStrict(src, exists, anchor, addition string) (string, error) {
+	out, _, err := insertOnceStrictTracked(src, exists, anchor, addition)
+	return out, err
+}
+
+func insertOnceStrictTracked(src, exists, anchor, addition string) (string, bool, error) {
 	if strings.Contains(src, exists) {
-		return src, nil
+		return src, false, nil
 	}
 	if !strings.Contains(src, anchor) {
-		return "", fmt.Errorf("infra: --wire could not find insertion anchor for %s", strings.TrimSpace(addition))
+		return "", false, fmt.Errorf("infra: --wire could not find insertion anchor for %s", strings.TrimSpace(addition))
 	}
-	return strings.Replace(src, anchor, anchor+addition, 1), nil
+	return strings.Replace(src, anchor, anchor+addition, 1), true, nil
 }
 
 func replaceOnceStrict(src, exists, old, new string) (string, error) {
+	out, _, err := replaceOnceStrictTracked(src, exists, old, new)
+	return out, err
+}
+
+func replaceOnceStrictTracked(src, exists, old, new string) (string, bool, error) {
 	if strings.Contains(src, exists) {
-		return src, nil
+		return src, false, nil
 	}
 	if !strings.Contains(src, old) {
-		return "", fmt.Errorf("infra: --wire could not find replacement anchor %s", strings.TrimSpace(old))
+		return "", false, fmt.Errorf("infra: --wire could not find replacement anchor %s", strings.TrimSpace(old))
 	}
-	return strings.Replace(src, old, new, 1), nil
+	return strings.Replace(src, old, new, 1), true, nil
 }
 
 func insertAfterAnyOnce(src, exists string, anchors []string, addition string) (string, error) {
+	out, _, err := insertAfterAnyOnceTracked(src, exists, anchors, addition)
+	return out, err
+}
+
+func insertAfterAnyOnceTracked(src, exists string, anchors []string, addition string) (string, bool, error) {
 	if strings.Contains(src, exists) {
-		return src, nil
+		return src, false, nil
 	}
 	for _, anchor := range anchors {
 		if strings.Contains(src, anchor) {
-			return strings.Replace(src, anchor, anchor+addition, 1), nil
+			return strings.Replace(src, anchor, anchor+addition, 1), true, nil
 		}
 	}
-	return "", fmt.Errorf("infra: --wire could not find middleware anchor for %s", strings.TrimSpace(addition))
+	return "", false, fmt.Errorf("infra: --wire could not find middleware anchor for %s", strings.TrimSpace(addition))
 }
