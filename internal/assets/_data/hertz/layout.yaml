@@ -106,21 +106,38 @@ layouts:
   - path: conf/dev/conf.yaml
     delims: ["{{", "}}"]
     body: |-
+      # 本地开发环境配置（默认由 GO_ENV=dev 加载）
+      # env 会决定默认读取 conf/<env>/conf.yaml；常见值为 dev/test/staging/prod
       env: dev
+      # 是否开启调试模式；通常会影响日志级别、错误细节和本地开发体验
+      # 生产环境通常应关闭
       debug: true
+      # HTTP 服务配置
       server:
+        # 服务名：用于日志、指标、链路追踪、错误归属等
         name: {{.ServiceName}}
+        # 监听地址，格式 host:port；":8080" 表示监听所有网卡
         addr: ":8080"
+        # 服务/接口版本号，可用于响应头、日志或文档展示
         version: "v1"
+        # 以下超时时间单位均为秒
+        # 读取请求头/请求体的超时
         read_timeout_seconds: 10
+        # 向客户端写回响应的超时
         write_timeout_seconds: 30
+        # 连接空闲超时；超过后服务端可主动关闭连接
         idle_timeout_seconds: 60
+        # Keep-Alive 连接在两次请求之间允许空闲的最长时间
         keep_alive_timeout_seconds: 60
+        # 单个请求在业务层允许执行的最长时间
         request_timeout_seconds: 30
+      # 安全控制：这些路径只允许来自 internal_cidrs 的请求访问
       security:
+        # 典型内部探活/管理接口
         internal_paths:
           - /healthz
           - /readyz
+        # 允许访问 internal_paths 的来源网段
         internal_cidrs:
           - 127.0.0.0/8
           - ::1/128
@@ -129,10 +146,14 @@ layouts:
           - 192.168.0.0/16
           - fc00::/7
           - fe80::/10
+      # 跨域配置
       cors:
+        # 是否启用 CORS 中间件
         enabled: false
+        # 允许访问的 Origin；开发阶段可先用 "*"，生产建议收敛到明确域名
         allow_origins:
           - "*"
+        # 允许浏览器预检通过的方法
         allow_methods:
           - GET
           - POST
@@ -140,6 +161,7 @@ layouts:
           - PATCH
           - DELETE
           - OPTIONS
+        # 允许浏览器携带的请求头；鉴权/幂等相关 header 需要在这里放开
         allow_headers:
           - Content-Type
           - Authorization
@@ -150,129 +172,222 @@ layouts:
           - X-Nonce
           - X-Signature
           - X-Idempotency-Key
+        # 允许前端读取的响应头
         expose_headers:
           - X-Request-ID
+        # 是否允许携带 Cookie / Authorization 等凭证
         allow_credentials: false
+        # 预检结果缓存时间，单位秒
         max_age_seconds: 600
+      # 限流配置
       rate_limit:
+        # 总开关
         enabled: false
+        # 存储后端：memory 适合单实例，redis 适合集群/多副本
         backend: memory # memory | redis
+        # 当限流存储异常时是否放行；false 更安全，true 更可用
         fail_open: false
+        # 限流 key 前缀，建议按服务名隔离
         key_prefix: {{.ServiceName}}:rate_limit
+        # 当 key_by 包含 ak / ak_user_uuid 等维度时，从该请求头读取 app key
         app_key_header: X-App-Key
+        # memory 后端参数
         memory:
+          # 内存中保留的最大 key 数量，超过后可能触发淘汰
           max_entries: 100000
+        # 这些路径不参与限流
         skip_paths:
           - /healthz
           - /readyz
+        # 鉴权前限流：适合挡住匿名流量、探测流量和恶意请求
         pre_auth:
+          # 是否启用这一阶段的限流规则
           enabled: true
+          # 限流维度，可按 app key、用户、IP 等组合
           key_by:
+            # 按 app key 限流
             - ak
+            # 按来源 IP 兜底限流
             - ip
+          # 稳态 QPS
           requests_per_second: 100
+          # 令牌桶突发容量
           burst: 200
+          # 每个客户端限流状态在缓存中的保留时长
           client_ttl_seconds: 300
+        # 鉴权后限流：适合按登录用户或租户做精细控制
         post_auth:
           enabled: false
           key_by:
+            # 同时按 app key + user uuid 维度限流
             - ak_user_uuid
+            # 仅按 user uuid 限流
             - user_uuid
+            # 按 app key 限流
             - ak
+          # 稳态 QPS
           requests_per_second: 50
+          # 令牌桶突发容量
           burst: 100
+          # 每个客户端限流状态在缓存中的保留时长
           client_ttl_seconds: 300
+        # redis 后端高级配置；仅 backend=redis 时生效
         redis:
+          # Redis 节点地址列表；单机、主从、哨兵都复用这一字段
           addrs:
             - 127.0.0.1:6379
+          # 以下为可选连接参数，不需要时保留默认值即可
           client_name: ""
           username: ""
           password: ""
+          # 逻辑库编号
           db: 0
+          # 哨兵模式主节点名；为空表示非哨兵模式
           master_name: ""
           sentinel_username: ""
           sentinel_password: ""
+          # RESP 协议版本，通常使用 3
           protocol: 3
+          # 命令失败后的最大重试次数
           max_retries: 3
+          # 重试退避区间，单位毫秒
           min_retry_backoff_milliseconds: 8
           max_retry_backoff_milliseconds: 512
+          # 建连与读写超时，单位秒
           dial_timeout_seconds: 5
+          # 首次建连失败时的拨号重试次数/间隔
           dialer_retries: 5
           dialer_retry_timeout_milliseconds: 100
           read_timeout_seconds: 3
           write_timeout_seconds: 3
+          # 是否为上下文 deadline/timeout 启用保护
           context_timeout_enabled: true
+          # 网络读写缓冲区大小，单位字节
           read_buffer_size: 32768
           write_buffer_size: 32768
+          # 连接池配置
+          # 是否按 FIFO 取连接；默认 false 更常见，通常无需单独调整
           pool_fifo: false
+          # 运维建议：pool_size 需结合单实例并发、Redis 实例连接上限和副本数综合评估
           pool_size: 10
+          # 最小空闲连接数；可减少突发流量时的冷启动建连开销
           min_idle_conns: 2
+          # 最大空闲连接数；0 表示使用客户端默认策略
           max_idle_conns: 0
+          # 0 表示不额外限制活跃连接，交由 pool_size / Redis 服务端上限共同约束
           max_active_conns: 0
           max_concurrent_dials: 0
           pool_timeout_seconds: 4
           conn_max_idle_time_seconds: 300
           conn_max_lifetime_seconds: 1800
           conn_max_lifetime_jitter_seconds: 0
+          # 集群/只读相关开关
           max_redirects: 3
+          # 只读路由通常用于读写分离场景；若业务强依赖强一致，保持 false
           read_only: false
+          # route_by_latency / route_randomly 主要用于集群路由策略，单机/主从常保持 false
           route_by_latency: false
           route_randomly: false
+          # Client identity / RESP3 兼容性相关设置
           disable_identity: false
           identity_suffix: ""
+          # 生产环境通常保持 false，除非你已经验证客户端与服务端对 RESP3 特性兼容
           unstable_resp3: false
+          # 节点被标记为失败后的冷却时间，单位秒
           failing_timeout_seconds: 15
+      # 幂等配置
       idempotency:
+        # 是否启用幂等中间件
         enabled: false
+        # 存储后端：memory 适合单实例，redis 适合集群
         backend: memory # memory | redis
+        # 存储异常时是否放行；false 表示宁可失败也不产生重复副作用
         fail_open: false
+        # 幂等键请求头；客户端需保证同一业务操作复用同一个值
         header: X-Idempotency-Key
+        # 用于把不同 app key 的请求隔离开
         app_key_header: X-App-Key
+        # 存储 key 前缀，建议按服务名区分
         key_prefix: {{.ServiceName}}:idempotency
+        # 幂等记录保留时间，单位秒；期间重复请求会被识别
+        # 运维建议：至少覆盖客户端重试窗口、消息重投窗口或网关重放窗口
         ttl_seconds: 86400
+        # 参与幂等摘要/缓存时允许处理的最大请求体大小，单位字节
+        # 运维建议：该值越大，内存/序列化开销越高；大包接口要单独评估
         max_body_bytes: 1048576
         memory:
+          # 内存模式最大缓存条目数
           max_entries: 100000
+        # 只有这些 HTTP 方法默认启用幂等
         methods:
           - POST
           - PUT
           - PATCH
           - DELETE
+        # 这些路径不做幂等校验
         skip_paths:
           - /healthz
           - /readyz
+        # redis 配置复用限流的 redis 参数模型；至少要提供 addrs
         redis:
           addrs:
             - 127.0.0.1:6379
+      # 鉴权配置（签名鉴权 / Token 鉴权）
       auth:
+        # 不需要鉴权的公开接口
         public_paths:
           - /healthz
           - /readyz
+        # 签名鉴权配置：适合 server-to-server 调用
         signature:
+          # 总开关
           enabled: false
+          # 客户端传入 app key / 时间戳 / nonce / 签名 的请求头名
           header_app_key: "X-App-Key"
           header_timestamp: "X-Timestamp"
           header_nonce: "X-Nonce"
           header_signature: "X-Signature"
+          # 开发环境静态密钥；生产环境建议改为配置中心或密钥管理系统
+          # 运维建议：不要把真实生产密钥直接写入仓库或镜像
           static_secret: "dev-secret"
+          # 允许的最大时钟偏差，单位秒；超出后请求会被拒绝
+          # 运维建议：依赖机器时钟同步，生产请确保 NTP/时钟服务稳定
           max_clock_skew_seconds: 300
+          # nonce 防重放配置
           nonce:
+            # 是否启用 nonce 去重；开启后可防止短时间重放
             enabled: false
+            # 去重状态存储后端
             backend: memory # memory | redis
+            # 存储异常时是否放行；false 更安全
             fail_open: false
+            # nonce key 前缀
             key_prefix: {{.ServiceName}}:signature_nonce
+            # nonce 保留时间，单位秒；应与签名有效窗口匹配
+            # 运维建议：通常不要小于 max_clock_skew_seconds，避免误判重复请求
             ttl_seconds: 300
             memory:
+              # 内存模式最大缓存条目数
               max_entries: 100000
             redis:
+              # redis 模式至少提供节点地址
               addrs:
                 - 127.0.0.1:6379
+        # Token 鉴权配置：适合 BFF / 用户态接口
         token:
+          # 总开关
           enabled: false
+          # 携带 token 的请求头名；中间件通常支持 Bearer 前缀
           header: "X-Authorization"
+          # token 签发者；校验时需与 token 中 iss 对齐
           issuer: {{.ServiceName}}
+          # 开发环境签名密钥；生产环境请改为安全来源
+          # 运维建议：建议由 KMS / Secret Manager / 配置中心统一下发
           signing_key: "dev-token-secret"
+          # 续期缓冲时间，单位秒；剩余有效期小于该值时可触发续签
           buffer_seconds: 300
+          # token 有效期，单位秒
+          # 运维建议：有效期越长，泄漏后的风险窗口越大；需结合登录态策略权衡
           expires_seconds: 7200
 
   # ── .hz marker ───────────────────────────────────────────────────────────
@@ -3155,7 +3270,7 @@ layouts:
               cfg = conf.Default()
           }
           do.ProvideValue(injector, cfg)
-	          // ncgo:wire:logging:init
+          // ncgo:wire:logging:init
 
           h := server.Default(
               server.WithHostPorts(cfg.Server.Addr),
@@ -3172,13 +3287,13 @@ layouts:
           // h.Use(logging.HertzRecovery())
           // h.Use(logging.HertzRequestID())
           // h.Use(logging.HertzAccessLog())
-	          // ncgo:wire:logging:server-middleware
+          // ncgo:wire:logging:server-middleware
           h.Use(middleware.Recovery())
           h.Use(middleware.RequestID())
           // Optional release canary wiring (after `ncgo add infra canary`):
           // import "{{.GoModule}}/internal/base/release"
           // h.Use(release.HertzTraffic()) // reads X-Traffic-Lane/X-User-ID/X-Tenant-ID
-	          // ncgo:wire:canary:server-traffic
+          // ncgo:wire:canary:server-traffic
           h.Use(middleware.AccessLog())
           h.Use(middleware.RequestTimeout(serverDurationSeconds(cfg.Server.RequestTimeoutSeconds)))
           h.Use(middleware.InternalOnly(cfg.Security.InternalPaths, cfg.Security.InternalCIDRs))
@@ -3254,77 +3369,41 @@ layouts:
       .PHONY: build run dev update generate sqlc migrate-create migrate-up migrate-down migrate-status lint test check tidy clean install-tools
 
       # ── Build ──────────────────────────────────────────────────────────────
-      build:
-          @echo "Building $(APP_NAME)..."
-          @mkdir -p output/bin
-          @go build -o output/bin/$(APP_NAME) .
-          @echo "Build complete → output/bin/$(APP_NAME)"
+      build: ; @echo "Building $(APP_NAME)..."; mkdir -p output/bin; go build -o output/bin/$(APP_NAME) .; echo "Build complete → output/bin/$(APP_NAME)"
 
-      run: build
-          @./output/bin/$(APP_NAME)
+      run: build ; @./output/bin/$(APP_NAME)
 
-      dev:
-          @which air > /dev/null 2>&1 && air || go run .
+      dev: ; @which air > /dev/null 2>&1 && air || go run .
 
       # ── Code generation ────────────────────────────────────────────────────
       # Re-run after modifying any .proto IDL file.
       # router_dir is persisted in .hz from the initial hz new command.
-      update:
-          @echo "Generating Hertz code from IDL..."
-          @hz update \
-            --idl=idl/app/{{.ServiceName}}.proto \
-            -I idl \
-            --handler_dir=internal/handler \
-            --model_dir=internal/pb \
-            --customize_package=template/package.yaml
-          @echo "Code generation complete"
+      update: ; @echo "Generating Hertz code from IDL..."; hz update --idl=idl/app/{{.ServiceName}}.proto -I idl --handler_dir=internal/handler --model_dir=internal/pb --customize_package=template/package.yaml; echo "Code generation complete"
 
-      sqlc:
-          @echo "Generating sqlc code..."
-          @sqlc generate -f internal/db/sqlc.yaml
+      sqlc: ; @echo "Generating sqlc code..."; sqlc generate -f internal/db/sqlc.yaml
 
-      migrate-create:
-          @test -n "$(name)" || (echo "usage: make migrate-create name=create_users" && exit 1)
-          @goose -dir $(GOOSE_MIGRATION_DIR) create $(name) sql
+      migrate-create: ; @test -n "$(name)" || (echo "usage: make migrate-create name=create_users" && exit 1); goose -dir $(GOOSE_MIGRATION_DIR) create $(name) sql
 
-      migrate-up:
-          @test -n "$(GOOSE_DBSTRING)" || (echo "DATABASE_URL is required" && exit 1)
-          @goose -dir $(GOOSE_MIGRATION_DIR) $(GOOSE_DRIVER) "$(GOOSE_DBSTRING)" up
+      migrate-up: ; @test -n "$(GOOSE_DBSTRING)" || (echo "DATABASE_URL is required" && exit 1); goose -dir $(GOOSE_MIGRATION_DIR) $(GOOSE_DRIVER) "$(GOOSE_DBSTRING)" up
 
-      migrate-down:
-          @test -n "$(GOOSE_DBSTRING)" || (echo "DATABASE_URL is required" && exit 1)
-          @goose -dir $(GOOSE_MIGRATION_DIR) $(GOOSE_DRIVER) "$(GOOSE_DBSTRING)" down
+      migrate-down: ; @test -n "$(GOOSE_DBSTRING)" || (echo "DATABASE_URL is required" && exit 1); goose -dir $(GOOSE_MIGRATION_DIR) $(GOOSE_DRIVER) "$(GOOSE_DBSTRING)" down
 
-      migrate-status:
-          @test -n "$(GOOSE_DBSTRING)" || (echo "DATABASE_URL is required" && exit 1)
-          @goose -dir $(GOOSE_MIGRATION_DIR) $(GOOSE_DRIVER) "$(GOOSE_DBSTRING)" status
+      migrate-status: ; @test -n "$(GOOSE_DBSTRING)" || (echo "DATABASE_URL is required" && exit 1); goose -dir $(GOOSE_MIGRATION_DIR) $(GOOSE_DRIVER) "$(GOOSE_DBSTRING)" status
 
-      generate: update sqlc
-          @echo "All code generation complete"
+      generate: update sqlc ; @echo "All code generation complete"
 
       # ── Quality ────────────────────────────────────────────────────────────
-      lint:
-          @golangci-lint run ./...
+      lint: ; @golangci-lint run ./...
 
-      test:
-          @go test -race -count=1 ./...
+      test: ; @go test -race -count=1 ./...
 
       check: lint test
 
       # ── Dependencies ───────────────────────────────────────────────────────
-      tidy:
-          @go mod tidy
+      tidy: ; @go mod tidy
 
       # ── Install tools ──────────────────────────────────────────────────────
-      install-tools:
-          @echo "Installing development tools..."
-          @go install github.com/cloudwego/hertz/cmd/hz@latest
-          @go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
-          @go install github.com/pressly/goose/v3/cmd/goose@latest
-          @go install github.com/air-verse/air@latest
-          @go install golang.org/x/tools/cmd/goimports@latest
-          @echo "Install complete"
+      install-tools: ; @echo "Installing development tools..."; go install github.com/cloudwego/hertz/cmd/hz@latest; go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest; go install github.com/pressly/goose/v3/cmd/goose@latest; go install github.com/air-verse/air@latest; go install golang.org/x/tools/cmd/goimports@latest; echo "Install complete"
 
       # ── Cleanup ────────────────────────────────────────────────────────────
-      clean:
-          @rm -rf output/
+      clean: ; @rm -rf output/

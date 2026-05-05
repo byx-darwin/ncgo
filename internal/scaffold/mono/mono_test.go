@@ -88,6 +88,59 @@ func TestGenerateHertzTemplateIncludesSafeOptionalWiringAnchors(t *testing.T) {
 	}
 }
 
+func TestGenerateHertzTemplateRendersMakefileRecipes(t *testing.T) {
+	opts := baseOpts(t)
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(res.Dir, "template", "layout.yaml"))
+	if err != nil {
+		t.Fatalf("read hertz layout: %v", err)
+	}
+	s := string(body)
+	for _, want := range []string{
+		"build: ; @echo \"Building $(APP_NAME)...\"",
+		"dev: ; @which air > /dev/null 2>&1 && air || go run .",
+		"update: ; @echo \"Generating Hertz code from IDL...\"; hz update --idl=idl/app/{{.ServiceName}}.proto -I idl --handler_dir=internal/handler --model_dir=internal/pb --customize_package=template/package.yaml; echo \"Code generation complete\"",
+		"test: ; @go test -race -count=1 ./...",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("hertz Makefile recipe missing %q", want)
+		}
+	}
+}
+
+func TestGenerateHertzTemplateIncludesChineseConfigComments(t *testing.T) {
+	opts := baseOpts(t)
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(res.Dir, "template", "layout.yaml"))
+	if err != nil {
+		t.Fatalf("read hertz layout: %v", err)
+	}
+	s := string(body)
+	for _, want := range []string{
+		"# 本地开发环境配置（默认由 GO_ENV=dev 加载）",
+		"# env 会决定默认读取 conf/<env>/conf.yaml；常见值为 dev/test/staging/prod",
+		"# 以下超时时间单位均为秒",
+		"# 运维建议：pool_size 需结合单实例并发、Redis 实例连接上限和副本数综合评估",
+		"# 当 key_by 包含 ak / ak_user_uuid 等维度时，从该请求头读取 app key",
+		"# 开发环境静态密钥；生产环境建议改为配置中心或密钥管理系统",
+		"# 运维建议：不要把真实生产密钥直接写入仓库或镜像",
+		"# 携带 token 的请求头名；中间件通常支持 Bearer 前缀",
+		"# token 签发者；校验时需与 token 中 iss 对齐",
+		"# 运维建议：有效期越长，泄漏后的风险窗口越大；需结合登录态策略权衡",
+		"# token 有效期，单位秒",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("hertz config comments missing %q", want)
+		}
+	}
+}
+
 func TestGenerateRendersDataJSON(t *testing.T) {
 	opts := baseOpts(t)
 	opts.WithDatabase = true
@@ -264,6 +317,36 @@ func TestGenerateKitexTemplatesIncludeSafeOptionalWiringAnchors(t *testing.T) {
 	} {
 		if !strings.Contains(clientTemplate, want) {
 			t.Errorf("kitex client template missing optional wiring anchor %q", want)
+		}
+	}
+}
+
+func TestGenerateKitexTemplateIncludesChineseConfigComments(t *testing.T) {
+	opts := baseOpts(t)
+	opts.Kind = manifest.KindKitex
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(res.Dir, "template", "kitex-template", "conf_dev.yaml"))
+	if err != nil {
+		t.Fatalf("read kitex conf_dev template: %v", err)
+	}
+	s := string(body)
+	for _, want := range []string{
+		"# 本地开发环境配置（默认由 GO_ENV=dev 加载）",
+		"# env 会决定默认读取 conf/<env>/conf.yaml；常见值为 dev/test/staging/prod",
+		"# 连接读写超时，单位秒",
+		"# 运维建议：应覆盖正常请求耗时，但也不要大到掩盖下游故障",
+		"# 从哪个请求头读取调用方服务名",
+		"# allowed_callers 中填写允许访问当前服务的上游服务名",
+		"# 运维建议：开启 enabled 且 allow_missing=false 时，这里必须显式配置",
+		"# PostgreSQL DSN；例如 postgres://user:pass@host:5432/dbname?sslmode=disable",
+		"# 连接池最大连接数；需结合数据库实例上限和服务副本数评估",
+		"# 运维建议：略小于数据库或代理层连接回收时间，避免同时批量失效",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("kitex config comments missing %q", want)
 		}
 	}
 }
