@@ -1,0 +1,39 @@
+name: Docs improvement
+description: Suggest improvements for README, examples, release docs, or contributor docs
+title: "docs: "
+labels:
+  - docs
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What is unclear or missing?
+      description: Which doc is confusing, outdated, or incomplete?
+      placeholder: Describe the documentation gap.
+    validations:
+      required: true
+  - type: input
+    id: location
+    attributes:
+      label: Related file or section
+      description: Point to the file, heading, or page if possible.
+      placeholder: e.g. README.md / Install / docs/release.zh-CN.md
+    validations:
+      required: false
+  - type: textarea
+    id: suggestion
+    attributes:
+      label: Suggested improvement
+      description: What should be added, clarified, or restructured?
+      placeholder: Describe the proposed docs change.
+    validations:
+      required: true
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues first
+          required: true
+        - label: I checked the relevant README/docs pages first
+          required: false

@@ -1,0 +1,60 @@
+name: Bug report
+description: Report a bug, regression, or incorrect behavior in ncgo
+title: "bug: "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting a bug.
+
+        Before submitting, please check whether the issue is reproducible on the latest version and include the smallest useful reproduction.
+  - type: textarea
+    id: summary
+    attributes:
+      label: Summary
+      description: What happened? What did you expect instead?
+      placeholder: Describe the bug and the expected behavior.
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Reproduction steps
+      description: Provide commands, file layout, or inputs needed to reproduce the issue.
+      placeholder: |
+        1. Run ...
+        2. Execute ...
+        3. Observe ...
+    validations:
+      required: true
+  - type: textarea
+    id: environment
+    attributes:
+      label: Environment
+      description: Include versions if relevant.
+      placeholder: |
+        ncgo version:
+        go version:
+        hz / kitex version:
+        OS:
+    validations:
+      required: false
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or output
+      description: Paste the most relevant command output or stack trace.
+      render: shell
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I searched existing issues first
+          required: true
+        - label: I can reproduce this on a recent version of ncgo
+          required: false

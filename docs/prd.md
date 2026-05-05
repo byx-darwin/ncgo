@@ -153,8 +153,9 @@ Static checks mapped to `nc-skills-golang/docs/checklist.md` §1:
 
 ```
 ncgo/
-├── cmd/ncgo/         cobra entry
+├── main.go           root install entry
 ├── internal/
+│   ├── cli/          cobra commands and reusable CLI bootstrap
 │   ├── scaffold/     new/add logic (mono, micro, domain, infra, rpc, bff)
 │   ├── doctor/       static scanner
 │   ├── manifest/     .ncgo/manifest.yaml read/write

@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"errors"
@@ -15,9 +15,9 @@ import (
 	"github.com/byx-darwin/ncgo/internal/scaffold/mono"
 )
 
-var version = "0.1.0-dev"
+var Version = "0.1.0-dev"
 
-func main() {
+func Main() {
 	root := newRootCmd()
 	if err := root.Execute(); err != nil {
 		if _, silent := err.(silentErr); !silent {
@@ -51,7 +51,7 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print ncgo version and embedded assets version",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintf(cmd.OutOrStdout(), "ncgo %s (assets: %s)\n", version, assets.Version())
+			fmt.Fprintf(cmd.OutOrStdout(), "ncgo %s (assets: %s)\n", Version, assets.Version())
 			return nil
 		},
 	}
@@ -126,7 +126,7 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 		WithDatabase:  opts.db == "postgres",
 		IDL:           opts.idl,
 		AssetsVersion: assets.Version(),
-		NCGOVersion:   version,
+		NCGOVersion:   Version,
 		NoGenerate:    opts.noGenerate,
 	})
 	if err != nil {
@@ -169,7 +169,7 @@ func runNewMicro(cmd *cobra.Command, name string, opts *newOptions) error {
 		Module:        opts.module,
 		Dir:           dir,
 		AssetsVersion: assets.Version(),
-		NCGOVersion:   version,
+		NCGOVersion:   Version,
 	})
 	if err != nil {
 		return err

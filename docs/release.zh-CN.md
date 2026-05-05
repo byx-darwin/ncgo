@@ -7,17 +7,10 @@
 - `gofmt` 检查；
 - `go vet ./...`；
 - `go test ./... -count=1`；
-- `go build ./cmd/ncgo`；
+- `go build .`；
 - `./scripts/smoke.sh`。
 
-本地提交前建议执行同一组检查：
-
-```bash
-go build ./...
-go vet ./...
-go test ./... -count=1
-./scripts/smoke.sh
-```
+本地提交前建议先完成 `CONTRIBUTING.zh-CN.md` 中的本地检查。
 
 ## Release workflow
 
@@ -34,27 +27,30 @@ go test ./... -count=1
 - `darwin/arm64`；
 - `windows/amd64`。
 
-Release 二进制会通过 `-ldflags "-X main.version=<tag>"` 写入 `ncgo version` 使用的版本号。
+Release 二进制会通过 `-ldflags "-X github.com/byx-darwin/ncgo/internal/cli.Version=<tag>"` 写入 `ncgo version` 使用的版本号。
+
+GitHub Release 会使用 `gh release create --generate-notes` 自动生成发布说明；分类规则由 `.github/release.yml` 控制。
+
+如果需要在正式发布前做人工润色，可参考 `docs/release-notes-template.zh-CN.md`。
+
+如果需要统一 PR 标签与 release notes 分类，可参考 `docs/release-labels.zh-CN.md`。
+
+发布完成后，用户应通过根模块安装：`go install github.com/byx-darwin/ncgo@latest`。
 
 ## 人工发布步骤
 
 部署、发布、push、tag 均需人工确认后执行。建议流程：
 
 1. 确认工作区干净，变更已 review。
-2. 本地执行 CI 等价检查。
+2. 按 `CONTRIBUTING.zh-CN.md` 完成本地检查。
 3. 确定语义化版本号，例如 `v0.1.0`。
 4. 经人工确认后创建 annotated tag。
 5. 经人工确认后 push tag，触发 Release workflow。
-6. 在 GitHub Release 页面核对 artifacts 与 `checksums.txt`。
+6. 在 GitHub Release 页面核对 artifacts、`checksums.txt` 与自动生成的 release notes；必要时按模板补充摘要、安装方式和兼容性说明。
 
 示例命令：
 
 ```bash
-go build ./...
-go vet ./...
-go test ./... -count=1
-./scripts/smoke.sh
-
 git tag -a v0.1.0 -m "v0.1.0"
 git push origin v0.1.0
 ```

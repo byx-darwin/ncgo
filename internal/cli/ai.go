@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ func newAISyncCmd() *cobra.Command {
 	cmd := &cobra.Command{
 		Use:   "sync",
 		Short: "Render AGENTS.md, CLAUDE.md and .cursor/rules/ncgo.mdc",
-		Long: "Generate the AI collaboration artifacts described in docs/prd.md \u00a76 from " +
+		Long: "Generate the AI collaboration artifacts described in docs/prd.md §6 from " +
 			".ncgo/manifest.yaml and the embedded ncgo design doc. Existing files without " +
 			"the `<!-- ncgo:managed -->` marker are skipped unless --force is set.",
 		Args: cobra.NoArgs,

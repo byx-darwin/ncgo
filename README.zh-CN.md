@@ -1,8 +1,46 @@
 # ncgo
 
+[![CI](https://github.com/byx-darwin/ncgo/actions/workflows/ci.yml/badge.svg)](https://github.com/byx-darwin/ncgo/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/byx-darwin/ncgo)](https://github.com/byx-darwin/ncgo/releases)
+[![Go 1.25+](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
+
 面向 AI Agent 的 Go 微服务脚手架 CLI。`ncgo` 内置并维护 Hertz / Kitex 模板，生成项目元数据，调用上游生成器，并为 Claude、Cursor 等 Agent 渲染上下文文件。
 
+如果你希望用一个 CLI 同时解决可复现脚手架、可选基础设施能力以及 Agent 友好的项目上下文，`ncgo` 就是为这个场景设计的。
+
 English documentation: [README.md](README.md)。产品需求文档见 [docs/prd.md](docs/prd.md) 和 [docs/prd.zh-CN.md](docs/prd.zh-CN.md)。Agent 上下文交接见 [docs/context-handoff.zh-CN.md](docs/context-handoff.zh-CN.md)。
+
+**快速导航：** [安装](#安装) · [30 秒上手](#30-秒上手) · [典型使用路径](#典型使用路径) · [示例文档](docs/examples.zh-CN.md) · [贡献指南](CONTRIBUTING.zh-CN.md) · [FAQ](#faq)
+
+## 为什么用 ncgo
+
+- **可复现的脚手架**：把 manifest、IDL 占位和模板输入纳入版本控制
+- **理解生成器工作流**：可以协调 `hz` / `kitex`，也支持 `--no-generate` 先准备后生成
+- **默认对 Agent 友好**：可生成 `AGENTS.md`、`CLAUDE.md`、Cursor 规则，并提供 MCP 能力
+- **内置生命周期工具**：同一个 CLI 里包含 `doctor`、`upgrade` 和保守的 `extract domain`
+
+## 核心能力
+
+| 范围 | 你能得到什么 |
+|---|---|
+| 服务脚手架 | 支持 Mono Hertz/Kitex 脚手架，也支持带 `add rpc` / `add bff` 的 Micro 工作区 |
+| 项目上下文 | 可版本化的 manifest、模板输入，以及面向 AI 的协作文件 |
+| 可选基础设施 | Redis、Kafka、Elasticsearch、ClickHouse、logging、canary 等 helper |
+| 生命周期工具 | 内置 `doctor`、`upgrade`、`extract domain` 与 MCP 暴露能力 |
+
+## 适用场景
+
+如果你符合这些场景，`ncgo` 会比较合适：
+
+- 你在用 Hertz 或 Kitex 构建 Go 服务
+- 你希望脚手架结果可复现，而不是一次性的生成器输出
+- 你希望 AI Agent 更稳定地理解和操作生成后的项目
+
+如果你更接近下面这些诉求，`ncgo` 可能不是最合适的工具：
+
+- 你需要框架无关或非 Go 的项目生成器
+- 你完全不希望工作流依赖 Hertz / Kitex 生成器
+- 你期待 CLI 自动安装依赖或自动重构任意已有服务
 
 ## 当前状态
 v0.5 MVP 已完成：
@@ -26,6 +64,73 @@ v0.5 MVP 已完成：
 | Domain | `internal/usecase/<name>`、`internal/repository/<name>`、DI register 文件 |
 | Infra | `internal/base/...` 下的可选 Go 文件 |
 | AI 上下文 | `AGENTS.md`、`CLAUDE.md`、`.cursor/rules/ncgo.mdc` |
+
+## 要求
+
+- Go `1.25+`
+- 生成 Hertz 服务时需要 `hz >= v0.9.7`
+- 生成 Kitex 服务时需要 `kitex >= v0.16.1`
+
+如果你暂时只想生成 manifest、IDL 占位和模板输入，可以先使用
+`--no-generate`，后续再安装生成器。
+
+## 安装
+
+```bash
+go install github.com/byx-darwin/ncgo@latest
+ncgo version
+```
+
+如果安装后找不到 `ncgo` 命令，请确认 `GOBIN` 或 `$(go env GOPATH)/bin`
+已经加入 `PATH`。
+
+如果是在本地仓库中使用，也可以直接从根目录安装：
+
+```bash
+go install .
+ncgo version
+```
+
+## 30 秒上手
+
+如果你的环境里已经有 `hz`，最短的上手路径是：
+
+```bash
+go install github.com/byx-darwin/ncgo@latest
+ncgo new user-api --module github.com/acme/user-api
+cd user-api
+go mod tidy
+make dev
+```
+
+如果你要生成 Kitex、Micro 工作区，或者希望先不跑生成器，请看下面的详细示例。
+
+## 常用命令总览
+
+| 命令 | 作用 |
+|---|---|
+| `ncgo new` | 创建 mono 服务或 micro 工作区 |
+| `ncgo add domain` | 生成 usecase / repository / DI register 文件 |
+| `ncgo add method` | 在 ncgo anchor 标记中插入方法桩 |
+| `ncgo add infra` | 添加 Redis / logging / canary 等可选基础设施 helper |
+| `ncgo add rpc` / `ncgo add bff` | 在 micro 工作区中新增服务 |
+| `ncgo ai sync` | 生成 `AGENTS.md`、`CLAUDE.md` 与 Cursor 规则 |
+| `ncgo doctor` | 检查宿主机工具与项目元数据 |
+| `ncgo upgrade` | 更新 ncgo/assets 元数据 |
+| `ncgo extract domain` | 规划或执行 mono-to-micro 迁移 |
+| `ncgo mcp serve` | 通过 MCP stdio 暴露部分 ncgo 能力 |
+
+## 典型使用路径
+
+| 场景 | 起步命令 | 适合什么时候 |
+|---|---|---|
+| 单个 Hertz 服务 | `ncgo new <name> --module <module>` | 你希望最快得到一个 HTTP 服务脚手架 |
+| 单个 Kitex 服务 | `ncgo new <name> --module <module> --kind kitex` | 你在做以 RPC 为主的 Kitex 服务 |
+| Micro 工作区 | `ncgo new <name> --module <module> --mode micro` | 你需要在一个工作区根目录下管理多个服务 |
+| 先准备、后生成 | `ncgo new ... --no-generate` | 你想先落地 manifest/模板输入，之后再执行生成器 |
+| 在已有项目上继续扩展 | `ncgo add domain`、`ncgo add infra`、`ncgo ai sync` | 你已经有 ncgo 项目，只想按需逐步增强 |
+
+如果你是从 0 开始，先从上表选一条路径，再继续看下面对应的详细快速开始。
 
 ## 快速开始
 
@@ -153,16 +258,40 @@ ncgo version
 
 `upgrade` 当前只更新 ncgo/assets 版本元数据。`--plan` 会输出 root/workspace 与 service manifest 的详细只读升级计划；`--dry-run` 保留较简洁的无写入输出。`extract domain` 默认输出迁移计划；加 `--apply` 后会把计划中的 domain 文件复制到已存在的 Kitex 目标服务，并把域内 import 重写为目标 module。它不会删除源文件、覆盖目标文件或自动接好跨服务 client。
 
-## 开发检查
+## FAQ
+
+### `ncgo: command not found`
+
+请确认 `GOBIN` 或 `$(go env GOPATH)/bin` 已加入 `PATH`，然后重新执行：
 
 ```bash
-go build ./...
-go vet ./...
+ncgo version
+```
+
+### 找不到 `hz` 或 `kitex`
+
+先安装缺失的生成器，再重新执行命令：
+
+```bash
+go install github.com/cloudwego/hertz/cmd/hz@latest
+go install github.com/cloudwego/kitex/tool/cmd/kitex@latest
+ncgo doctor
+```
+
+如果你想先准备文件、稍后再跑生成器，可以使用 `--no-generate`。
+
+## 开发检查
+
+贡献者本地工作流、PR 约定与更多检查说明见
+[`CONTRIBUTING.zh-CN.md`](CONTRIBUTING.zh-CN.md)。
+
+```bash
+go build .
 go test ./... -count=1
 ./scripts/smoke.sh
 ```
 
-CI 会在 GitHub Actions 中运行同一组核心检查。Release 构建由 tag 触发；人工发布流程见 [docs/release.zh-CN.md](docs/release.zh-CN.md)。
+CI 会在 GitHub Actions 中运行更完整的检查集合。Release 构建由 tag 触发；人工发布流程见 [docs/release.zh-CN.md](docs/release.zh-CN.md)。
 
 模板或脚手架发生有意变更后，更新 golden：
 

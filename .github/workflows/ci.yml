@@ -44,7 +44,7 @@ jobs:
         run: go test ./... -count=1
 
       - name: Build CLI
-        run: go build ./cmd/ncgo
+        run: go build .
 
       - name: Smoke test
         run: ./scripts/smoke.sh

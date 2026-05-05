@@ -1,12 +1,51 @@
 # ncgo
 
+[![CI](https://github.com/byx-darwin/ncgo/actions/workflows/ci.yml/badge.svg)](https://github.com/byx-darwin/ncgo/actions/workflows/ci.yml)
+[![Release](https://img.shields.io/github/v/release/byx-darwin/ncgo)](https://github.com/byx-darwin/ncgo/releases)
+[![Go 1.25+](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
+
 AI-friendly scaffold CLI for Go microservices. `ncgo` owns embedded Hertz and
 Kitex templates, writes a project manifest, invokes upstream generators, and
 renders AI context files for Claude/Cursor/other agents.
 
+Use it when you want reproducible Go service scaffolds, optional infra add-ons,
+and agent-friendly project context from a single CLI.
+
 中文文档见 [README.zh-CN.md](README.zh-CN.md)。Product requirements live in
 [docs/prd.md](docs/prd.md) and [docs/prd.zh-CN.md](docs/prd.zh-CN.md). For
 agent handoff, see [docs/context-handoff.zh-CN.md](docs/context-handoff.zh-CN.md).
+
+**Quick links:** [Install](#install) · [30-Second Tour](#30-second-tour) · [Typical Workflows](#typical-workflows) · [Examples](docs/examples.md) · [Contributing](CONTRIBUTING.md) · [FAQ](#faq)
+
+## Why ncgo
+
+- **Deterministic scaffolding**: keep manifests, IDL placeholders, and templates under version control
+- **Generator-aware**: orchestrate `hz` / `kitex`, but still allow `--no-generate` workflows
+- **Agent-friendly by default**: render `AGENTS.md`, `CLAUDE.md`, Cursor rules, and expose MCP tools
+- **Lifecycle helpers included**: ship `doctor`, `upgrade`, and conservative `extract domain` flows in the same CLI
+
+## Highlights
+
+| Area | What you get |
+|---|---|
+| Service scaffolding | Mono Hertz/Kitex scaffolds plus micro workspaces with `add rpc` / `add bff` |
+| Project context | Versioned manifests, template inputs, and AI collaboration files |
+| Optional infra | Redis, Kafka, Elasticsearch, ClickHouse, logging, canary, and more |
+| Lifecycle tooling | Built-in `doctor`, `upgrade`, `extract domain`, and MCP exposure |
+
+## Best fit
+
+Use `ncgo` when you:
+
+- build Go services around Hertz or Kitex
+- want reproducible scaffolds instead of one-off generator output
+- want AI agents to understand and operate on generated projects more reliably
+
+`ncgo` is probably not the right tool if you:
+
+- need a framework-agnostic or non-Go project generator
+- do not want any Hertz / Kitex generator dependency in your workflow
+- expect the CLI to install dependencies or refactor arbitrary existing services automatically
 
 ## Current Status
 
@@ -32,6 +71,78 @@ Deferred optionals remain documented but intentionally not implemented yet:
 | Domain | `internal/usecase/<name>`, `internal/repository/<name>`, DI register file |
 | Infra | Optional drop-in Go files under `internal/base/...` |
 | AI context | `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/ncgo.mdc` |
+
+## Requirements
+
+- Go `1.25+`
+- `hz >= v0.9.7` when generating Hertz services
+- `kitex >= v0.16.1` when generating Kitex services
+
+If you only want manifests, IDL placeholders, and template inputs, use
+`--no-generate` and install the generators later.
+
+## Install
+
+```bash
+go install github.com/byx-darwin/ncgo@latest
+ncgo version
+```
+
+If `ncgo` is not found after installation, make sure your `GOBIN` (or
+`$(go env GOPATH)/bin`) is on `PATH`.
+
+From a local checkout, the repository root is also installable:
+
+```bash
+go install .
+ncgo version
+```
+
+## 30-Second Tour
+
+Assuming `hz` is already on `PATH`, the shortest happy path is:
+
+```bash
+go install github.com/byx-darwin/ncgo@latest
+ncgo new user-api --module github.com/acme/user-api
+cd user-api
+go mod tidy
+make dev
+```
+
+For Kitex, micro workspaces, and generator-free flows, see the detailed examples
+below.
+
+## Common Commands
+
+| Command | Purpose |
+|---|---|
+| `ncgo new` | Scaffold a mono service or micro workspace |
+| `ncgo add domain` | Generate usecase / repository / DI register files |
+| `ncgo add method` | Insert a method stub at ncgo anchor markers |
+| `ncgo add infra` | Add optional infra helpers such as Redis / logging / canary |
+| `ncgo add rpc` / `ncgo add bff` | Add services inside a micro workspace |
+| `ncgo ai sync` | Render `AGENTS.md`, `CLAUDE.md`, and Cursor rules |
+| `ncgo doctor` | Diagnose host tools and project metadata |
+| `ncgo upgrade` | Update ncgo/assets metadata |
+| `ncgo extract domain` | Plan or apply mono-to-micro extraction |
+| `ncgo mcp serve` | Expose selected ncgo operations over MCP stdio |
+
+## Typical Workflows
+
+| Scenario | Start with | Best when |
+|---|---|---|
+| Single Hertz service | `ncgo new <name> --module <module>` | You want the fastest path to an HTTP service scaffold |
+| Single Kitex service | `ncgo new <name> --module <module> --kind kitex` | You are building an RPC-first service with Kitex |
+| Micro workspace | `ncgo new <name> --module <module> --mode micro` | You need multiple services under one workspace root |
+| Prepare first, generate later | `ncgo new ... --no-generate` | You want manifests/templates now and generator execution later |
+| Existing project enhancement | `ncgo add domain`, `ncgo add infra`, `ncgo ai sync` | You already have an ncgo project and want to expand it incrementally |
+
+If you are starting fresh, pick one row above and then follow the matching
+Quick Start below.
+
+For longer, worked examples, see [docs/examples.md](docs/examples.md) and
+[docs/examples.zh-CN.md](docs/examples.zh-CN.md).
 
 ## Quick Start
 
@@ -225,17 +336,41 @@ With `--apply`, it copies the planned domain files into an existing Kitex target
 service and rewrites domain-local imports to the target module. It does not
 delete source files, overwrite target files, or wire cross-service clients.
 
-## Development Checks
+## FAQ
+
+### `ncgo: command not found`
+
+Make sure your `GOBIN` or `$(go env GOPATH)/bin` is on `PATH`, then rerun:
 
 ```bash
-go build ./...
-go vet ./...
+ncgo version
+```
+
+### `hz` or `kitex` not found on PATH
+
+Install the missing generator and rerun the command:
+
+```bash
+go install github.com/cloudwego/hertz/cmd/hz@latest
+go install github.com/cloudwego/kitex/tool/cmd/kitex@latest
+ncgo doctor
+```
+
+If you want to prepare files first and run generators later, use `--no-generate`.
+
+## Development Checks
+
+For contributor-oriented local workflow and PR guidance, see
+[`CONTRIBUTING.md`](CONTRIBUTING.md).
+
+```bash
+go build .
 go test ./... -count=1
 ./scripts/smoke.sh
 ```
 
-CI runs the same core checks on GitHub Actions. Release builds are tag-driven;
-see [docs/release.zh-CN.md](docs/release.zh-CN.md) for the manual release flow.
+CI runs a fuller set of checks on GitHub Actions. Release builds are tag-driven;
+see [docs/release.zh-CN.md](docs/release.zh-CN.md) for the release flow.
 
 Update scaffold goldens after intentional template/scaffold changes:
 

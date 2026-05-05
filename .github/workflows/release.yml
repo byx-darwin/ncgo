@@ -65,7 +65,7 @@ jobs:
           fi
 
           mkdir -p "${package_dir}"
-          go build -trimpath -ldflags "-s -w -X main.version=${version}" -o "${package_dir}/${binary}" ./cmd/ncgo
+          go build -trimpath -ldflags "-s -w -X github.com/byx-darwin/ncgo/internal/cli.Version=${version}" -o "${package_dir}/${binary}" .
           cp README.md README.zh-CN.md "${package_dir}/"
           if [ -f LICENSE ]; then
             cp LICENSE "${package_dir}/"
@@ -130,4 +130,4 @@ jobs:
           ls -lah dist
           gh release create "${GITHUB_REF_NAME}" dist/* \
             --title "${GITHUB_REF_NAME}" \
-            --notes "Release ${GITHUB_REF_NAME}"
+            --generate-notes

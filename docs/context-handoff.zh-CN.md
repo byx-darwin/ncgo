@@ -89,8 +89,9 @@ Usecase 文件中使用：
 - `README.zh-CN.md`
 - `docs/prd.md`
 - `docs/prd.zh-CN.md`
-- `cmd/ncgo/add.go`
-- `cmd/ncgo/main.go`
+- `main.go`
+- `internal/cli/add.go`
+- `internal/cli/root.go`
 - `internal/scaffold/infra/infra.go`
 - `internal/scaffold/infra/infra_test.go`
 - `internal/assets/_data/optional/observability_otel.go`

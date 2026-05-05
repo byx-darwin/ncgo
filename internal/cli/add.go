@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"encoding/json"
@@ -212,7 +212,7 @@ func runAddRPC(cmd *cobra.Command, name string, opts *addRPCOptions) error {
 		Module:        opts.module,
 		Dir:           opts.dir,
 		AssetsVersion: assets.Version(),
-		NCGOVersion:   version,
+		NCGOVersion:   Version,
 		NoGenerate:    opts.noGenerate,
 		DryRun:        opts.dryRun,
 	})
@@ -298,7 +298,7 @@ func runAddBFF(cmd *cobra.Command, name string, opts *addBFFOptions) error {
 		Module:        opts.module,
 		Dir:           opts.dir,
 		AssetsVersion: assets.Version(),
-		NCGOVersion:   version,
+		NCGOVersion:   Version,
 		NoGenerate:    opts.noGenerate,
 		DryRun:        opts.dryRun,
 	})

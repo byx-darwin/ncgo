@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Contributing guide
+    url: https://github.com/byx-darwin/ncgo/blob/main/CONTRIBUTING.md
+    about: Read contributor workflow, local checks, PR guidance, and release docs.
+  - name: Release labels guide
+    url: https://github.com/byx-darwin/ncgo/blob/main/docs/release-labels.zh-CN.md
+    about: Understand how PR labels map to generated release notes.

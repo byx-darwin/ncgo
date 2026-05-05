@@ -1,4 +1,4 @@
-package main
+package cli
 
 import (
 	"fmt"
@@ -35,7 +35,7 @@ func newUpgradeCmd() *cobra.Command {
 }
 
 func runUpgrade(cmd *cobra.Command, opts *upgradeOptions) error {
-	res, err := upgrade.Run(upgrade.Options{Root: opts.root, NCGOVersion: version, AssetsVersion: assets.Version(), DryRun: opts.dryRun, Plan: opts.plan})
+	res, err := upgrade.Run(upgrade.Options{Root: opts.root, NCGOVersion: Version, AssetsVersion: assets.Version(), DryRun: opts.dryRun, Plan: opts.plan})
 	if err != nil {
 		return err
 	}

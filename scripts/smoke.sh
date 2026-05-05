@@ -34,7 +34,7 @@ YAML
 }
 
 log "build CLI"
-go build -o "$BIN" ./cmd/ncgo
+go build -o "$BIN" .
 
 log "CLI help exposes lifecycle flags"
 "$BIN" upgrade --help >"$TMP_DIR/upgrade-help.out"

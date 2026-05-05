@@ -158,7 +158,7 @@
 
 已补：
 
-- GitHub Actions CI：`gofmt`、`go vet ./...`、`go test ./... -count=1`、`go build ./cmd/ncgo`、`./scripts/smoke.sh`；
+- GitHub Actions CI：`gofmt`、`go vet ./...`、`go test ./... -count=1`、`go build .`、`./scripts/smoke.sh`；
 - tag-driven Release workflow：跨平台二进制、`checksums.txt`、GitHub Release；
 - release / tag 流程文档：`docs/release.zh-CN.md`。
 
