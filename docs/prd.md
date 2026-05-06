@@ -42,6 +42,7 @@ ncgo add method <domain.Method> --root --in usecase
 ncgo add infra <kind>      --root --force; common: redis|kafka|es|clickhouse|observability_otel|otel; kitex-only: registry_etcd
 ncgo add rpc <name>        --root --module --dir --no-generate  # micro workspace; Kitex service
 ncgo add bff <name>        --root --module --dir --no-generate  # micro workspace; Hertz service
+ncgo ai init claude        --root --preset minimal|team --force --dry-run
 ncgo doctor                --json --root
 ncgo ai sync               --root --lang en|zh-CN --force --dry-run
 ncgo mcp serve             expose selected commands as MCP tools (MVP)
@@ -100,6 +101,7 @@ generated_at: 2026-04-29T15:00:00+08:00
   never on the previous generated file. AST-derived `architecture.md` is deferred.
 - Top of every managed file: `<!-- ncgo:managed -->`.
 - Custom content lives in `AGENTS.local.md`, included on long-form render targets only.
+- Hand-authored `.claude` starter docs are bootstrapped explicitly by `ncgo ai init claude`, not by `ai sync`.
 
 ## 7. Agent-friendly Anchors
 

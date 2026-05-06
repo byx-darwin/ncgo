@@ -36,6 +36,7 @@ ncgo add method <domain.Method> --root --in usecase
 ncgo add infra <kind>      --root --force; common: redis|kafka|es|clickhouse|observability_otel|otel|observability_logging|logging|release_canary|canary; kitex-only: registry_etcd
 ncgo add rpc <name>        --root --module --dir --no-generate
 ncgo add bff <name>        --root --module --dir --no-generate
+ncgo ai init claude        --root --preset minimal|team --force --dry-run
 ncgo doctor                --json --root
 ncgo ai sync               --root --lang en|zh-CN --force --dry-run
 ncgo mcp serve             expose selected commands as MCP tools
@@ -78,6 +79,8 @@ Micro 根目录使用 `ncgo.workspace`，每个服务仍有自己的 `.ncgo/mani
 | `.cursor/rules/ncgo.mdc` | Cursor | manifest + 内置设计文档 + `AGENTS.local.md`，带 MDC frontmatter |
 
 生成是幂等的。受管理文件顶部带 `<!-- ncgo:managed -->`。项目自定义内容放入 `AGENTS.local.md`，并且只会附加到长版上下文产物。
+
+hand-authored 的 `.claude` starter docs 通过显式的 `ncgo ai init claude` 初始化，而不是由 `ai sync` 生成。
 
 ## 7. Agent-friendly Anchors
 

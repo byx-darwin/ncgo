@@ -19,6 +19,20 @@ func TestVersionParsesAssetsVersion(t *testing.T) {
 func TestEmbeddedFilesPresent(t *testing.T) {
 	want := []string{
 		"VERSION",
+		"claude/README.md",
+		"claude/skills/plan-change.md",
+		"claude/skills/run-validation.md",
+		"claude/skills/doc-sync.md",
+		"claude/agents/implementer.md",
+		"claude/agents/reviewer.md",
+		"claude/commands/plan.md",
+		"claude/commands/fix-failing-test.md",
+		"claude/commands/update-docs.md",
+		"claude/commands/review-diff.md",
+		"claude/hooks/README.md",
+		"claude/local/.gitignore",
+		"claude/rules/agent-engineering.md",
+		"claude/rules/go.md",
 		"docs/hertz/design-doc.en.md",
 		"docs/hertz/design-doc.zh-CN.md",
 		"docs/kitex/design-doc.en.md",
@@ -58,8 +72,8 @@ func TestEmbeddedFilesNonEmpty(t *testing.T) {
 	if err != nil {
 		t.Fatalf("WalkDir: %v", err)
 	}
-	// Snapshot has VERSION + 4 design docs + hertz (5 + 4 optional) + kitex templates/optionals + common optionals.
-	if count < 29 {
-		t.Fatalf("embedded file count = %d, expected >= 29", count)
+	// Snapshot has VERSION + claude starters/presets + design docs + hertz + kitex + common optionals.
+	if count < 43 {
+		t.Fatalf("embedded file count = %d, expected >= 43", count)
 	}
 }

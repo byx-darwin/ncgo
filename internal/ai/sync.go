@@ -1,6 +1,6 @@
-// Package ai renders the AI collaboration artifacts described in
-// docs/prd.md §6: AGENTS.md, CLAUDE.md, .cursor/rules/ncgo.mdc, and
-// .claude/generated/project-context.md.
+// Package ai renders and bootstraps AI collaboration artifacts described in
+// docs/prd.md §6, including long-form context files, generated `.claude`
+// facts, and hand-authored `.claude` starter files.
 //
 // The renderer is idempotent and reads only from the project manifest
 // and the ncgo-embedded design doc (`internal/assets/_data/docs/<kind>/
@@ -44,13 +44,13 @@ type Options struct {
 	DryRun bool   // do not write; only report intended actions
 }
 
-// Result is the structured outcome of a Sync call.
+// Result is the structured outcome of an AI file generation/bootstrap call.
 type Result struct {
 	Written []string // relative paths actually written
 	Skipped []Skip   // relative paths intentionally not written
 }
 
-// Skip describes a file Sync chose not to write and why.
+// Skip describes a file an AI helper chose not to write and why.
 type Skip struct {
 	Path   string
 	Reason string

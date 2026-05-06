@@ -1,0 +1,65 @@
+# .claude Layout
+
+This repository uses `.claude/` for Claude-facing repository rules,
+generated project facts, and private local notes.
+
+## Recommended Layout
+
+```text
+.claude/
+  README.md
+  rules/
+  skills/
+  hooks/
+  agents/
+  commands/
+  generated/
+  local/
+```
+
+## Ownership
+
+### Hand-authored, repo-owned
+
+These files define shared repository policy and workflow.
+They should be reviewed and edited like normal source files.
+
+- `.claude/README.md`
+- `.claude/rules/*`
+- `.claude/skills/*`
+- `.claude/hooks/*`
+- `.claude/agents/*`
+- `.claude/commands/*`
+
+### Generated, tool-owned
+
+These files are safe to refresh with `ncgo ai sync`.
+They should contain project facts rather than repository policy.
+
+- `.claude/generated/*`
+
+### Local, user-owned
+
+These files are private overlays for personal notes or machine-specific prompts.
+They should normally be gitignored.
+
+- `.claude/local/*`
+
+## Recommended Workflow
+
+1. Run `ncgo ai init claude --root .` once to bootstrap the minimal starter files.
+2. Optionally use `ncgo ai init claude --root . --preset team` for workflow starter docs.
+3. Edit `.claude/rules/*` to match your repository policy.
+4. Run `ncgo ai sync --root . --lang en` to refresh generated project facts.
+
+## Precedence
+
+When instructions overlap, use this precedence order:
+
+1. `.claude/rules/*`
+2. `.claude/skills/*`, `.claude/hooks/*`, `.claude/agents/*`, `.claude/commands/*`
+3. `.claude/generated/*`
+4. `.claude/local/*`
+
+Generated files provide facts and summaries. They must not redefine shared
+repository policy.

@@ -12,6 +12,16 @@ func TestRootCmdIncludesProtolintCommand(t *testing.T) {
 	}
 }
 
+func TestRootCmdIncludesAIInitClaudeCommand(t *testing.T) {
+	cmd, _, err := newRootCmd().Find([]string{"ai", "init", "claude"})
+	if err != nil {
+		t.Fatalf("Find ai init claude: %v", err)
+	}
+	if cmd == nil || cmd.Name() != "claude" {
+		t.Fatalf("ai init claude command not registered")
+	}
+}
+
 func TestVersionLineIncludesBuildMetadata(t *testing.T) {
 	got := versionLine("v1.2.3", "assets-1", "abc1234", "2026-05-06T12:00:00Z")
 	want := "ncgo v1.2.3 (build: abc1234, built: 2026-05-06T12:00:00Z, assets: assets-1)"

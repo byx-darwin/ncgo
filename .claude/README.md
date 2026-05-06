@@ -115,3 +115,4 @@ Those outputs remain valid. A future `.claude` integration should start by addin
 For the first-step implementation plan, see:
 
 - `docs/ai-sync-claude-generated-plan.md`
+- `docs/ai-init-claude-plan.md`

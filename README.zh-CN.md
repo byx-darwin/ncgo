@@ -51,7 +51,7 @@ v0.5 MVP 已完成：
 - Micro 工作区：根 `ncgo.workspace`，并支持 `add rpc` / `add bff`。
 - Domain 工作流：`add domain` 与基于 anchor 的 `add method`。
 - Optional infra：Redis、Kafka、Elasticsearch、ClickHouse、LoongSuite Go Agent observability、结构化日志、金丝雀发布 helper、Kitex-only etcd registry。
-- AI / Agent 工作流：`ai sync`、静态 `doctor`、MCP stdio server。
+- AI / Agent 工作流：`ai init claude`、`ai sync`、静态 `doctor`、MCP stdio server。
 - 生命周期 MVP：metadata-only `upgrade --plan`、保守的 `extract domain --apply`。
 
 暂缓但保留在路线图中：~~NATS~~、~~Mongo~~、~~MinIO~~。
@@ -117,6 +117,7 @@ make dev
 | `ncgo add method` | 在 ncgo anchor 标记中插入方法桩 |
 | `ncgo add infra` | 添加 Redis / logging / canary 等可选基础设施 helper |
 | `ncgo add rpc` / `ncgo add bff` | 在 micro 工作区中新增服务 |
+| `ncgo ai init claude` | 初始化 hand-authored `.claude` starter files（`--preset minimal` 或 `--preset team`） |
 | `ncgo ai sync` | 生成 `AGENTS.md`、`CLAUDE.md`、`.claude/generated/project-context.md` 与 Cursor 规则 |
 | `ncgo doctor` | 检查宿主机工具、项目元数据与默认 proto 契约问题 |
 | `ncgo upgrade` | 更新 ncgo/assets 元数据 |
@@ -202,6 +203,18 @@ ncgo new user-api --module github.com/acme/user-api --kind kitex --no-generate
 
 ## AI 上下文
 
+如需先初始化 hand-authored 的 `.claude` starter files，可先运行：
+
+```bash
+ncgo ai init claude --root user-api
+```
+
+如需包含 workflow starter 的 `team` preset，可运行：
+
+```bash
+ncgo ai init claude --root user-api --preset team
+```
+
 ```bash
 ncgo ai sync --root user-api --lang zh-CN
 ```
@@ -214,6 +227,8 @@ ncgo ai sync --root user-api --lang zh-CN
 - `.cursor/rules/ncgo.mdc`
 
 这些文件带有 `<!-- ncgo:managed -->` 标记。没有该标记的已有文件默认不会覆盖，除非传 `--force`。项目私有说明放在 `AGENTS.local.md`，会附加到长版上下文文件；`.claude/generated/project-context.md` 保持 deterministic。
+
+`ncgo ai init claude` 创建的 starter files 属于 hand-authored 内容，不会被后续 `ncgo ai sync` 覆盖。
 
 ## 命令参考
 

@@ -56,7 +56,7 @@ The v0.5 MVP is complete:
 - Micro workspace: root `ncgo.workspace` plus `add rpc` / `add bff` services.
 - Domain workflow: `add domain` and anchor-based `add method`.
 - Optional infra: Redis, Kafka, Elasticsearch, ClickHouse, LoongSuite Go Agent observability, structured logging, canary release helpers, and Kitex-only etcd registry.
-- AI/agent workflow: `ai sync`, static `doctor`, and MCP stdio server.
+- AI/agent workflow: `ai init claude`, `ai sync`, static `doctor`, and MCP stdio server.
 - Lifecycle MVPs: metadata-only `upgrade --plan` and conservative `extract domain --apply`.
 
 Deferred optionals remain documented but intentionally not implemented yet:
@@ -125,6 +125,7 @@ below.
 | `ncgo add method` | Insert a method stub at ncgo anchor markers |
 | `ncgo add infra` | Add optional infra helpers such as Redis / logging / canary |
 | `ncgo add rpc` / `ncgo add bff` | Add services inside a micro workspace |
+| `ncgo ai init claude` | Bootstrap hand-authored `.claude` starter files (`--preset minimal` or `--preset team`) |
 | `ncgo ai sync` | Render `AGENTS.md`, `CLAUDE.md`, `.claude/generated/project-context.md`, and Cursor rules |
 | `ncgo protolint` | Lint selected `.proto` files with Proto I/O rules |
 | `ncgo doctor` | Diagnose host tools, project metadata, and default proto contract issues |
@@ -231,6 +232,18 @@ Kitex projects, equivalent generator command for Hertz).
 
 ## AI Context
 
+Optionally bootstrap hand-authored `.claude` starter files once:
+
+```bash
+ncgo ai init claude --root user-api
+```
+
+For the workflow-oriented starter set, use:
+
+```bash
+ncgo ai init claude --root user-api --preset team
+```
+
 After generating a project, sync AI-readable context:
 
 ```bash
@@ -248,6 +261,9 @@ Files contain `<!-- ncgo:managed -->`; existing files without the marker are
 skipped unless `--force` is passed. Add project-specific notes in
 `AGENTS.local.md`; they are appended to the long-form generated context files,
 while `.claude/generated/project-context.md` stays deterministic.
+
+Starter files created by `ncgo ai init claude` are hand-authored and are not
+overwritten by `ncgo ai sync`.
 
 ## Command Reference
 
