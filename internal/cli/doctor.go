@@ -21,7 +21,7 @@ func newDoctorCmd() *cobra.Command {
 		Use:   "doctor",
 		Short: "Diagnose host tools and the current ncgo project",
 		Long: "Verify hz/kitex are on PATH at supported versions, then (if run inside a project) " +
-			"check that .ncgo/manifest.yaml loads and template/data.json agrees with it. " +
+			"check that .ncgo/manifest.yaml loads, template/data.json agrees with it, and manifest.service.idl passes the default proto lint checks. " +
 			"Use --json to emit the structured report consumed by AI agents and CI.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor(cmd, opts)

@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"os"
+	osexec "os/exec"
 	"path/filepath"
 	"slices"
 	"sort"
@@ -180,12 +181,106 @@ func TestGenerateHertzTemplateRendersMakefileRecipes(t *testing.T) {
 	for _, want := range []string{
 		"build: ; @echo \"Building $(APP_NAME)...\"",
 		"dev: ; @which air > /dev/null 2>&1 && air || go run .",
+		"i18n-sync: ; @echo \"Synchronizing i18n locales...\"; go run ./tools/i18n/sync -root . -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -source zh-CN",
+		"i18n-report: ; @echo \"Writing i18n report...\"; go run ./tools/i18n/report -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN",
+		"i18n-check: ; @echo \"Checking i18n locales...\"; go run ./tools/i18n/check -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN -mode dev",
+		"i18n-check-release: ; @echo \"Checking i18n locales (release mode)...\"; go run ./tools/i18n/check -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN -mode release",
+		"i18n: ; @echo \"Generating i18n catalog...\"; go run ./tools/i18n/gen -in internal/pkg/i18n/locales -out internal/pkg/i18n/catalog_gen.go",
 		"update: ; @echo \"Generating Hertz code from IDL...\"; hz update --idl=idl/app/{{.ServiceName}}.proto -I idl --handler_dir=internal/handler --model_dir=internal/pb --customize_package=template/package.yaml; echo \"Code generation complete\"",
-		"swagger: ; @echo \"Generating Swagger docs from IDL...\"; mkdir -p internal/docs/swagger; protoc --http-swagger_out=internal/docs/swagger -I idl idl/app/{{.ServiceName}}.proto && rm -f internal/docs/swagger/swagger.go && echo \"Swagger generation complete → internal/docs/swagger\"",
+		"swagger: ; @command -v protoc >/dev/null 2>&1",
+		"protoc-gen-http-swagger is required for make swagger",
+		"go install github.com/hertz-contrib/swagger-generate/protoc-gen-http-swagger@latest",
+		"Swagger generation complete → internal/docs/swagger (rebuild/restart to embed updated spec)",
+		"generate: i18n-sync i18n-check i18n update swagger sqlc",
 		"test: ; @go test -race -count=1 ./...",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("hertz Makefile recipe missing %q", want)
+		}
+	}
+}
+
+func TestGenerateHertzTemplateEmbedsSwaggerSpec(t *testing.T) {
+	opts := baseOpts(t)
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(res.Dir, "template", "layout.yaml"))
+	if err != nil {
+		t.Fatalf("read hertz layout: %v", err)
+	}
+	s := string(body)
+	for _, want := range []string{
+		"path: internal/docs/docs.go",
+		"//go:embed swagger/openapi.yaml",
+		"path: internal/docs/swagger/openapi.yaml",
+		"docs.OpenAPIYAML()",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("hertz swagger embed missing %q", want)
+		}
+	}
+}
+
+func TestGenerateHertzTemplateIncludesI18N(t *testing.T) {
+	opts := baseOpts(t)
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(res.Dir, "template", "layout.yaml"))
+	if err != nil {
+		t.Fatalf("read hertz layout: %v", err)
+	}
+	s := string(body)
+	for _, want := range []string{
+		"path: internal/pkg/i18n/i18n.go",
+		"HeaderAcceptLanguage",
+		"Accept-Language",
+		"Content-Language",
+		"RegisterLanguage(language string, aliases ...string) string",
+		"TraditionalChinese    = \"zh-TW\"",
+		"Japanese              = \"ja-JP\"",
+		"Korean                = \"ko-KR\"",
+		"French                = \"fr-FR\"",
+		"German                = \"de-DE\"",
+		"Spanish               = \"es-ES\"",
+		"localizePayload(c, payload)",
+		"接口不存在",
+		"介面不存在",
+		"インターフェースが存在しません",
+		"인터페이스가 존재하지 않습니다",
+		"interface introuvable",
+		"Schnittstelle nicht gefunden",
+		"interfaz no encontrada",
+		"path: internal/pkg/i18n/locales/de-DE.json",
+		"path: internal/pkg/i18n/locales/es-ES.json",
+		"path: internal/pkg/i18n/locales/fr-FR.json",
+		"path: internal/pkg/i18n/locales/it-IT.json",
+		"path: internal/pkg/i18n/locales/ja-JP.json",
+		"path: internal/pkg/i18n/locales/ko-KR.json",
+		"path: internal/pkg/i18n/locales/zh-CN.json",
+		"path: internal/pkg/i18n/locales/zh-TW.json",
+		"path: internal/pkg/i18n/.meta/status.json",
+		"path: internal/pkg/i18n/glossary.json",
+		"path: tools/i18n/util/i18nutil.go",
+		"path: tools/i18n/util/i18nutil_test.go",
+		"path: tools/i18n/sync/main.go",
+		"path: tools/i18n/report/main.go",
+		"path: tools/i18n/check/main.go",
+		"path: tools/i18n/gen/main.go",
+		"PlaceholderPrefix = \"__TODO__: \"",
+		"TestScanMessageKeysIncludesPublicStringLiterals",
+		"TestBuildReportIncludesGlossaryHintsAndSummary",
+		"source_locale",
+		"Glossary hints",
+		"i18n Report",
+		"TestRegisterLanguageSupportsDynamicLanguage",
+		"interfaccia non trovata",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("hertz i18n template missing %q", want)
 		}
 	}
 }
@@ -305,6 +400,132 @@ func TestGenerateInvokesHZViaRunner(t *testing.T) {
 		if !strings.Contains(args, want) {
 			t.Errorf("hz args missing %q in %q", want, args)
 		}
+	}
+}
+
+// TestGenerateHertzCompiles invokes hz with the real runner, tidies the module,
+// builds the generated project, and runs the i18n tests to verify the built-in
+// language catalog compiles and behaves correctly.
+func TestGenerateHertzCompiles(t *testing.T) {
+	if _, err := exec.LookPath("hz"); err != nil {
+		t.Skip("hz not found on PATH")
+	}
+	if _, err := exec.LookPath("make"); err != nil {
+		t.Skip("make not found on PATH")
+	}
+
+	opts := baseOpts(t)
+	opts.NoGenerate = false // use the real exec.Default runner
+
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !res.RanGenerate {
+		t.Fatal("expected RanGenerate = true")
+	}
+
+	// Synchronize locale keys and initialize translation status metadata.
+	cmd := osexec.CommandContext(context.Background(), "make", "i18n-sync")
+	cmd.Dir = res.Dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("make i18n-sync in %s: %v\n%s", res.Dir, err, out)
+	}
+	statusBody, err := os.ReadFile(filepath.Join(res.Dir, "internal", "pkg", "i18n", ".meta", "status.json"))
+	if err != nil {
+		t.Fatalf("read generated status: %v", err)
+	}
+	statusText := string(statusBody)
+	for _, want := range []string{"\"source_locale\": \"zh-CN\"", "\"it-IT\"", "\"draft\"", "\"reviewed\""} {
+		if !strings.Contains(statusText, want) {
+			t.Fatalf("generated i18n status missing %q:\n%s", want, statusText)
+		}
+	}
+
+	// Emit machine-readable and human-readable report files for Agent workflows.
+	cmd = osexec.CommandContext(context.Background(), "make", "i18n-report")
+	cmd.Dir = res.Dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("make i18n-report in %s: %v\n%s", res.Dir, err, out)
+	}
+	reportJSON, err := os.ReadFile(filepath.Join(res.Dir, "internal", "pkg", "i18n", ".meta", "report.json"))
+	if err != nil {
+		t.Fatalf("read generated report json: %v", err)
+	}
+	for _, want := range []string{"summary", "missing_translations", "glossary_hints", "it-IT", "internal_error"} {
+		if !strings.Contains(string(reportJSON), want) {
+			t.Fatalf("generated i18n report missing %q:\n%s", want, reportJSON)
+		}
+	}
+
+	// Development mode check allows draft placeholders after sync.
+	cmd = osexec.CommandContext(context.Background(), "make", "i18n-check")
+	cmd.Dir = res.Dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("make i18n-check in %s: %v\n%s", res.Dir, err, out)
+	}
+
+	// Release mode should still fail while draft placeholder translations exist.
+	cmd = osexec.CommandContext(context.Background(), "make", "i18n-check-release")
+	cmd.Dir = res.Dir
+	if out, err := cmd.CombinedOutput(); err == nil {
+		t.Fatalf("make i18n-check-release in %s unexpectedly succeeded\n%s", res.Dir, out)
+	}
+
+	// Generate dynamic i18n catalog from locale JSON via the generated Makefile.
+	cmd = osexec.CommandContext(context.Background(), "make", "i18n")
+	cmd.Dir = res.Dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("make i18n in %s: %v\n%s", res.Dir, err, out)
+	}
+	generatedCatalog, err := os.ReadFile(filepath.Join(res.Dir, "internal", "pkg", "i18n", "catalog_gen.go"))
+	if err != nil {
+		t.Fatalf("read generated catalog: %v", err)
+	}
+	s := string(generatedCatalog)
+	for _, want := range []string{
+		`RegisterLanguage("zh-CN"`,
+		`RegisterLanguage("zh-TW"`,
+		`RegisterLanguage("ja-JP"`,
+		`RegisterLanguage("ko-KR"`,
+		`RegisterLanguage("fr-FR"`,
+		`RegisterLanguage("de-DE"`,
+		`RegisterLanguage("es-ES"`,
+		`RegisterLanguage("it-IT", "it")`,
+		"interfaccia non trovata",
+		"接口不存在",
+		"介面不存在",
+	} {
+		if !strings.Contains(s, want) {
+			t.Fatalf("generated i18n catalog missing %q:\n%s", want, s)
+		}
+	}
+
+	// go mod tidy resolves and downloads the generated project's dependencies.
+	cmd = osexec.CommandContext(context.Background(), "go", "mod", "tidy")
+	cmd.Dir = res.Dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go mod tidy in %s: %v\n%s", res.Dir, err, out)
+	}
+
+	// Build the service binary to ensure all packages compile.
+	cmd = osexec.CommandContext(context.Background(), "go", "build", ".")
+	cmd.Dir = res.Dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go build . in %s: %v\n%s", res.Dir, err, out)
+	}
+
+	// Run the generated project's own i18n tests (built-in language assertions).
+	cmd = osexec.CommandContext(context.Background(), "go", "test", "-race", "-count=1", "./internal/pkg/i18n/...")
+	cmd.Dir = res.Dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go test ./internal/pkg/i18n/... in %s: %v\n%s", res.Dir, err, out)
+	}
+
+	cmd = osexec.CommandContext(context.Background(), "go", "test", "-race", "-count=1", "./tools/...")
+	cmd.Dir = res.Dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go test ./tools/... in %s: %v\n%s", res.Dir, err, out)
 	}
 }
 

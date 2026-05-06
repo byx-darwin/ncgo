@@ -1,0 +1,42 @@
+syntax = "proto3";
+
+package demo;
+
+import "api.proto";
+
+message GetReq {
+  string payload = 1 [(api.body) = "payload"];
+}
+
+message DeleteReq {
+  string raw = 1 [(api.raw_body) = "raw"];
+}
+
+message HeadReq {
+  string payload = 1 [(api.body) = "payload"];
+  string raw = 2 [(api.raw_body) = "raw"];
+}
+
+message PostReq {
+  string payload = 1 [(api.body) = "payload"];
+}
+
+message Resp {}
+
+service Demo {
+  rpc GetItem(GetReq) returns (Resp) {
+    option (api.get) = "/items";
+  }
+
+  rpc DeleteItem(DeleteReq) returns (Resp) {
+    option (api.delete) = "/items/:id";
+  }
+
+  rpc HeadItem(HeadReq) returns (Resp) {
+    option (api.head) = "/items/:id";
+  }
+
+  rpc CreateItem(PostReq) returns (Resp) {
+    option (api.post) = "/items";
+  }
+}

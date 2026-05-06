@@ -1,0 +1,15 @@
+syntax = "proto2";
+
+package api;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.MethodOptions {
+  optional string get = 72201;
+  optional string post = 72202;
+  optional string put = 72203;
+  optional string delete = 72204;
+  optional string patch = 72205;
+  optional string options = 72206;
+  optional string head = 72207;
+}

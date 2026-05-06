@@ -1,0 +1,38 @@
+syntax = "proto3";
+
+package demo;
+
+import "api.proto";
+
+message FindReq {
+  string user_id = 1 [(api.query) = "user_id", (api.path) = "user_id"];
+  string token = 2 [(api.header) = "X-Token"];
+}
+
+message FindResp {}
+
+message EchoReq {
+  string payload = 1 [(api.body) = "payload", (api.header) = "X-Payload"];
+}
+
+message EchoResp {}
+
+message OkayReq {
+  string id = 1 [(api.query) = "id"];
+}
+
+message OkayResp {}
+
+service Demo {
+  rpc Find(FindReq) returns (FindResp) {
+    option (api.get) = "/users/:user_id";
+  }
+
+  rpc Echo(EchoReq) returns (EchoResp) {
+    option (api.get) = "/echo";
+  }
+
+  rpc Okay(OkayReq) returns (OkayResp) {
+    option (api.get) = "/okay";
+  }
+}

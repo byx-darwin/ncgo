@@ -8,9 +8,9 @@
 
 如果你希望用一个 CLI 同时解决可复现脚手架、可选基础设施能力以及 Agent 友好的项目上下文，`ncgo` 就是为这个场景设计的。
 
-English documentation: [README.md](README.md)。产品需求文档见 [docs/prd.md](docs/prd.md) 和 [docs/prd.zh-CN.md](docs/prd.zh-CN.md)。Agent 上下文交接见 [docs/context-handoff.zh-CN.md](docs/context-handoff.zh-CN.md)。
+English documentation: [README.md](README.md)。产品需求文档见 [docs/prd.md](docs/prd.md) 和 [docs/prd.zh-CN.md](docs/prd.zh-CN.md)。Agent 上下文交接见 [docs/context-handoff.zh-CN.md](docs/context-handoff.zh-CN.md)。i18n Hybrid 方案见 [docs/i18n-hybrid-plan.zh-CN.md](docs/i18n-hybrid-plan.zh-CN.md)。i18n Agent 协议见 [docs/i18n-agent-protocol.zh-CN.md](docs/i18n-agent-protocol.zh-CN.md)。i18n Agent Schema 见 [docs/i18n-agent-schema.zh-CN.md](docs/i18n-agent-schema.zh-CN.md)。i18n Payload 设计见 [docs/i18n-payload.zh-CN.md](docs/i18n-payload.zh-CN.md)。
 
-**快速导航：** [安装](#安装) · [30 秒上手](#30-秒上手) · [典型使用路径](#典型使用路径) · [示例文档](docs/examples.zh-CN.md) · [贡献指南](CONTRIBUTING.zh-CN.md) · [FAQ](#faq)
+**快速导航：** [安装](#安装) · [30 秒上手](#30-秒上手) · [典型使用路径](#典型使用路径) · [i18n Hybrid 方案](docs/i18n-hybrid-plan.zh-CN.md) · [i18n 工作流](docs/i18n-workflow.zh-CN.md) · [i18n Agent 协作](docs/i18n-agent-workflow.zh-CN.md) · [i18n Agent 协议](docs/i18n-agent-protocol.zh-CN.md) · [i18n Agent Schema](docs/i18n-agent-schema.zh-CN.md) · [i18n Payload](docs/i18n-payload.zh-CN.md) · [示例文档](docs/examples.zh-CN.md) · [贡献指南](CONTRIBUTING.zh-CN.md) · [FAQ](#faq)
 
 ## 为什么用 ncgo
 
@@ -70,6 +70,7 @@ v0.5 MVP 已完成：
 - Go `1.25+`
 - 生成 Hertz 服务时需要 `hz >= v0.9.7`
 - 生成 Kitex 服务时需要 `kitex >= v0.16.1`
+- Hertz 模板中的 `make swagger` 需要本机已安装 `protoc`，并且 `protoc-gen-http-swagger` 位于 `PATH`
 
 如果你暂时只想生成 manifest、IDL 占位和模板输入，可以先使用
 `--no-generate`，后续再安装生成器。
@@ -115,7 +116,7 @@ make dev
 | `ncgo add infra` | 添加 Redis / logging / canary 等可选基础设施 helper |
 | `ncgo add rpc` / `ncgo add bff` | 在 micro 工作区中新增服务 |
 | `ncgo ai sync` | 生成 `AGENTS.md`、`CLAUDE.md` 与 Cursor 规则 |
-| `ncgo doctor` | 检查宿主机工具与项目元数据 |
+| `ncgo doctor` | 检查宿主机工具、项目元数据与默认 proto 契约问题 |
 | `ncgo upgrade` | 更新 ncgo/assets 元数据 |
 | `ncgo extract domain` | 规划或执行 mono-to-micro 迁移 |
 | `ncgo mcp serve` | 通过 MCP stdio 暴露部分 ncgo 能力 |
@@ -129,6 +130,8 @@ make dev
 | Micro 工作区 | `ncgo new <name> --module <module> --mode micro` | 你需要在一个工作区根目录下管理多个服务 |
 | 先准备、后生成 | `ncgo new ... --no-generate` | 你想先落地 manifest/模板输入，之后再执行生成器 |
 | 在已有项目上继续扩展 | `ncgo add domain`、`ncgo add infra`、`ncgo ai sync` | 你已经有 ncgo 项目，只想按需逐步增强 |
+| 生成项目中的 i18n 补译 | `make i18n-report`、`ncgo i18n check --mode release --output json` | 你想把 locale/status 更新、Agent 辅助补译和最终校验串成稳定流程 |
+| 生成项目中的 proto 契约校验 | `ncgo protolint --root . --file idl/app/demo.proto --output json` | 你想把 Req/Resp 命名、Hertz binding、Kitex response 结构等规则纳入自动检查 |
 
 如果你是从 0 开始，先从上表选一条路径，再继续看下面对应的详细快速开始。
 
@@ -147,6 +150,11 @@ make dev
 ```bash
 ncgo new user-api --module github.com/acme/user-api
 ```
+
+Hertz 模板默认提供 `zh-CN`、`zh-TW`、`ja-JP`、`ko-KR`、`fr-FR`、`de-DE`、`es-ES`
+这些语言；默认语言与新增语言统一在生成项目的
+`internal/pkg/i18n/locales/*.json` 中维护，并通过 `make i18n` 生成
+`internal/pkg/i18n/catalog_gen.go`。
 
 ### Kitex RPC 服务
 ```bash
@@ -234,6 +242,8 @@ common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_otel`（
 
 默认 Hertz / Kitex 模板只预留 canary wiring 注释，不会在未启用 optional 时 import `internal/base/release`；也可以使用 opt-in 的 `--wire` 自动挂载 traffic middleware。加 `--dry-run` 可预览会被接线修改的源码。接入示例见 `docs/canary-release.zh-CN.md`。
 
+Hertz 模板内置轻量多语言响应处理：`internal/pkg/i18n` 会根据 `Accept-Language` 选择 `en`、`zh-CN`、`zh-TW`、`ja-JP`、`ko-KR`、`fr-FR`、`de-DE` 或 `es-ES`，`internal/pkg/response` 会对 JSON 响应里的 `msg` 做翻译并写入 `Content-Language`。这些默认语言同样来自 `internal/pkg/i18n/locales/*.json`，并由 `make i18n` 生成的 `catalog_gen.go` 注册。默认无请求头时仍返回原来的英文错误 key；业务错误可在启动期用 `i18n.Register("zh-CN", "order_conflict", "订单冲突")` 扩展翻译。
+
 ### Micro 服务
 
 ```bash
@@ -246,6 +256,7 @@ ncgo add bff web-bff --root commerce
 
 ```bash
 ncgo doctor --root .
+ncgo protolint --root . --file idl/app/demo.proto --output json
 ncgo mcp serve
 ncgo upgrade --root . --plan
 ncgo upgrade --root . --dry-run
@@ -254,7 +265,15 @@ ncgo extract domain device --root . --to services/device-rpc --apply
 ncgo version
 ```
 
-`ncgo mcp serve` 会启动 stdio MCP server。MVP 暴露 `ncgo_version`、`ncgo_doctor`、`ncgo_ai_sync`、`ncgo_add_infra`、`ncgo_add_method`。`ncgo_add_infra` 参数为 `root`、`kind`、`force`、`wire`、`dryRun`，支持与 CLI 相同的 infra kind，只打印依赖安装 next steps，不自动执行 `go get`，并返回结构化 `plan` 字段供 agent 预览。
+`ncgo doctor` 现在除了检查 `hz` / `kitex`、manifest 与 `template/data.json` 之外，还会在 `manifest.service.idl` 存在时默认执行 proto lint，并把命中的 Proto I/O 规则映射到 doctor report 中。
+
+`ncgo mcp serve` 会启动 stdio MCP server。当前暴露 `ncgo_version`、`ncgo_doctor`、`ncgo_ai_sync`、`ncgo_i18n_report`、`ncgo_i18n_check`、`ncgo_protolint`、`ncgo_add_infra`、`ncgo_add_method`。`ncgo_add_infra` 参数为 `root`、`kind`、`force`、`wire`、`dryRun`，支持与 CLI 相同的 infra kind，只打印依赖安装 next steps，不自动执行 `go get`，并返回结构化 `plan` 字段供 agent 预览。
+
+如果你在生成后的 Hertz 项目里使用内置 i18n 工作流，现在也可以用 `ncgo i18n report` / `ncgo i18n check`，或通过 MCP 的 `ncgo_i18n_report` / `ncgo_i18n_check` 消费结构化结果。可直接参考 [docs/examples.zh-CN.md](docs/examples.zh-CN.md) 中的“生成项目中的 i18n 补译工作流”。
+
+如果你希望把 `.proto` 契约校验也纳入 CLI / MCP 工作流，可以使用 `ncgo protolint --root . --file ...`，或通过 MCP 的 `ncgo_protolint` 消费同一份结构化 diagnostics。可直接参考 [docs/examples.zh-CN.md](docs/examples.zh-CN.md) 中新增的“生成项目中的 Proto 契约校验工作流”。
+
+当前内置的 Proto I/O 规则里，除了 `PIO101~PIO206`、`PIO301` 这类 `error` 规则外，也已经包含一批默认启用的 `phase2 warning`：`PIO111`、`PIO112`、`PIO113`、`PIO211`、`PIO212`、`PIO302`、`PIO303`、`PIO401`。这些 warning 会继续出现在 `diagnostics` / doctor report 中，但 **warning-only 不会让 `ok=false`**；只有命中 `error` 级规则时，CLI / MCP / doctor 才会进入失败态。
 
 `upgrade` 当前只更新 ncgo/assets 版本元数据。`--plan` 会输出 root/workspace 与 service manifest 的详细只读升级计划；`--dry-run` 保留较简洁的无写入输出。`extract domain` 默认输出迁移计划；加 `--apply` 后会把计划中的 domain 文件复制到已存在的 Kitex 目标服务，并把域内 import 重写为目标 module。它不会删除源文件、覆盖目标文件或自动接好跨服务 client。
 
@@ -279,6 +298,31 @@ ncgo doctor
 ```
 
 如果你想先准备文件、稍后再跑生成器，可以使用 `--no-generate`。
+
+### Hertz 项目执行 `make swagger` 找不到 `protoc` 或插件
+
+Hertz 模板的 `make swagger` 会调用 `protoc --http-swagger_out=...`，因此需要同时准备：
+
+- `protoc`：Protocol Buffers 编译器，需要通过系统包管理器或官方 release 安装；
+- `protoc-gen-http-swagger`：Go 插件，需要安装到 `GOBIN` 或 `$(go env GOPATH)/bin`，并确保该目录在 `PATH` 中。
+
+常见安装方式：
+
+```bash
+# macOS / Homebrew
+brew install protobuf
+
+# Go 插件
+go install github.com/hertz-contrib/swagger-generate/protoc-gen-http-swagger@latest
+
+# 确认 PATH 能找到工具
+protoc --version
+protoc-gen-http-swagger --help
+```
+
+生成后的 Hertz 项目也提供 `make install-tools`，会安装 Go 侧开发工具和 `protoc-gen-http-swagger`；但 `protoc` 本身仍需你通过系统方式安装。
+
+Swagger spec 会通过 `go:embed` 编译进二进制。执行 `make swagger` 更新 `internal/docs/swagger/openapi.yaml` 后，需要重新 `go run .` / `make dev` 或重新构建并重启服务，`/swagger/openapi.yaml` 才会返回最新内容。
 
 ## 开发检查
 

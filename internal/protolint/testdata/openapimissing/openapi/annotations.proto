@@ -1,0 +1,22 @@
+syntax = "proto3";
+
+package openapi;
+
+import "google/protobuf/descriptor.proto";
+import "openapi/openapi.proto";
+
+extend google.protobuf.MethodOptions {
+  openapi.v3.Operation operation = 1143;
+}
+
+extend google.protobuf.MessageOptions {
+  openapi.v3.Schema schema = 1143;
+}
+
+extend google.protobuf.FieldOptions {
+  openapi.v3.Parameter parameter = 1144;
+}
+
+extend google.protobuf.FieldOptions {
+  openapi.v3.Schema property = 1143;
+}

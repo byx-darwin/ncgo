@@ -1,0 +1,106 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ncgo://schemas/i18n/report-input-v1",
+  "title": "ncgo i18n report input v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "source_locale",
+    "summary",
+    "missing_source",
+    "missing_translations",
+    "stale_translations",
+    "draft_translations",
+    "extra_keys",
+    "glossary_hints"
+  ],
+  "properties": {
+    "source_locale": {
+      "type": "string",
+      "const": "zh-CN"
+    },
+    "summary": {
+      "$ref": "#/$defs/summary"
+    },
+    "missing_source": {
+      "$ref": "#/$defs/reportItemList"
+    },
+    "missing_translations": {
+      "$ref": "#/$defs/reportItemList"
+    },
+    "stale_translations": {
+      "$ref": "#/$defs/reportItemList"
+    },
+    "draft_translations": {
+      "$ref": "#/$defs/reportItemList"
+    },
+    "extra_keys": {
+      "$ref": "#/$defs/reportItemList"
+    },
+    "glossary_hints": {
+      "$ref": "#/$defs/glossaryHintList"
+    }
+  },
+  "$defs": {
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "locale_count",
+        "message_key_count",
+        "missing_source_count",
+        "missing_translations_count",
+        "stale_translations_count",
+        "draft_translations_count",
+        "extra_keys_count",
+        "glossary_hints_count"
+      ],
+      "properties": {
+        "locale_count": { "type": "integer", "minimum": 1 },
+        "message_key_count": { "type": "integer", "minimum": 0 },
+        "missing_source_count": { "type": "integer", "minimum": 0 },
+        "missing_translations_count": { "type": "integer", "minimum": 0 },
+        "stale_translations_count": { "type": "integer", "minimum": 0 },
+        "draft_translations_count": { "type": "integer", "minimum": 0 },
+        "extra_keys_count": { "type": "integer", "minimum": 0 },
+        "glossary_hints_count": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "reportItemList": {
+      "type": ["array", "null"],
+      "items": {
+        "$ref": "#/$defs/reportItem"
+      }
+    },
+    "glossaryHintList": {
+      "type": ["array", "null"],
+      "items": {
+        "$ref": "#/$defs/glossaryHint"
+      }
+    },
+    "reportItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "key"],
+      "properties": {
+        "language": { "type": "string", "minLength": 2 },
+        "key": { "type": "string", "minLength": 1 },
+        "source_text": { "type": "string" },
+        "current_text": { "type": "string" },
+        "status": { "type": "string" }
+      }
+    },
+    "glossaryHint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["language", "key", "term", "recommended"],
+      "properties": {
+        "language": { "type": "string", "minLength": 2 },
+        "key": { "type": "string", "minLength": 1 },
+        "term": { "type": "string", "minLength": 1 },
+        "recommended": { "type": "string", "minLength": 1 },
+        "current_text": { "type": "string" }
+      }
+    }
+  }
+}

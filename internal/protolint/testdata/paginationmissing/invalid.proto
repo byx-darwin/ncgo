@@ -1,0 +1,44 @@
+syntax = "proto3";
+
+package demo;
+
+message ListUsersReq {
+  string keyword = 1;
+}
+
+message ListUsersResp {
+  repeated string users = 1;
+}
+
+message SearchUsersReq {
+  string keyword = 1;
+  int32 limit = 2;
+}
+
+message SearchUsersResp {
+  repeated string users = 1;
+}
+
+message QueryUsersReq {
+  string keyword = 1;
+  string cursor = 2;
+}
+
+message QueryUsersResp {
+  repeated string users = 1;
+}
+
+message GetUserReq {
+  string id = 1;
+}
+
+message GetUserResp {
+  string name = 1;
+}
+
+service Demo {
+  rpc ListUsers(ListUsersReq) returns (ListUsersResp) {}
+  rpc SearchUsers(SearchUsersReq) returns (SearchUsersResp) {}
+  rpc QueryUsers(QueryUsersReq) returns (QueryUsersResp) {}
+  rpc GetUser(GetUserReq) returns (GetUserResp) {}
+}

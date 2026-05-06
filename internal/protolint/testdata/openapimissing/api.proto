@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package api;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.FieldOptions {
+  string query = 50001;
+  string path = 50002;
+  string header = 50003;
+  string cookie = 50004;
+  string body = 50005;
+  string raw_body = 50006;
+  string form = 50007;
+}
+
+extend google.protobuf.MethodOptions {
+  string get = 51001;
+  string post = 51002;
+  string put = 51003;
+  string patch = 51004;
+  string delete = 51005;
+  string options = 51006;
+  string head = 51007;
+}

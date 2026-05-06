@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package demo;
+
+import "api.proto";
+
+message GetReq {
+  string id = 1 [(api.path) = "id"];
+}
+
+message GetResp {
+  string message = 1 [(api.body) = "message"];
+  string trace = 2 [(api.query) = "trace"];
+  string ok = 3;
+}
+
+message OkayReq {
+  string id = 1 [(api.path) = "id"];
+}
+
+message OkayResp {
+  string message = 1;
+}
+
+service Demo {
+  rpc Get(GetReq) returns (GetResp) {
+    option (api.get) = "/items/:id";
+  }
+
+  rpc Okay(OkayReq) returns (OkayResp) {
+    option (api.get) = "/ok/:id";
+  }
+}

@@ -47,6 +47,9 @@ layouts:
   - path: internal/pkg/response/
     delims: ["", ""]
     body: ""
+  - path: internal/pkg/i18n/
+    delims: ["", ""]
+    body: ""
   - path: internal/pkg/errcode/
     delims: ["", ""]
     body: ""
@@ -137,7 +140,7 @@ layouts:
         enabled: false
         # Swagger UI 访问前缀；会暴露 <path>/index.html 与 <path>/openapi.yaml
         path: /swagger
-        # OpenAPI YAML 文件在本地磁盘中的生成位置；默认由 `make swagger` 写入
+        # OpenAPI YAML 文件生成位置；默认由 `make swagger` 写入，并在下次 go build/go run 时嵌入二进制
         spec_file: internal/docs/swagger/openapi.yaml
       # 安全控制：这些路径只允许来自 internal_cidrs 的请求访问
       security:
@@ -869,9 +872,1681 @@ layouts:
           return "dev"
       }
 
+  # ── pkg/i18n: language negotiation and message catalog ───────────────────
+  - path: internal/pkg/i18n/i18n.go
+    delims: ["", ""]
+    body: |-
+      package i18n
+
+      import (
+          "sort"
+          "strconv"
+          "strings"
+          "sync"
+      )
+
+      const (
+          HeaderAcceptLanguage  = "Accept-Language"
+          HeaderContentLanguage = "Content-Language"
+          DefaultLanguage       = "en"
+          SimplifiedChinese     = "zh-CN"
+          TraditionalChinese    = "zh-TW"
+          Japanese              = "ja-JP"
+          Korean                = "ko-KR"
+          French                = "fr-FR"
+          German                = "de-DE"
+          Spanish               = "es-ES"
+      )
+
+      var (
+          catalogMu       sync.RWMutex
+          catalog         = map[string]map[string]string{}
+          languageAliases = map[string]string{}
+      )
+
+      func init() {
+          RegisterLanguage(DefaultLanguage, "en")
+          RegisterLanguage(SimplifiedChinese, "zh", "zh-CN", "zh-Hans")
+          RegisterLanguage(TraditionalChinese, "zh-TW", "zh-Hant", "zh-HK", "zh-MO")
+          RegisterLanguage(Japanese, "ja")
+          RegisterLanguage(Korean, "ko")
+          RegisterLanguage(French, "fr")
+          RegisterLanguage(German, "de")
+          RegisterLanguage(Spanish, "es")
+      }
+
+      func RegisterLanguage(language string, aliases ...string) string {
+          language = strings.TrimSpace(language)
+          if language == "" || language == "*" {
+              panic("i18n: language must not be empty")
+          }
+          catalogMu.Lock()
+          defer catalogMu.Unlock()
+          if catalog[language] == nil {
+              catalog[language] = map[string]string{}
+          }
+          registerLanguageAliasLocked(language, language)
+          for _, alias := range aliases {
+              registerLanguageAliasLocked(language, alias)
+          }
+          return language
+      }
+
+      func registerLanguageAliasLocked(language, alias string) {
+          alias = languageKey(alias)
+          if alias == "" || alias == "*" {
+              return
+          }
+          languageAliases[alias] = language
+      }
+
+      func Register(language, key, message string) {
+          if lang, ok := supportedLanguage(language); ok {
+              language = lang
+          } else {
+              language = RegisterLanguage(language)
+          }
+          key, message = strings.TrimSpace(key), strings.TrimSpace(message)
+          if key == "" || message == "" {
+              panic("i18n: language key and message must not be empty")
+          }
+          catalogMu.Lock()
+          defer catalogMu.Unlock()
+          if catalog[language] == nil {
+              catalog[language] = map[string]string{}
+          }
+          catalog[language][key] = message
+      }
+
+      func Translate(language, key string) string {
+          language, key = Normalize(language), strings.TrimSpace(key)
+          if key == "" || language == DefaultLanguage {
+              return key
+          }
+          catalogMu.RLock()
+          defer catalogMu.RUnlock()
+          if messages := catalog[language]; messages != nil {
+              if msg := messages[key]; msg != "" {
+                  return msg
+              }
+          }
+          return key
+      }
+
+      func FromAcceptLanguage(header string) string {
+          candidates := parseAcceptLanguage(header)
+          for _, candidate := range candidates {
+              if lang, ok := supportedLanguage(candidate.Tag); ok {
+                  return lang
+              }
+          }
+          return DefaultLanguage
+      }
+
+      func Normalize(language string) string {
+          if lang, ok := supportedLanguage(language); ok {
+              return lang
+          }
+          return DefaultLanguage
+      }
+
+      func supportedLanguage(language string) (string, bool) {
+          key := languageKey(language)
+          if key == "" || key == "*" {
+              return DefaultLanguage, true
+          }
+          catalogMu.RLock()
+          defer catalogMu.RUnlock()
+          for {
+              if lang, ok := languageAliases[key]; ok {
+                  return lang, true
+              }
+              i := strings.LastIndex(key, "-")
+              if i <= 0 {
+                  return "", false
+              }
+              key = key[:i]
+          }
+      }
+
+      func languageKey(language string) string {
+          return strings.ToLower(strings.ReplaceAll(strings.TrimSpace(language), "_", "-"))
+      }
+
+      type languageCandidate struct {
+          Tag     string
+          Quality float64
+          Index   int
+      }
+
+      func parseAcceptLanguage(header string) []languageCandidate {
+          parts := strings.Split(header, ",")
+          candidates := make([]languageCandidate, 0, len(parts))
+          for i, part := range parts {
+              tag, quality := parseLanguagePart(part)
+              if tag == "" || quality <= 0 {
+                  continue
+              }
+              candidates = append(candidates, languageCandidate{Tag: tag, Quality: quality, Index: i})
+          }
+          sort.SliceStable(candidates, func(i, j int) bool {
+              if candidates[i].Quality == candidates[j].Quality {
+                  return candidates[i].Index < candidates[j].Index
+              }
+              return candidates[i].Quality > candidates[j].Quality
+          })
+          return candidates
+      }
+
+      func parseLanguagePart(part string) (string, float64) {
+          segments := strings.Split(strings.TrimSpace(part), ";")
+          tag := strings.TrimSpace(segments[0])
+          quality := 1.0
+          for _, segment := range segments[1:] {
+              key, value, ok := strings.Cut(strings.TrimSpace(segment), "=")
+              if ok && strings.TrimSpace(key) == "q" {
+                  if parsed, err := strconv.ParseFloat(strings.TrimSpace(value), 64); err == nil {
+                      quality = parsed
+                  }
+              }
+          }
+          return tag, quality
+      }
+
+  - path: internal/pkg/i18n/i18n_test.go
+    delims: ["", ""]
+    body: |-
+      package i18n
+
+      import "testing"
+
+      func TestFromAcceptLanguageChoosesHighestQualitySupportedLanguage(t *testing.T) {
+          got := FromAcceptLanguage("en-US;q=0.5, zh-CN;q=0.9")
+          if got != SimplifiedChinese {
+              t.Fatalf("language = %q, want %q", got, SimplifiedChinese)
+          }
+      }
+
+      func TestFromAcceptLanguageSupportsBuiltInLanguages(t *testing.T) {
+          cases := map[string]string{
+              "zh-TW": TraditionalChinese,
+              "ja-JP": Japanese,
+              "ko-KR": Korean,
+              "fr-FR": French,
+              "de-DE": German,
+              "es-ES": Spanish,
+          }
+          for header, want := range cases {
+              if got := FromAcceptLanguage(header); got != want {
+                  t.Fatalf("FromAcceptLanguage(%q) = %q, want %q", header, got, want)
+              }
+          }
+      }
+
+      func TestTranslateBuiltInLanguages(t *testing.T) {
+          cases := map[string]string{
+              "zh-TW": "介面不存在",
+              "ja-JP": "インターフェースが存在しません",
+              "ko-KR": "인터페이스가 존재하지 않습니다",
+              "fr-FR": "interface introuvable",
+              "de-DE": "Schnittstelle nicht gefunden",
+              "es-ES": "interfaz no encontrada",
+          }
+          for lang, want := range cases {
+              if got := Translate(lang, "route_not_found"); got != want {
+                  t.Fatalf("Translate(%q, route_not_found) = %q, want %q", lang, got, want)
+              }
+          }
+      }
+
+      func TestTranslateFallsBackToKey(t *testing.T) {
+          if got := Translate("zh-CN", "missing_key"); got != "missing_key" {
+              t.Fatalf("translation = %q, want key fallback", got)
+          }
+      }
+
+      func TestRegisterBusinessMessage(t *testing.T) {
+          Register("zh-CN", "order_conflict", "订单冲突")
+          if got := Translate("zh-CN", "order_conflict"); got != "订单冲突" {
+              t.Fatalf("translation = %q", got)
+          }
+      }
+
+      func TestRegisterLanguageSupportsDynamicLanguage(t *testing.T) {
+          RegisterLanguage("it-IT", "it")
+          Register("it-IT", "route_not_found", "interfaccia non trovata")
+          if got := FromAcceptLanguage("it;q=0.9, en;q=0.8"); got != "it-IT" {
+              t.Fatalf("dynamic language = %q, want it-IT", got)
+          }
+          if got := Translate("it-IT", "route_not_found"); got != "interfaccia non trovata" {
+              t.Fatalf("dynamic translation = %q", got)
+          }
+      }
+
+  - path: internal/pkg/i18n/locales/de-DE.json
+    delims: ["", ""]
+    body: |-
+      {
+        "language": "de-DE",
+        "aliases": ["de"],
+        "messages": {
+          "app_key_invalid": "App-Schlüssel ungültig",
+          "cache_unavailable": "Cache nicht verfügbar",
+          "config_invalid": "Konfiguration ungültig",
+          "data_decode_failed": "Datendekodierung fehlgeschlagen",
+          "database_unavailable": "Datenbank nicht verfügbar",
+          "dependency_error": "Fehler eines abhängigen Dienstes",
+          "duplicate_request": "doppelte Anfrage",
+          "idempotency_conflict": "Konflikt bei idempotenter Anfrage",
+          "idempotency_key_missing": "Idempotenzschlüssel fehlt",
+          "internal_error": "interner Systemfehler",
+          "message_queue_unavailable": "Nachrichtenwarteschlange nicht verfügbar",
+          "method_not_allowed": "Anfragemethode nicht erlaubt",
+          "not_implemented": "Funktion nicht implementiert",
+          "ok": "erfolgreich",
+          "permission_denied": "Berechtigung verweigert",
+          "rate_limited": "zu viele Anfragen",
+          "replay_request": "Wiederholungsanfrage",
+          "request_bind_failed": "Anfragebindung fehlgeschlagen",
+          "request_body_invalid": "Anfragekörper ungültig",
+          "request_body_too_large": "Anfragekörper zu groß",
+          "request_param_invalid": "Anfrageparameter ungültig",
+          "request_param_missing": "Anfrageparameter fehlt",
+          "request_timeout": "Zeitüberschreitung der Anfrage",
+          "request_validate_failed": "Anfragevalidierung fehlgeschlagen",
+          "route_not_found": "Schnittstelle nicht gefunden",
+          "rpc_failed": "RPC-Aufruf fehlgeschlagen",
+          "rpc_timeout": "RPC-Aufruf Zeitüberschreitung",
+          "search_unavailable": "Suchdienst nicht verfügbar",
+          "session_invalid": "Sitzung ungültig",
+          "signature_expired": "Signatur abgelaufen",
+          "signature_invalid": "Signatur ungültig",
+          "signature_missing": "Signaturinformationen fehlen",
+          "storage_unavailable": "Speicherdienst nicht verfügbar",
+          "token_claims_invalid": "Token-Ansprüche ungültig",
+          "token_expired": "Token abgelaufen",
+          "token_invalid": "Token ungültig",
+          "token_missing": "Token fehlt",
+          "unauthorized": "nicht authentifiziert",
+          "unsupported_media_type": "nicht unterstützter Medientyp"
+        }
+      }
+
+  - path: internal/pkg/i18n/locales/es-ES.json
+    delims: ["", ""]
+    body: |-
+      {
+        "language": "es-ES",
+        "aliases": ["es"],
+        "messages": {
+          "app_key_invalid": "clave de aplicación no válida",
+          "cache_unavailable": "caché no disponible",
+          "config_invalid": "configuración no válida",
+          "data_decode_failed": "error al decodificar datos",
+          "database_unavailable": "base de datos no disponible",
+          "dependency_error": "error de servicio dependiente",
+          "duplicate_request": "solicitud duplicada",
+          "idempotency_conflict": "conflicto de solicitud idempotente",
+          "idempotency_key_missing": "falta la clave de idempotencia",
+          "internal_error": "error interno del sistema",
+          "message_queue_unavailable": "cola de mensajes no disponible",
+          "method_not_allowed": "método de solicitud no permitido",
+          "not_implemented": "función no implementada",
+          "ok": "correcto",
+          "permission_denied": "permiso denegado",
+          "rate_limited": "demasiadas solicitudes",
+          "replay_request": "solicitud repetida",
+          "request_bind_failed": "error al enlazar la solicitud",
+          "request_body_invalid": "cuerpo de solicitud no válido",
+          "request_body_too_large": "cuerpo de solicitud demasiado grande",
+          "request_param_invalid": "parámetro de solicitud no válido",
+          "request_param_missing": "falta un parámetro de la solicitud",
+          "request_timeout": "tiempo de espera de la solicitud agotado",
+          "request_validate_failed": "error al validar la solicitud",
+          "route_not_found": "interfaz no encontrada",
+          "rpc_failed": "error en llamada RPC",
+          "rpc_timeout": "tiempo de espera de RPC agotado",
+          "search_unavailable": "servicio de búsqueda no disponible",
+          "session_invalid": "sesión no válida",
+          "signature_expired": "firma expirada",
+          "signature_invalid": "firma no válida",
+          "signature_missing": "falta información de firma",
+          "storage_unavailable": "servicio de almacenamiento no disponible",
+          "token_claims_invalid": "reclamaciones del token no válidas",
+          "token_expired": "token expirado",
+          "token_invalid": "token no válido",
+          "token_missing": "falta el token",
+          "unauthorized": "no autenticado",
+          "unsupported_media_type": "tipo de medio no compatible"
+        }
+      }
+
+  - path: internal/pkg/i18n/locales/fr-FR.json
+    delims: ["", ""]
+    body: |-
+      {
+        "language": "fr-FR",
+        "aliases": ["fr"],
+        "messages": {
+          "app_key_invalid": "clé d'application invalide",
+          "cache_unavailable": "cache indisponible",
+          "config_invalid": "configuration invalide",
+          "data_decode_failed": "échec de décodage des données",
+          "database_unavailable": "base de données indisponible",
+          "dependency_error": "erreur de service dépendant",
+          "duplicate_request": "requête en double",
+          "idempotency_conflict": "conflit de requête idempotente",
+          "idempotency_key_missing": "clé d'idempotence manquante",
+          "internal_error": "erreur interne du système",
+          "message_queue_unavailable": "file de messages indisponible",
+          "method_not_allowed": "méthode de requête non autorisée",
+          "not_implemented": "fonctionnalité non implémentée",
+          "ok": "succès",
+          "permission_denied": "permission refusée",
+          "rate_limited": "trop de requêtes",
+          "replay_request": "requête rejouée",
+          "request_bind_failed": "échec de liaison de la requête",
+          "request_body_invalid": "corps de requête invalide",
+          "request_body_too_large": "corps de requête trop volumineux",
+          "request_param_invalid": "paramètre de requête invalide",
+          "request_param_missing": "paramètre de requête manquant",
+          "request_timeout": "délai de requête dépassé",
+          "request_validate_failed": "échec de validation de la requête",
+          "route_not_found": "interface introuvable",
+          "rpc_failed": "échec de l'appel RPC",
+          "rpc_timeout": "délai d'appel RPC dépassé",
+          "search_unavailable": "service de recherche indisponible",
+          "session_invalid": "session invalide",
+          "signature_expired": "signature expirée",
+          "signature_invalid": "signature invalide",
+          "signature_missing": "informations de signature manquantes",
+          "storage_unavailable": "service de stockage indisponible",
+          "token_claims_invalid": "revendications du jeton invalides",
+          "token_expired": "jeton expiré",
+          "token_invalid": "jeton invalide",
+          "token_missing": "jeton manquant",
+          "unauthorized": "non authentifié",
+          "unsupported_media_type": "type de média non pris en charge"
+        }
+      }
+
+  - path: internal/pkg/i18n/locales/it-IT.json
+    delims: ["", ""]
+    body: |-
+      {
+        "language": "it-IT",
+        "aliases": ["it"],
+        "messages": {
+          "route_not_found": "interfaccia non trovata",
+          "order_conflict": "conflitto ordine"
+        }
+      }
+
+  - path: internal/pkg/i18n/locales/ja-JP.json
+    delims: ["", ""]
+    body: |-
+      {
+        "language": "ja-JP",
+        "aliases": ["ja"],
+        "messages": {
+          "app_key_invalid": "アプリキーが無効です",
+          "cache_unavailable": "キャッシュを利用できません",
+          "config_invalid": "設定が無効です",
+          "data_decode_failed": "データの解析に失敗しました",
+          "database_unavailable": "データベースを利用できません",
+          "dependency_error": "依存サービスエラー",
+          "duplicate_request": "重複リクエストです",
+          "idempotency_conflict": "冪等リクエストが競合しています",
+          "idempotency_key_missing": "冪等キーが不足しています",
+          "internal_error": "システム内部エラー",
+          "message_queue_unavailable": "メッセージキューを利用できません",
+          "method_not_allowed": "リクエストメソッドは許可されていません",
+          "not_implemented": "機能は未実装です",
+          "ok": "成功",
+          "permission_denied": "権限が不足しています",
+          "rate_limited": "リクエストが多すぎます",
+          "replay_request": "リプレイリクエストです",
+          "request_bind_failed": "リクエストのバインドに失敗しました",
+          "request_body_invalid": "リクエストボディが無効です",
+          "request_body_too_large": "リクエストボディが大きすぎます",
+          "request_param_invalid": "リクエストパラメータが無効です",
+          "request_param_missing": "リクエストパラメータが不足しています",
+          "request_timeout": "リクエストがタイムアウトしました",
+          "request_validate_failed": "リクエストの検証に失敗しました",
+          "route_not_found": "インターフェースが存在しません",
+          "rpc_failed": "RPC 呼び出しに失敗しました",
+          "rpc_timeout": "RPC 呼び出しがタイムアウトしました",
+          "search_unavailable": "検索サービスを利用できません",
+          "session_invalid": "セッションが無効です",
+          "signature_expired": "署名の有効期限が切れています",
+          "signature_invalid": "署名が無効です",
+          "signature_missing": "署名情報が不足しています",
+          "storage_unavailable": "ストレージサービスを利用できません",
+          "token_claims_invalid": "トークンのクレームが無効です",
+          "token_expired": "トークンの有効期限が切れています",
+          "token_invalid": "トークンが無効です",
+          "token_missing": "トークンが不足しています",
+          "unauthorized": "未認証です",
+          "unsupported_media_type": "サポートされていないメディアタイプです"
+        }
+      }
+
+  - path: internal/pkg/i18n/locales/ko-KR.json
+    delims: ["", ""]
+    body: |-
+      {
+        "language": "ko-KR",
+        "aliases": ["ko"],
+        "messages": {
+          "app_key_invalid": "앱 키가 유효하지 않습니다",
+          "cache_unavailable": "캐시를 사용할 수 없습니다",
+          "config_invalid": "설정이 유효하지 않습니다",
+          "data_decode_failed": "데이터 파싱 실패",
+          "database_unavailable": "데이터베이스를 사용할 수 없습니다",
+          "dependency_error": "의존 서비스 오류",
+          "duplicate_request": "중복 요청입니다",
+          "idempotency_conflict": "멱등 요청 충돌입니다",
+          "idempotency_key_missing": "멱등 키가 누락되었습니다",
+          "internal_error": "시스템 내부 오류",
+          "message_queue_unavailable": "메시지 큐를 사용할 수 없습니다",
+          "method_not_allowed": "허용되지 않은 요청 메서드입니다",
+          "not_implemented": "기능이 구현되지 않았습니다",
+          "ok": "성공",
+          "permission_denied": "권한이 부족합니다",
+          "rate_limited": "요청이 너무 많습니다",
+          "replay_request": "재전송 요청입니다",
+          "request_bind_failed": "요청 바인딩 실패",
+          "request_body_invalid": "요청 본문이 유효하지 않습니다",
+          "request_body_too_large": "요청 본문이 너무 큽니다",
+          "request_param_invalid": "요청 매개변수가 유효하지 않습니다",
+          "request_param_missing": "요청 매개변수가 누락되었습니다",
+          "request_timeout": "요청 시간이 초과되었습니다",
+          "request_validate_failed": "요청 검증 실패",
+          "route_not_found": "인터페이스가 존재하지 않습니다",
+          "rpc_failed": "RPC 호출 실패",
+          "rpc_timeout": "RPC 호출 시간 초과",
+          "search_unavailable": "검색 서비스를 사용할 수 없습니다",
+          "session_invalid": "세션이 유효하지 않습니다",
+          "signature_expired": "서명이 만료되었습니다",
+          "signature_invalid": "서명이 유효하지 않습니다",
+          "signature_missing": "서명 정보가 누락되었습니다",
+          "storage_unavailable": "스토리지 서비스를 사용할 수 없습니다",
+          "token_claims_invalid": "토큰 클레임이 유효하지 않습니다",
+          "token_expired": "토큰이 만료되었습니다",
+          "token_invalid": "토큰이 유효하지 않습니다",
+          "token_missing": "토큰이 누락되었습니다",
+          "unauthorized": "인증되지 않았습니다",
+          "unsupported_media_type": "지원하지 않는 미디어 타입입니다"
+        }
+      }
+
+  - path: internal/pkg/i18n/locales/zh-CN.json
+    delims: ["", ""]
+    body: |-
+      {
+        "language": "zh-CN",
+        "aliases": ["zh", "zh-CN", "zh-Hans"],
+        "messages": {
+          "app_key_invalid": "应用标识无效",
+          "cache_unavailable": "缓存不可用",
+          "config_invalid": "配置无效",
+          "data_decode_failed": "数据解析失败",
+          "database_unavailable": "数据库不可用",
+          "dependency_error": "依赖服务错误",
+          "duplicate_request": "重复请求",
+          "idempotency_conflict": "幂等请求冲突",
+          "idempotency_key_missing": "幂等键缺失",
+          "internal_error": "系统内部错误",
+          "message_queue_unavailable": "消息队列不可用",
+          "method_not_allowed": "请求方法不允许",
+          "not_implemented": "功能未实现",
+          "ok": "成功",
+          "permission_denied": "权限不足",
+          "rate_limited": "请求过于频繁",
+          "replay_request": "重放请求",
+          "request_bind_failed": "请求绑定失败",
+          "request_body_invalid": "请求体无效",
+          "request_body_too_large": "请求体过大",
+          "request_param_invalid": "请求参数无效",
+          "request_param_missing": "请求参数缺失",
+          "request_timeout": "请求超时",
+          "request_validate_failed": "请求校验失败",
+          "route_not_found": "接口不存在",
+          "rpc_failed": "RPC 调用失败",
+          "rpc_timeout": "RPC 调用超时",
+          "search_unavailable": "搜索服务不可用",
+          "session_invalid": "会话无效",
+          "signature_expired": "签名已过期",
+          "signature_invalid": "签名无效",
+          "signature_missing": "签名信息缺失",
+          "storage_unavailable": "存储服务不可用",
+          "token_claims_invalid": "令牌声明无效",
+          "token_expired": "令牌已过期",
+          "token_invalid": "令牌无效",
+          "token_missing": "令牌缺失",
+          "unauthorized": "未认证",
+          "unsupported_media_type": "不支持的媒体类型"
+        }
+      }
+
+  - path: internal/pkg/i18n/locales/zh-TW.json
+    delims: ["", ""]
+    body: |-
+      {
+        "language": "zh-TW",
+        "aliases": ["zh-HK", "zh-Hant", "zh-MO", "zh-TW"],
+        "messages": {
+          "app_key_invalid": "應用程式標識無效",
+          "cache_unavailable": "快取不可用",
+          "config_invalid": "設定無效",
+          "data_decode_failed": "資料解析失敗",
+          "database_unavailable": "資料庫不可用",
+          "dependency_error": "依賴服務錯誤",
+          "duplicate_request": "重複請求",
+          "idempotency_conflict": "冪等請求衝突",
+          "idempotency_key_missing": "冪等鍵缺失",
+          "internal_error": "系統內部錯誤",
+          "message_queue_unavailable": "訊息佇列不可用",
+          "method_not_allowed": "請求方法不允許",
+          "not_implemented": "功能未實作",
+          "ok": "成功",
+          "permission_denied": "權限不足",
+          "rate_limited": "請求過於頻繁",
+          "replay_request": "重放請求",
+          "request_bind_failed": "請求綁定失敗",
+          "request_body_invalid": "請求體無效",
+          "request_body_too_large": "請求體過大",
+          "request_param_invalid": "請求參數無效",
+          "request_param_missing": "請求參數缺失",
+          "request_timeout": "請求逾時",
+          "request_validate_failed": "請求驗證失敗",
+          "route_not_found": "介面不存在",
+          "rpc_failed": "RPC 呼叫失敗",
+          "rpc_timeout": "RPC 呼叫逾時",
+          "search_unavailable": "搜尋服務不可用",
+          "session_invalid": "工作階段無效",
+          "signature_expired": "簽章已過期",
+          "signature_invalid": "簽章無效",
+          "signature_missing": "簽章資訊缺失",
+          "storage_unavailable": "儲存服務不可用",
+          "token_claims_invalid": "權杖宣告無效",
+          "token_expired": "權杖已過期",
+          "token_invalid": "權杖無效",
+          "token_missing": "權杖缺失",
+          "unauthorized": "未認證",
+          "unsupported_media_type": "不支援的媒體類型"
+        }
+      }
+
+  - path: internal/pkg/i18n/.meta/status.json
+    delims: ["", ""]
+    body: |-
+      {
+        "source_locale": "zh-CN",
+        "locales": {}
+      }
+
+  - path: internal/pkg/i18n/glossary.json
+    delims: ["", ""]
+    body: |-
+      {
+        "terms": [
+          {
+            "key": "token",
+            "translations": {
+              "zh-CN": "令牌",
+              "ja-JP": "トークン",
+              "ko-KR": "토큰",
+              "fr-FR": "jeton",
+              "de-DE": "Token",
+              "es-ES": "token"
+            },
+            "notes": "authentication token used in backend error messages"
+          },
+          {
+            "key": "signature",
+            "translations": {
+              "zh-CN": "签名",
+              "ja-JP": "署名",
+              "ko-KR": "서명",
+              "fr-FR": "signature",
+              "de-DE": "Signatur",
+              "es-ES": "firma"
+            },
+            "notes": "request signing / signature verification"
+          },
+          {
+            "key": "idempotency",
+            "translations": {
+              "zh-CN": "幂等",
+              "ja-JP": "冪等",
+              "ko-KR": "멱등",
+              "fr-FR": "idempotence",
+              "de-DE": "Idempotenz",
+              "es-ES": "idempotencia"
+            },
+            "notes": "idempotency key and conflict terminology"
+          }
+        ]
+      }
+
+  - path: tools/i18n/util/i18nutil.go
+    delims: ["", ""]
+    body: |-
+      package i18nutil
+
+      import (
+          "crypto/sha256"
+          "encoding/hex"
+          "encoding/json"
+          "fmt"
+          "go/ast"
+          "go/parser"
+          "go/token"
+          "os"
+          "path/filepath"
+          "regexp"
+          "sort"
+          "strconv"
+          "strings"
+      )
+
+      const PlaceholderPrefix = "__TODO__: "
+
+      type LocaleFile struct {
+          Language string            `json:"language"`
+          Aliases  []string          `json:"aliases"`
+          Messages map[string]string `json:"messages"`
+      }
+
+      type StatusFile struct {
+          SourceLocale string                         `json:"source_locale"`
+          Locales      map[string]map[string]StatusEntry `json:"locales"`
+      }
+
+      type StatusEntry struct {
+          Status       string `json:"status,omitempty"`
+          SourceLocale string `json:"source_locale,omitempty"`
+          SourceHash   string `json:"source_hash,omitempty"`
+          UpdatedAt    string `json:"updated_at,omitempty"`
+          UpdatedBy    string `json:"updated_by,omitempty"`
+          Note         string `json:"note,omitempty"`
+      }
+
+      type GlossaryFile struct {
+          Terms []GlossaryTerm `json:"terms"`
+      }
+
+      type GlossaryTerm struct {
+          Key          string            `json:"key"`
+          Translations map[string]string `json:"translations"`
+          Notes        string            `json:"notes,omitempty"`
+      }
+
+      type Report struct {
+          Summary             ReportSummary  `json:"summary"`
+          SourceLocale        string       `json:"source_locale"`
+          MissingSource       []ReportItem `json:"missing_source"`
+          MissingTranslations []ReportItem `json:"missing_translations"`
+          StaleTranslations   []ReportItem `json:"stale_translations"`
+          DraftTranslations   []ReportItem `json:"draft_translations"`
+          ExtraKeys           []ReportItem `json:"extra_keys"`
+          GlossaryHints       []GlossaryHint `json:"glossary_hints"`
+      }
+
+      type ReportSummary struct {
+          LocaleCount              int `json:"locale_count"`
+          MessageKeyCount          int `json:"message_key_count"`
+          MissingSourceCount       int `json:"missing_source_count"`
+          MissingTranslationsCount int `json:"missing_translations_count"`
+          StaleTranslationsCount   int `json:"stale_translations_count"`
+          DraftTranslationsCount   int `json:"draft_translations_count"`
+          ExtraKeysCount           int `json:"extra_keys_count"`
+          GlossaryHintsCount       int `json:"glossary_hints_count"`
+      }
+
+      type ReportItem struct {
+          Language    string `json:"language"`
+          Key         string `json:"key"`
+          SourceText  string `json:"source_text,omitempty"`
+          CurrentText string `json:"current_text,omitempty"`
+          Status      string `json:"status,omitempty"`
+      }
+
+      type GlossaryHint struct {
+          Language    string `json:"language"`
+          Key         string `json:"key"`
+          Term        string `json:"term"`
+          Recommended string `json:"recommended"`
+          CurrentText string `json:"current_text,omitempty"`
+      }
+
+      var (
+          goFmtPlaceholder = regexp.MustCompile(`%[sdv]`)
+          namedPlaceholder = regexp.MustCompile(`\{[A-Za-z0-9_]+\}`)
+      )
+
+      func PlaceholderForKey(key string) string {
+          return PlaceholderPrefix + strings.TrimSpace(key)
+      }
+
+      func IsPlaceholder(message string) bool {
+          msg := strings.TrimSpace(message)
+          return msg == "" || strings.HasPrefix(msg, PlaceholderPrefix)
+      }
+
+      func HashText(message string) string {
+          sum := sha256.Sum256([]byte(strings.TrimSpace(message)))
+          return hex.EncodeToString(sum[:8])
+      }
+
+      func LoadLocales(dir string) ([]LocaleFile, map[string]string, error) {
+          var locales []LocaleFile
+          paths := map[string]string{}
+          err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+              if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".json") {
+                  return err
+              }
+              body, err := os.ReadFile(path)
+              if err != nil {
+                  return err
+              }
+              var loc LocaleFile
+              if err := json.Unmarshal(body, &loc); err != nil {
+                  return fmt.Errorf("%s: %w", path, err)
+              }
+              if strings.TrimSpace(loc.Language) == "" {
+                  return fmt.Errorf("%s: language is required", path)
+              }
+              if loc.Messages == nil {
+                  loc.Messages = map[string]string{}
+              }
+              locales = append(locales, loc)
+              paths[loc.Language] = path
+              return nil
+          })
+          sort.Slice(locales, func(i, j int) bool { return locales[i].Language < locales[j].Language })
+          return locales, paths, err
+      }
+
+      func SaveLocale(path string, loc LocaleFile) error {
+          if loc.Messages == nil {
+              loc.Messages = map[string]string{}
+          }
+          sort.Strings(loc.Aliases)
+          body, err := json.MarshalIndent(loc, "", "  ")
+          if err != nil {
+              return err
+          }
+          if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+              return err
+          }
+          return os.WriteFile(path, append(body, '\n'), 0o644)
+      }
+
+      func FindLocale(locales []LocaleFile, language string) *LocaleFile {
+          for i := range locales {
+              if locales[i].Language == language {
+                  return &locales[i]
+              }
+          }
+          return nil
+      }
+
+      func LoadStatus(path, sourceLocale string) (StatusFile, error) {
+          status := StatusFile{SourceLocale: sourceLocale, Locales: map[string]map[string]StatusEntry{}}
+          body, err := os.ReadFile(path)
+          if err != nil {
+              if os.IsNotExist(err) {
+                  return status, nil
+              }
+              return StatusFile{}, err
+          }
+          if err := json.Unmarshal(body, &status); err != nil {
+              return StatusFile{}, fmt.Errorf("%s: %w", path, err)
+          }
+          if status.SourceLocale == "" {
+              status.SourceLocale = sourceLocale
+          }
+          if status.Locales == nil {
+              status.Locales = map[string]map[string]StatusEntry{}
+          }
+          return status, nil
+      }
+
+      func LoadGlossary(path string) (GlossaryFile, error) {
+          glossary := GlossaryFile{}
+          body, err := os.ReadFile(path)
+          if err != nil {
+              if os.IsNotExist(err) {
+                  return glossary, nil
+              }
+              return GlossaryFile{}, err
+          }
+          if err := json.Unmarshal(body, &glossary); err != nil {
+              return GlossaryFile{}, fmt.Errorf("%s: %w", path, err)
+          }
+          return glossary, nil
+      }
+
+      func SaveStatus(path string, status StatusFile) error {
+          if status.Locales == nil {
+              status.Locales = map[string]map[string]StatusEntry{}
+          }
+          body, err := json.MarshalIndent(status, "", "  ")
+          if err != nil {
+              return err
+          }
+          if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+              return err
+          }
+          return os.WriteFile(path, append(body, '\n'), 0o644)
+      }
+
+      func ScanMessageKeys(root string) ([]string, error) {
+          keys := map[string]struct{}{}
+          err := filepath.WalkDir(root, func(path string, d os.DirEntry, err error) error {
+              if err != nil {
+                  return err
+              }
+              if d.IsDir() {
+                  switch d.Name() {
+                  case ".git", "vendor", "node_modules", "output":
+                      return filepath.SkipDir
+                  }
+                  return nil
+              }
+              if !strings.HasSuffix(path, ".go") || strings.HasSuffix(path, "_test.go") {
+                  return nil
+              }
+              file, err := parser.ParseFile(token.NewFileSet(), path, nil, 0)
+              if err != nil {
+                  return fmt.Errorf("%s: %w", path, err)
+              }
+              ast.Inspect(file, func(n ast.Node) bool {
+                  lit, ok := n.(*ast.CompositeLit)
+                  if ok {
+                      for _, elt := range lit.Elts {
+                          kv, ok := elt.(*ast.KeyValueExpr)
+                          if !ok {
+                              continue
+                          }
+                          ident, ok := kv.Key.(*ast.Ident)
+                          if !ok || ident.Name != "Msg" {
+                              continue
+                          }
+                          value, ok := kv.Value.(*ast.BasicLit)
+                          if !ok || value.Kind != token.STRING {
+                              continue
+                          }
+                          key, err := strconv.Unquote(value.Value)
+                          if err == nil && strings.TrimSpace(key) != "" {
+                              keys[key] = struct{}{}
+                          }
+                      }
+                  }
+                  call, ok := n.(*ast.CallExpr)
+                  if ok {
+                      if selector, ok := call.Fun.(*ast.SelectorExpr); ok && selector.Sel.Name == "Public" && len(call.Args) > 0 {
+                          if value, ok := call.Args[0].(*ast.BasicLit); ok && value.Kind == token.STRING {
+                              key, err := strconv.Unquote(value.Value)
+                              if err == nil && strings.TrimSpace(key) != "" {
+                                  keys[key] = struct{}{}
+                              }
+                          }
+                      }
+                  }
+                  return true
+              })
+              return nil
+          })
+          return sortedSet(keys), err
+      }
+
+      func BuildReport(sourceLocale string, locales []LocaleFile, status StatusFile, glossary GlossaryFile) (Report, error) {
+          report := Report{SourceLocale: sourceLocale}
+          source := FindLocale(locales, sourceLocale)
+          if source == nil {
+              return report, fmt.Errorf("source locale %q not found", sourceLocale)
+          }
+          for _, key := range SortedKeys(source.Messages) {
+              sourceText := source.Messages[key]
+              if IsPlaceholder(sourceText) {
+                  report.MissingSource = append(report.MissingSource, ReportItem{
+                      Language:    sourceLocale,
+                      Key:         key,
+                      SourceText:  sourceText,
+                      CurrentText: sourceText,
+                      Status:      StatusFor(status, sourceLocale, key),
+                  })
+              }
+          }
+          for i := range locales {
+              loc := locales[i]
+              if loc.Language == sourceLocale {
+                  continue
+              }
+              for _, key := range SortedKeys(source.Messages) {
+                  sourceText := source.Messages[key]
+                  currentText, ok := loc.Messages[key]
+                  currentStatus := StatusFor(status, loc.Language, key)
+                  if !ok || IsPlaceholder(currentText) {
+                      report.MissingTranslations = append(report.MissingTranslations, ReportItem{
+                          Language:    loc.Language,
+                          Key:         key,
+                          SourceText:  sourceText,
+                          CurrentText: currentText,
+                          Status:      currentStatus,
+                      })
+                      continue
+                  }
+                  switch currentStatus {
+                  case "stale":
+                      report.StaleTranslations = append(report.StaleTranslations, ReportItem{Language: loc.Language, Key: key, SourceText: sourceText, CurrentText: currentText, Status: currentStatus})
+                  case "draft":
+                      report.DraftTranslations = append(report.DraftTranslations, ReportItem{Language: loc.Language, Key: key, SourceText: sourceText, CurrentText: currentText, Status: currentStatus})
+                  }
+              }
+              for _, key := range SortedKeys(loc.Messages) {
+                  if _, ok := source.Messages[key]; !ok {
+                      report.ExtraKeys = append(report.ExtraKeys, ReportItem{Language: loc.Language, Key: key, CurrentText: loc.Messages[key], Status: StatusFor(status, loc.Language, key)})
+                  }
+              }
+          }
+          sortReportItems(report.MissingSource)
+          sortReportItems(report.MissingTranslations)
+          sortReportItems(report.StaleTranslations)
+          sortReportItems(report.DraftTranslations)
+          sortReportItems(report.ExtraKeys)
+          report.GlossaryHints = BuildGlossaryHints(sourceLocale, locales, glossary)
+          sortGlossaryHints(report.GlossaryHints)
+          report.Summary = ReportSummary{
+              LocaleCount:              len(locales),
+              MessageKeyCount:          len(source.Messages),
+              MissingSourceCount:       len(report.MissingSource),
+              MissingTranslationsCount: len(report.MissingTranslations),
+              StaleTranslationsCount:   len(report.StaleTranslations),
+              DraftTranslationsCount:   len(report.DraftTranslations),
+              ExtraKeysCount:           len(report.ExtraKeys),
+              GlossaryHintsCount:       len(report.GlossaryHints),
+          }
+          return report, nil
+      }
+
+      func BuildGlossaryHints(sourceLocale string, locales []LocaleFile, glossary GlossaryFile) []GlossaryHint {
+          source := FindLocale(locales, sourceLocale)
+          if source == nil {
+              return nil
+          }
+          var hints []GlossaryHint
+          for _, term := range glossary.Terms {
+              sourceTerm := strings.TrimSpace(term.Translations[sourceLocale])
+              if sourceTerm == "" {
+                  continue
+              }
+              for i := range locales {
+                  loc := locales[i]
+                  if loc.Language == sourceLocale {
+                      continue
+                  }
+                  targetTerm := strings.TrimSpace(term.Translations[loc.Language])
+                  if targetTerm == "" {
+                      continue
+                  }
+                  for _, key := range SortedKeys(source.Messages) {
+                      sourceText := source.Messages[key]
+                      currentText := loc.Messages[key]
+                      if IsPlaceholder(sourceText) || IsPlaceholder(currentText) {
+                          continue
+                      }
+                      if strings.Contains(sourceText, sourceTerm) && !strings.Contains(currentText, targetTerm) {
+                          hints = append(hints, GlossaryHint{
+                              Language:    loc.Language,
+                              Key:         key,
+                              Term:        term.Key,
+                              Recommended: targetTerm,
+                              CurrentText: currentText,
+                          })
+                      }
+                  }
+              }
+          }
+          return hints
+      }
+
+      func MarkdownReport(report Report) string {
+          var b strings.Builder
+          fmt.Fprintf(&b, "# i18n Report\n\n")
+          fmt.Fprintf(&b, "- source locale: `%s`\n", report.SourceLocale)
+          fmt.Fprintf(&b, "- locale count: %d\n", report.Summary.LocaleCount)
+          fmt.Fprintf(&b, "- message key count: %d\n", report.Summary.MessageKeyCount)
+          fmt.Fprintf(&b, "- missing source: %d\n", report.Summary.MissingSourceCount)
+          fmt.Fprintf(&b, "- missing translations: %d\n", report.Summary.MissingTranslationsCount)
+          fmt.Fprintf(&b, "- stale translations: %d\n", report.Summary.StaleTranslationsCount)
+          fmt.Fprintf(&b, "- draft translations: %d\n", report.Summary.DraftTranslationsCount)
+          fmt.Fprintf(&b, "- extra keys: %d\n", report.Summary.ExtraKeysCount)
+          fmt.Fprintf(&b, "- glossary hints: %d\n\n", report.Summary.GlossaryHintsCount)
+          writeSection := func(title string, items []ReportItem) {
+              fmt.Fprintf(&b, "## %s\n\n", title)
+              if len(items) == 0 {
+                  b.WriteString("- none\n\n")
+                  return
+              }
+              for _, item := range items {
+                  fmt.Fprintf(&b, "- `%s` / `%s`", item.Language, item.Key)
+                  if item.SourceText != "" {
+                      fmt.Fprintf(&b, " | source: `%s`", item.SourceText)
+                  }
+                  if strings.TrimSpace(item.CurrentText) != "" {
+                      fmt.Fprintf(&b, " | current: `%s`", item.CurrentText)
+                  }
+                  if item.Status != "" {
+                      fmt.Fprintf(&b, " | status: `%s`", item.Status)
+                  }
+                  b.WriteString("\n")
+              }
+              b.WriteString("\n")
+          }
+          writeSection("Missing source messages", report.MissingSource)
+          writeSection("Missing translations", report.MissingTranslations)
+          writeSection("Stale translations", report.StaleTranslations)
+          writeSection("Draft translations", report.DraftTranslations)
+          writeSection("Extra keys", report.ExtraKeys)
+          fmt.Fprintf(&b, "## Glossary hints\n\n")
+          if len(report.GlossaryHints) == 0 {
+              b.WriteString("- none\n\n")
+          } else {
+              for _, hint := range report.GlossaryHints {
+                  fmt.Fprintf(&b, "- `%s` / `%s` | term: `%s` | recommended: `%s` | current: `%s`\n", hint.Language, hint.Key, hint.Term, hint.Recommended, hint.CurrentText)
+              }
+              b.WriteString("\n")
+          }
+          return b.String()
+      }
+
+      func PlaceholderTokens(message string) []string {
+          tokens := append([]string{}, goFmtPlaceholder.FindAllString(message, -1)...)
+          tokens = append(tokens, namedPlaceholder.FindAllString(message, -1)...)
+          sort.Strings(tokens)
+          return tokens
+      }
+
+      func StatusFor(status StatusFile, language, key string) string {
+          if status.Locales == nil {
+              return ""
+          }
+          return status.Locales[language][key].Status
+      }
+
+      func SortedKeys(m map[string]string) []string {
+          keys := make([]string, 0, len(m))
+          for key := range m {
+              keys = append(keys, key)
+          }
+          sort.Strings(keys)
+          return keys
+      }
+
+      func sortedSet(values map[string]struct{}) []string {
+          items := make([]string, 0, len(values))
+          for value := range values {
+              items = append(items, value)
+          }
+          sort.Strings(items)
+          return items
+      }
+
+      func sortReportItems(items []ReportItem) {
+          sort.Slice(items, func(i, j int) bool {
+              if items[i].Language == items[j].Language {
+                  return items[i].Key < items[j].Key
+              }
+              return items[i].Language < items[j].Language
+          })
+      }
+
+      func sortGlossaryHints(items []GlossaryHint) {
+          sort.Slice(items, func(i, j int) bool {
+              if items[i].Language == items[j].Language {
+                  if items[i].Key == items[j].Key {
+                      return items[i].Term < items[j].Term
+                  }
+                  return items[i].Key < items[j].Key
+              }
+              return items[i].Language < items[j].Language
+          })
+      }
+
+  - path: tools/i18n/sync/main.go
+    delims: ["{{", "}}"]
+    body: |-
+      package main
+
+      import (
+          "flag"
+          "fmt"
+          "os"
+          "time"
+
+          "{{.GoModule}}/tools/i18n/util"
+      )
+
+      func main() {
+          root := flag.String("root", ".", "project root to scan for message keys")
+          localesDir := flag.String("locales", "internal/pkg/i18n/locales", "directory containing locale JSON files")
+          statusPath := flag.String("status", "internal/pkg/i18n/.meta/status.json", "status JSON path")
+          sourceLocale := flag.String("source", "zh-CN", "source locale")
+          flag.Parse()
+
+          locales, paths, err := i18nutil.LoadLocales(*localesDir)
+          if err != nil {
+              fatal(err)
+          }
+          source := i18nutil.FindLocale(locales, *sourceLocale)
+          if source == nil {
+              fatal(fmt.Errorf("source locale %q not found", *sourceLocale))
+          }
+          status, err := i18nutil.LoadStatus(*statusPath, *sourceLocale)
+          if err != nil {
+              fatal(err)
+          }
+          keysFromCode, err := i18nutil.ScanMessageKeys(*root)
+          if err != nil {
+              fatal(err)
+          }
+
+          keySet := map[string]struct{}{}
+          for key := range source.Messages {
+              keySet[key] = struct{}{}
+          }
+          for _, key := range keysFromCode {
+              keySet[key] = struct{}{}
+          }
+          keys := make([]string, 0, len(keySet))
+          for key := range keySet {
+              keys = append(keys, key)
+          }
+          if status.Locales == nil {
+              status.Locales = map[string]map[string]i18nutil.StatusEntry{}
+          }
+
+          now := time.Now().UTC().Format(time.RFC3339)
+          saveStatus := false
+          saveLocale := map[string]bool{}
+          for i := range locales {
+              if status.Locales[locales[i].Language] == nil {
+                  status.Locales[locales[i].Language] = map[string]i18nutil.StatusEntry{}
+                  saveStatus = true
+              }
+          }
+
+          for _, key := range keys {
+              sourceText, ok := source.Messages[key]
+              if !ok {
+                  sourceText = i18nutil.PlaceholderForKey(key)
+                  source.Messages[key] = sourceText
+                  saveLocale[*sourceLocale] = true
+              }
+              sourceHash := i18nutil.HashText(sourceText)
+              if upsertStatus(&status, *sourceLocale, key, statusForMessage(sourceText, ""), *sourceLocale, sourceHash, "sync", now) {
+                  saveStatus = true
+              }
+              for i := range locales {
+                  loc := &locales[i]
+                  if loc.Language == *sourceLocale {
+                      continue
+                  }
+                  currentText, ok := loc.Messages[key]
+                  if !ok {
+                      currentText = i18nutil.PlaceholderForKey(key)
+                      loc.Messages[key] = currentText
+                      saveLocale[loc.Language] = true
+                  }
+                  previous := status.Locales[loc.Language][key]
+                  desired := previous.Status
+                  switch {
+                  case i18nutil.IsPlaceholder(currentText):
+                      desired = "draft"
+                  case previous.SourceHash != "" && previous.SourceHash != sourceHash:
+                      desired = "stale"
+                  case desired == "":
+                      desired = "reviewed"
+                  }
+                  if upsertStatus(&status, loc.Language, key, desired, *sourceLocale, sourceHash, "sync", now) {
+                      saveStatus = true
+                  }
+              }
+          }
+
+          for _, loc := range locales {
+              if saveLocale[loc.Language] {
+                  if err := i18nutil.SaveLocale(paths[loc.Language], loc); err != nil {
+                      fatal(err)
+                  }
+              }
+          }
+          if saveStatus {
+              if err := i18nutil.SaveStatus(*statusPath, status); err != nil {
+                  fatal(err)
+              }
+          }
+      }
+
+      func statusForMessage(message, current string) string {
+          if i18nutil.IsPlaceholder(message) {
+              return "draft"
+          }
+          if current != "" {
+              return current
+          }
+          return "reviewed"
+      }
+
+      func upsertStatus(status *i18nutil.StatusFile, language, key, state, sourceLocale, sourceHash, actor, now string) bool {
+          current := status.Locales[language][key]
+          next := current
+          next.Status = state
+          next.SourceLocale = sourceLocale
+          next.SourceHash = sourceHash
+          changed := current.Status != next.Status || current.SourceLocale != next.SourceLocale || current.SourceHash != next.SourceHash
+          if changed {
+              next.UpdatedAt = now
+              next.UpdatedBy = actor
+          }
+          status.Locales[language][key] = next
+          return changed
+      }
+
+      func fatal(err error) {
+          fmt.Fprintln(os.Stderr, "i18n-sync:", err)
+          os.Exit(1)
+      }
+
+  - path: tools/i18n/util/i18nutil_test.go
+    delims: ["", ""]
+    body: |-
+      package i18nutil
+
+      import (
+          "os"
+          "path/filepath"
+          "testing"
+      )
+
+      func TestScanMessageKeysIncludesPublicStringLiterals(t *testing.T) {
+          root := t.TempDir()
+          source := `package sample
+
+      type Definition struct{ Msg string }
+
+      type builder struct{}
+
+      func (builder) Public(string) builder { return builder{} }
+
+      func use() {
+          _ = Definition{Msg: "from_definition"}
+          _ = builder{}.Public("from_public")
+          _ = builder{}.Public(dynamic())
+      }
+
+      func dynamic() string { return "ignored_dynamic" }
+      `
+          if err := os.WriteFile(filepath.Join(root, "sample.go"), []byte(source), 0o644); err != nil {
+              t.Fatalf("write source: %v", err)
+          }
+          if err := os.WriteFile(filepath.Join(root, "sample_test.go"), []byte(`package sample
+      func useTest() { _ = builder{}.Public("ignored_test") }
+      `), 0o644); err != nil {
+              t.Fatalf("write test source: %v", err)
+          }
+          keys, err := ScanMessageKeys(root)
+          if err != nil {
+              t.Fatalf("ScanMessageKeys: %v", err)
+          }
+          got := map[string]bool{}
+          for _, key := range keys {
+              got[key] = true
+          }
+          for _, want := range []string{"from_definition", "from_public"} {
+              if !got[want] {
+                  t.Fatalf("missing key %q from %v", want, keys)
+              }
+          }
+          for _, want := range []string{"ignored_dynamic", "ignored_test"} {
+              if got[want] {
+                  t.Fatalf("unexpected key %q in %v", want, keys)
+              }
+          }
+      }
+
+      func TestBuildReportIncludesGlossaryHintsAndSummary(t *testing.T) {
+          locales := []LocaleFile{
+              {
+                  Language: "zh-CN",
+                  Messages: map[string]string{"signature_missing": "签名信息缺失"},
+              },
+              {
+                  Language: "ja-JP",
+                  Messages: map[string]string{"signature_missing": "トークン情報が不足しています"},
+              },
+          }
+          status := StatusFile{SourceLocale: "zh-CN", Locales: map[string]map[string]StatusEntry{
+              "ja-JP": map[string]StatusEntry{
+                  "signature_missing": StatusEntry{Status: "reviewed"},
+              },
+          }}
+          glossary := GlossaryFile{Terms: []GlossaryTerm{
+              GlossaryTerm{
+                  Key: "signature",
+                  Translations: map[string]string{
+                      "zh-CN": "签名",
+                      "ja-JP": "署名",
+                  },
+              },
+          }}
+
+          report, err := BuildReport("zh-CN", locales, status, glossary)
+          if err != nil {
+              t.Fatalf("BuildReport: %v", err)
+          }
+          if report.Summary.LocaleCount != 2 || report.Summary.MessageKeyCount != 1 {
+              t.Fatalf("unexpected summary: %+v", report.Summary)
+          }
+          if len(report.GlossaryHints) != 1 {
+              t.Fatalf("glossary hints = %d, want 1", len(report.GlossaryHints))
+          }
+          hint := report.GlossaryHints[0]
+          if hint.Language != "ja-JP" || hint.Key != "signature_missing" || hint.Recommended != "署名" {
+              t.Fatalf("unexpected glossary hint: %+v", hint)
+          }
+      }
+
+  - path: tools/i18n/report/main.go
+    delims: ["{{", "}}"]
+    body: |-
+      package main
+
+      import (
+          "encoding/json"
+          "flag"
+          "fmt"
+          "os"
+          "path/filepath"
+
+          "{{.GoModule}}/tools/i18n/util"
+      )
+
+      func main() {
+          localesDir := flag.String("locales", "internal/pkg/i18n/locales", "directory containing locale JSON files")
+          statusPath := flag.String("status", "internal/pkg/i18n/.meta/status.json", "status JSON path")
+          glossaryPath := flag.String("glossary", "internal/pkg/i18n/glossary.json", "glossary JSON path")
+          sourceLocale := flag.String("source", "zh-CN", "source locale")
+          outMD := flag.String("out-md", "internal/pkg/i18n/.meta/report.md", "markdown report output path")
+          outJSON := flag.String("out-json", "internal/pkg/i18n/.meta/report.json", "json report output path")
+          flag.Parse()
+
+          locales, _, err := i18nutil.LoadLocales(*localesDir)
+          if err != nil {
+              fatal(err)
+          }
+          status, err := i18nutil.LoadStatus(*statusPath, *sourceLocale)
+          if err != nil {
+              fatal(err)
+          }
+          glossary, err := i18nutil.LoadGlossary(*glossaryPath)
+          if err != nil {
+              fatal(err)
+          }
+          report, err := i18nutil.BuildReport(*sourceLocale, locales, status, glossary)
+          if err != nil {
+              fatal(err)
+          }
+          if err := writeFile(*outMD, []byte(i18nutil.MarkdownReport(report))); err != nil {
+              fatal(err)
+          }
+          body, err := json.MarshalIndent(report, "", "  ")
+          if err != nil {
+              fatal(err)
+          }
+          if err := writeFile(*outJSON, append(body, '\n')); err != nil {
+              fatal(err)
+          }
+      }
+
+      func writeFile(path string, body []byte) error {
+          if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+              return err
+          }
+          return os.WriteFile(path, body, 0o644)
+      }
+
+      func fatal(err error) {
+          fmt.Fprintln(os.Stderr, "i18n-report:", err)
+          os.Exit(1)
+      }
+
+  - path: tools/i18n/check/main.go
+    delims: ["{{", "}}"]
+    body: |-
+      package main
+
+      import (
+          "errors"
+          "flag"
+          "fmt"
+          "os"
+          "strings"
+
+          "{{.GoModule}}/tools/i18n/util"
+      )
+
+      func main() {
+          localesDir := flag.String("locales", "internal/pkg/i18n/locales", "directory containing locale JSON files")
+          statusPath := flag.String("status", "internal/pkg/i18n/.meta/status.json", "status JSON path")
+          glossaryPath := flag.String("glossary", "internal/pkg/i18n/glossary.json", "glossary JSON path")
+          sourceLocale := flag.String("source", "zh-CN", "source locale")
+          mode := flag.String("mode", "dev", "check mode: dev or release")
+          flag.Parse()
+
+          locales, _, err := i18nutil.LoadLocales(*localesDir)
+          if err != nil {
+              fatal(err)
+          }
+          status, err := i18nutil.LoadStatus(*statusPath, *sourceLocale)
+          if err != nil {
+              fatal(err)
+          }
+          source := i18nutil.FindLocale(locales, *sourceLocale)
+          if source == nil {
+              fatal(fmt.Errorf("source locale %q not found", *sourceLocale))
+          }
+          glossary, err := i18nutil.LoadGlossary(*glossaryPath)
+          if err != nil {
+              fatal(err)
+          }
+          report, err := i18nutil.BuildReport(*sourceLocale, locales, status, glossary)
+          if err != nil {
+              fatal(err)
+          }
+
+          var failures []string
+          for _, item := range report.MissingSource {
+              failures = append(failures, fmt.Sprintf("missing source message for %s", item.Key))
+          }
+          for _, loc := range locales {
+              for _, key := range i18nutil.SortedKeys(loc.Messages) {
+                  if strings.TrimSpace(key) == "" {
+                      failures = append(failures, fmt.Sprintf("%s has empty message key", loc.Language))
+                      continue
+                  }
+                  if strings.TrimSpace(loc.Messages[key]) == "" {
+                      failures = append(failures, fmt.Sprintf("%s/%s has empty translation", loc.Language, key))
+                  }
+              }
+          }
+          for _, item := range report.MissingTranslations {
+              if strings.TrimSpace(item.CurrentText) == "" {
+                  failures = append(failures, fmt.Sprintf("%s/%s is missing", item.Language, item.Key))
+              } else if *mode == "release" {
+                  failures = append(failures, fmt.Sprintf("%s/%s is still placeholder text", item.Language, item.Key))
+              }
+          }
+          for i := range locales {
+              loc := locales[i]
+              if loc.Language == *sourceLocale {
+                  continue
+              }
+              for _, key := range i18nutil.SortedKeys(source.Messages) {
+                  sourceText := source.Messages[key]
+                  currentText := loc.Messages[key]
+                  if i18nutil.IsPlaceholder(sourceText) || i18nutil.IsPlaceholder(currentText) {
+                      continue
+                  }
+                  if !equalTokens(i18nutil.PlaceholderTokens(sourceText), i18nutil.PlaceholderTokens(currentText)) {
+                      failures = append(failures, fmt.Sprintf("%s/%s placeholder mismatch", loc.Language, key))
+                  }
+              }
+          }
+          if *mode == "release" {
+              for _, item := range report.DraftTranslations {
+                  failures = append(failures, fmt.Sprintf("%s/%s is draft", item.Language, item.Key))
+              }
+              for _, item := range report.StaleTranslations {
+                  failures = append(failures, fmt.Sprintf("%s/%s is stale", item.Language, item.Key))
+              }
+          }
+          for _, hint := range report.GlossaryHints {
+              fmt.Fprintf(os.Stderr, "i18n-check: warning: %s/%s may not use recommended glossary term %q (want %q)\n", hint.Language, hint.Key, hint.Term, hint.Recommended)
+          }
+          if len(failures) > 0 {
+              fatal(errors.New(strings.Join(failures, "\n")))
+          }
+      }
+
+      func equalTokens(left, right []string) bool {
+          if len(left) != len(right) {
+              return false
+          }
+          for i := range left {
+              if left[i] != right[i] {
+                  return false
+              }
+          }
+          return true
+      }
+
+      func fatal(err error) {
+          fmt.Fprintln(os.Stderr, "i18n-check:", err)
+          os.Exit(1)
+      }
+
+  - path: tools/i18n/gen/main.go
+    delims: ["", ""]
+    body: |-
+      package main
+
+      import (
+          "bytes"
+          "encoding/json"
+          "flag"
+          "fmt"
+          "go/format"
+          "os"
+          "path/filepath"
+          "sort"
+          "strconv"
+          "strings"
+      )
+
+      type localeFile struct {
+          Language string            `json:"language"`
+          Aliases  []string          `json:"aliases"`
+          Messages map[string]string `json:"messages"`
+      }
+
+      func main() {
+          in := flag.String("in", "internal/pkg/i18n/locales", "directory containing locale JSON files")
+          out := flag.String("out", "internal/pkg/i18n/catalog_gen.go", "generated Go output path")
+          flag.Parse()
+          locales, err := loadLocales(*in)
+          if err != nil {
+              fatal(err)
+          }
+          src, err := render(locales)
+          if err != nil {
+              fatal(err)
+          }
+          if err := os.MkdirAll(filepath.Dir(*out), 0o755); err != nil {
+              fatal(err)
+          }
+          if err := os.WriteFile(*out, src, 0o644); err != nil {
+              fatal(err)
+          }
+      }
+
+      func loadLocales(dir string) ([]localeFile, error) {
+          var locales []localeFile
+          err := filepath.WalkDir(dir, func(path string, d os.DirEntry, err error) error {
+              if err != nil || d.IsDir() || !strings.HasSuffix(d.Name(), ".json") {
+                  return err
+              }
+              body, err := os.ReadFile(path)
+              if err != nil {
+                  return err
+              }
+              var loc localeFile
+              if err := json.Unmarshal(body, &loc); err != nil {
+                  return fmt.Errorf("%s: %w", path, err)
+              }
+              if strings.TrimSpace(loc.Language) == "" {
+                  return fmt.Errorf("%s: language is required", path)
+              }
+              if len(loc.Messages) == 0 {
+                  return fmt.Errorf("%s: messages must not be empty", path)
+              }
+              locales = append(locales, loc)
+              return nil
+          })
+          sort.Slice(locales, func(i, j int) bool { return locales[i].Language < locales[j].Language })
+          return locales, err
+      }
+
+      func render(locales []localeFile) ([]byte, error) {
+          var b bytes.Buffer
+          fmt.Fprintln(&b, "// Code generated by make i18n; DO NOT EDIT.")
+          fmt.Fprintln(&b, "package i18n")
+          fmt.Fprintln(&b, "func init() {")
+          for _, loc := range locales {
+              sort.Strings(loc.Aliases)
+              fmt.Fprintf(&b, "\tRegisterLanguage(%s", strconv.Quote(loc.Language))
+              for _, alias := range loc.Aliases {
+                  fmt.Fprintf(&b, ", %s", strconv.Quote(alias))
+              }
+              fmt.Fprintln(&b, ")")
+              keys := make([]string, 0, len(loc.Messages))
+              for key, message := range loc.Messages {
+                  if strings.TrimSpace(key) == "" || strings.TrimSpace(message) == "" {
+                      return nil, fmt.Errorf("%s: message keys and values must not be empty", loc.Language)
+                  }
+                  keys = append(keys, key)
+              }
+              sort.Strings(keys)
+              for _, key := range keys {
+                  fmt.Fprintf(&b, "\tRegister(%s, %s, %s)\n", strconv.Quote(loc.Language), strconv.Quote(key), strconv.Quote(loc.Messages[key]))
+              }
+          }
+          fmt.Fprintln(&b, "}")
+          return format.Source(b.Bytes())
+      }
+
+      func fatal(err error) {
+          fmt.Fprintln(os.Stderr, "i18n-gen:", err)
+          os.Exit(1)
+      }
+
   # ── pkg/response ──────────────────────────────────────────────────────────
   - path: internal/pkg/response/response.go
-    delims: ["", ""]
+    delims: ["{{", "}}"]
     body: |-
       package response
 
@@ -885,6 +2560,8 @@ layouts:
           "github.com/cloudwego/hertz/pkg/protocol/consts"
           "github.com/samber/oops"
           "google.golang.org/protobuf/proto"
+
+          "{{.GoModule}}/internal/pkg/i18n"
       )
 
           type Definition struct {
@@ -962,7 +2639,7 @@ layouts:
                   return
               }
           }
-          c.JSON(status, payload)
+          c.JSON(status, localizePayload(c, payload))
       }
 
       func OK(c *app.RequestContext, payload any) {
@@ -986,8 +2663,23 @@ layouts:
       }
 
       func Err(c *app.RequestContext, err error) {
-              code, msg := CodeMsg(err)
-              Reply(c, StatusFromCode(code), ErrBody{Code: code, Msg: msg})
+          code, msg := CodeMsg(err)
+          Reply(c, StatusFromCode(code), ErrBody{Code: code, Msg: msg})
+      }
+
+      func localizePayload(c *app.RequestContext, payload any) any {
+          lang := i18n.FromAcceptLanguage(c.Request.Header.Get(i18n.HeaderAcceptLanguage))
+          c.Response.Header.Set(i18n.HeaderContentLanguage, lang)
+          switch body := payload.(type) {
+          case Body:
+              body.Msg = i18n.Translate(lang, body.Msg)
+              return body
+          case ErrBody:
+              body.Msg = i18n.Translate(lang, body.Msg)
+              return body
+          default:
+              return payload
+          }
       }
 
       func StatusFromCode(code int) int {
@@ -2975,6 +4667,8 @@ layouts:
       import (
           "testing"
 
+          "github.com/cloudwego/hertz/pkg/app"
+          "github.com/cloudwego/hertz/pkg/protocol"
           "github.com/cloudwego/hertz/pkg/protocol/consts"
           "github.com/samber/oops"
       )
@@ -3015,6 +4709,22 @@ layouts:
           code, msg := CodeMsg(oops.Code(def.Code).Public("ignored_public").New("business error"))
           if code != def.Code || msg != def.Msg {
               t.Fatalf("CodeMsg = (%d, %q), want (%d, %q)", code, msg, def.Code, def.Msg)
+          }
+      }
+
+      func TestErrorCodeLocalizesMessageFromAcceptLanguage(t *testing.T) {
+          c := app.NewContext(0)
+          req := protocol.NewRequest("GET", "/missing", nil)
+          req.Header.Set("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+          req.CopyTo(&c.Request)
+
+          ErrorCode(c, CodeRouteNotFound)
+
+          if got, want := string(c.Response.Body()), `{"code":10008,"msg":"接口不存在"}`; got != want {
+              t.Fatalf("body = %s, want %s", got, want)
+          }
+          if got := string(c.Response.Header.Peek("Content-Language")); got != "zh-CN" {
+              t.Fatalf("Content-Language = %q, want zh-CN", got)
           }
       }
 
@@ -3279,6 +4989,32 @@ layouts:
               emit_exact_table_names: false
               emit_pointers_for_null_types: true
 
+  # ── docs: Swagger / OpenAPI embed ────────────────────────────────────────
+  - path: internal/docs/docs.go
+    delims: ["", ""]
+    body: |-
+      package docs
+
+      import _ "embed"
+
+      //go:embed swagger/openapi.yaml
+      var openAPIYAML []byte
+
+      // OpenAPIYAML returns the embedded Swagger / OpenAPI spec.
+      func OpenAPIYAML() []byte {
+          return openAPIYAML
+      }
+
+  - path: internal/docs/swagger/openapi.yaml
+    delims: ["{{", "}}"]
+    body: |-
+      openapi: 3.0.3
+      info:
+        title: {{.ServiceName}} API
+        version: "0.0.0"
+        description: Placeholder spec generated by ncgo. Run `make swagger` after updating IDL annotations, then rebuild the service.
+      paths: {}
+
   # ── base/server ──────────────────────────────────────────────────────────
   - path: internal/base/server/server.go
     delims: ["{{", "}}"]
@@ -3287,7 +5023,6 @@ layouts:
 
       import (
           "context"
-          "os"
           "strings"
           "time"
 
@@ -3299,6 +5034,7 @@ layouts:
           "github.com/samber/do/v2"
 
           "{{.GoModule}}/internal/base/conf"
+          "{{.GoModule}}/internal/docs"
           "{{.GoModule}}/internal/handler/health"
           "{{.GoModule}}/internal/pkg/middleware"
           "{{.GoModule}}/internal/router"
@@ -3409,9 +5145,9 @@ layouts:
               swaggerui.URL(specRoute),
           ))
           h.GET(specRoute, func(ctx context.Context, c *app.RequestContext) {
-              body, err := os.ReadFile(cfg.SpecFile)
-              if err != nil {
-                  c.String(consts.StatusServiceUnavailable, "swagger spec not generated; run `make swagger`")
+              body := docs.OpenAPIYAML()
+              if len(body) == 0 {
+                  c.String(consts.StatusServiceUnavailable, "swagger spec not embedded; run `make swagger` and rebuild")
                   return
               }
               c.Header("Content-Type", "application/x-yaml")
@@ -3454,7 +5190,7 @@ layouts:
       GOOSE_DBSTRING ?= $(DATABASE_URL)
       GOOSE_MIGRATION_DIR ?= internal/db/migrations
 
-      .PHONY: build run dev update swagger generate sqlc migrate-create migrate-up migrate-down migrate-status lint test check tidy clean install-tools
+      .PHONY: build run dev i18n-sync i18n-report i18n-check i18n-check-release i18n update swagger generate sqlc migrate-create migrate-up migrate-down migrate-status lint test check tidy clean install-tools
 
       # ── Build ──────────────────────────────────────────────────────────────
       build: ; @echo "Building $(APP_NAME)..."; mkdir -p output/bin; go build -o output/bin/$(APP_NAME) .; echo "Build complete → output/bin/$(APP_NAME)"
@@ -3464,11 +5200,22 @@ layouts:
       dev: ; @which air > /dev/null 2>&1 && air || go run .
 
       # ── Code generation ────────────────────────────────────────────────────
+      i18n-sync: ; @echo "Synchronizing i18n locales..."; go run ./tools/i18n/sync -root . -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -source zh-CN && echo "i18n sync complete → internal/pkg/i18n/.meta/status.json"
+
+      i18n-report: ; @echo "Writing i18n report..."; go run ./tools/i18n/report -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN -out-md internal/pkg/i18n/.meta/report.md -out-json internal/pkg/i18n/.meta/report.json && echo "i18n report complete → internal/pkg/i18n/.meta/report.md"
+
+      i18n-check: ; @echo "Checking i18n locales..."; go run ./tools/i18n/check -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN -mode dev && echo "i18n check complete"
+
+      i18n-check-release: ; @echo "Checking i18n locales (release mode)..."; go run ./tools/i18n/check -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN -mode release && echo "i18n release check complete"
+
+      # Generate internal/pkg/i18n/catalog_gen.go from internal/pkg/i18n/locales/*.json.
+      i18n: ; @echo "Generating i18n catalog..."; go run ./tools/i18n/gen -in internal/pkg/i18n/locales -out internal/pkg/i18n/catalog_gen.go; echo "i18n catalog complete → internal/pkg/i18n/catalog_gen.go"
+
       # Re-run after modifying any .proto IDL file.
       # router_dir is persisted in .hz from the initial hz new command.
       update: ; @echo "Generating Hertz code from IDL..."; hz update --idl=idl/app/{{.ServiceName}}.proto -I idl --handler_dir=internal/handler --model_dir=internal/pb --customize_package=template/package.yaml; echo "Code generation complete"
 
-      swagger: ; @echo "Generating Swagger docs from IDL..."; mkdir -p internal/docs/swagger; protoc --http-swagger_out=internal/docs/swagger -I idl idl/app/{{.ServiceName}}.proto && rm -f internal/docs/swagger/swagger.go && echo "Swagger generation complete → internal/docs/swagger"
+      swagger: ; @command -v protoc >/dev/null 2>&1 || (echo "protoc is required for make swagger"; echo "install (macOS): brew install protobuf"; exit 1); command -v protoc-gen-http-swagger >/dev/null 2>&1 || (echo "protoc-gen-http-swagger is required for make swagger"; echo "install: go install github.com/hertz-contrib/swagger-generate/protoc-gen-http-swagger@latest"; echo "ensure GOBIN or $$(go env GOPATH)/bin is on PATH"; echo "or run: make install-tools"; exit 1); echo "Generating Swagger docs from IDL..."; mkdir -p internal/docs/swagger; protoc --http-swagger_out=internal/docs/swagger -I idl idl/app/{{.ServiceName}}.proto && rm -f internal/docs/swagger/swagger.go && echo "Swagger generation complete → internal/docs/swagger (rebuild/restart to embed updated spec)"
 
       sqlc: ; @echo "Generating sqlc code..."; sqlc generate -f internal/db/sqlc.yaml
 
@@ -3480,7 +5227,7 @@ layouts:
 
       migrate-status: ; @test -n "$(GOOSE_DBSTRING)" || (echo "DATABASE_URL is required" && exit 1); goose -dir $(GOOSE_MIGRATION_DIR) $(GOOSE_DRIVER) "$(GOOSE_DBSTRING)" status
 
-      generate: update swagger sqlc ; @echo "All code generation complete"
+      generate: i18n-sync i18n-check i18n update swagger sqlc ; @echo "All code generation complete"
 
       # ── Quality ────────────────────────────────────────────────────────────
       lint: ; @golangci-lint run ./...

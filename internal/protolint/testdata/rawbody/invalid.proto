@@ -1,0 +1,29 @@
+syntax = "proto3";
+
+package demo;
+
+import "api.proto";
+
+message UploadReq {
+  string raw_a = 1 [(api.raw_body) = "raw_a"];
+  string raw_b = 2 [(api.raw_body) = "raw_b"];
+}
+
+message UploadResp {}
+
+message OkayReq {
+  string q = 1 [(api.query) = "q"];
+  string raw = 2 [(api.raw_body) = "raw"];
+}
+
+message OkayResp {}
+
+service Demo {
+  rpc Upload(UploadReq) returns (UploadResp) {
+    option (api.post) = "/upload";
+  }
+
+  rpc Okay(OkayReq) returns (OkayResp) {
+    option (api.post) = "/okay";
+  }
+}

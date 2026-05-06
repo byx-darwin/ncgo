@@ -1,0 +1,135 @@
+package protolint
+
+import (
+	"context"
+	"path/filepath"
+	"testing"
+)
+
+func TestLoadHertzExampleProto(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", "scaffold", "mono", "testdata", "mono-default", "idl"))
+	model, err := Load(context.Background(), LoadOptions{
+		Root:  root,
+		Files: []string{"app/demo.proto"},
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(model.Files) != 1 {
+		t.Fatalf("got %d files, want 1", len(model.Files))
+	}
+	f := model.Files[0]
+	if f.Path != "app/demo.proto" {
+		t.Fatalf("path = %q, want %q", f.Path, "app/demo.proto")
+	}
+	if f.Package != "app" {
+		t.Fatalf("package = %q, want app", f.Package)
+	}
+	if len(f.Services) != 1 {
+		t.Fatalf("got %d services, want 1", len(f.Services))
+	}
+	svc := f.Services[0]
+	if svc.Name != "DemoService" {
+		t.Fatalf("service name = %q, want DemoService", svc.Name)
+	}
+	if svc.Location.Line <= 0 {
+		t.Fatalf("service location = %+v, want positive line", svc.Location)
+	}
+	if len(svc.RPCs) != 1 {
+		t.Fatalf("got %d rpcs, want 1", len(svc.RPCs))
+	}
+	rpc := svc.RPCs[0]
+	if rpc.Name != "Ping" {
+		t.Fatalf("rpc name = %q, want Ping", rpc.Name)
+	}
+	if rpc.InputMessageName != "PingReq" || rpc.OutputMessageName != "PingResp" {
+		t.Fatalf("rpc io = %s/%s, want PingReq/PingResp", rpc.InputMessageName, rpc.OutputMessageName)
+	}
+	if len(rpc.HTTPRules) != 1 {
+		t.Fatalf("got %d http rules, want 1", len(rpc.HTTPRules))
+	}
+	if got := rpc.HTTPRules[0]; got.Method != "GET" || got.Path != "/ping" || got.Annotation != "api.get" {
+		t.Fatalf("http rule = %+v, want GET /ping api.get", got)
+	}
+	if rpc.Location.Line <= 0 {
+		t.Fatalf("rpc location = %+v, want positive line", rpc.Location)
+	}
+	if !rpc.HasOpenAPIOperation {
+		t.Fatalf("rpc.HasOpenAPIOperation = false, want true")
+	}
+	if rpc.InputMessage == nil {
+		t.Fatalf("input message is nil")
+	}
+	if rpc.OutputMessage == nil {
+		t.Fatalf("output message is nil")
+	}
+	if len(rpc.InputMessage.Fields) != 1 {
+		t.Fatalf("got %d input fields, want 1", len(rpc.InputMessage.Fields))
+	}
+	field := rpc.InputMessage.Fields[0]
+	if field.Name != "name" {
+		t.Fatalf("field name = %q, want name", field.Name)
+	}
+	if field.HasOpenAPIProperty != true {
+		t.Fatalf("input field HasOpenAPIProperty = %v, want true", field.HasOpenAPIProperty)
+	}
+	if len(field.Bindings) != 1 {
+		t.Fatalf("got %d bindings, want 1", len(field.Bindings))
+	}
+	b := field.Bindings[0]
+	if b.Kind != BindingQuery || b.Annotation != "api.query" || b.Value != "name" {
+		t.Fatalf("binding = %+v, want query/api.query/name", b)
+	}
+	if field.Location.Line <= 0 {
+		t.Fatalf("field location = %+v, want positive line", field.Location)
+	}
+	if rpc.OutputMessage.HasOpenAPISchema != true {
+		t.Fatalf("output message HasOpenAPISchema = %v, want true", rpc.OutputMessage.HasOpenAPISchema)
+	}
+	if got := rpc.OutputMessage.Fields[0].HasOpenAPIProperty; got != true {
+		t.Fatalf("output field HasOpenAPIProperty = %v, want true", got)
+	}
+}
+
+func TestLoadKitexExampleProto(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", "scaffold", "mono", "testdata", "mono-kitex-default", "idl"))
+	model, err := Load(context.Background(), LoadOptions{
+		Root:  root,
+		Files: []string{"demo.proto"},
+	})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if len(model.Files) != 1 {
+		t.Fatalf("got %d files, want 1", len(model.Files))
+	}
+	f := model.Files[0]
+	if f.Path != "demo.proto" {
+		t.Fatalf("path = %q, want demo.proto", f.Path)
+	}
+	if f.Package != "demo" {
+		t.Fatalf("package = %q, want demo", f.Package)
+	}
+	if len(f.Services) != 1 {
+		t.Fatalf("got %d services, want 1", len(f.Services))
+	}
+	svc := f.Services[0]
+	if svc.Name != "Demo" {
+		t.Fatalf("service name = %q, want Demo", svc.Name)
+	}
+	if len(svc.RPCs) != 0 {
+		t.Fatalf("got %d rpcs, want 0", len(svc.RPCs))
+	}
+	if svc.Location.Line <= 0 {
+		t.Fatalf("service location = %+v, want positive line", svc.Location)
+	}
+}
+
+func TestLoadValidatesInputs(t *testing.T) {
+	if _, err := Load(context.Background(), LoadOptions{}); err == nil {
+		t.Fatalf("expected error for empty options")
+	}
+	if _, err := Load(context.Background(), LoadOptions{Root: "."}); err == nil {
+		t.Fatalf("expected error for empty files")
+	}
+}

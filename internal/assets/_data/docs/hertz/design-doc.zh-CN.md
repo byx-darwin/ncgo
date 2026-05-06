@@ -48,8 +48,10 @@ ncgo 二进制编译的 Go 源码。
 │   ├── pkg/
 │   │   ├── response/                # JSON/Protobuf 响应辅助 + 错误码注册表
 │   │   ├── errcode/                 # 业务错误码登记
+│   │   ├── i18n/locales/            # make i18n 输入的默认/扩展语言 JSON
 │   │   └── middleware/              # signature、token、rate_limit、idempotency、cors 等
 │   └── router/register.go           # hz 插入点
+├── tools/i18n/{gen,sync,report,check,util}/ # i18n 工具链与 catalog 生成器
 ├── Makefile                         # build / dev / update / sqlc / migrate / lint / test
 ├── go.mod
 ├── .hz                              # hz 标识文件(不要删)
@@ -154,6 +156,16 @@ HTTP 请求
   ```
 - 错误生产端用 `oops.In("...").Code(code).Public("msg")…`;
   `response.Err` 提取 `(code, msg)` 并经 `StatusFromCode` 映射 HTTP 状态。
+- `internal/pkg/i18n` 根据 `Accept-Language` 选择 `en` / `zh-CN` / `zh-TW` /
+  `ja-JP` / `ko-KR` / `fr-FR` / `de-DE` / `es-ES`,并由 `response` 对 JSON 响应的
+  `msg` 做翻译、写入 `Content-Language`。
+  未命中翻译时回退为原始错误 key;业务消息可用 `i18n.Register` 扩展。
+- 默认语言与动态新增语言统一走构建期生成:在
+  `internal/pkg/i18n/locales/*.json` 维护 `{language, aliases, messages}`
+  文件,执行 `make i18n` 生成 `internal/pkg/i18n/catalog_gen.go`。
+  生成代码会调用 `i18n.RegisterLanguage(language, aliases...)` 与
+  `i18n.Register(...)`; `i18n.go` 只保留注册与协商机制,不再内置翻译表。
+  因此 `FromAcceptLanguage` 可以识别新语言别名,例如 `it` → `it-IT`。
 
 ### 3.3 安全中间件(`internal/pkg/middleware`)
 
@@ -196,9 +208,10 @@ public 路径(默认 `/healthz`、`/readyz`,加上 `cfg.Auth.PublicPaths`)
   `{"status":"ok"|"ready","time":RFC3339}`,经 `response.OK` 输出;两者
   默认在 `cfg.Auth.PublicPaths` 与 `cfg.Security.InternalPaths` 中。
 - `Makefile` 目标:`build`、`run`、`dev`(air 或 `go run .`)、
+  `i18n`(从 `locales/*.json` 生成 `catalog_gen.go`)、
   `update`(用内置 `package.yaml` 重跑 `hz update`)、`sqlc`、
   `migrate-{create,up,down,status}`、`lint`、`test`、`tidy`、
-  `install-tools`。
+  `install-tools`。`generate` 会串联 `i18n update swagger sqlc`。
 - `cmd/server/main.go` 只做 `conf.Init()` + `server.Run()`;Agent 增加
   接线一律落到 `internal/base/server/server.go`。
 

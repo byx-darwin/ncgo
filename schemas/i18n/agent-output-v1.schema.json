@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "ncgo://schemas/i18n/agent-output-v1",
+  "title": "ncgo i18n agent output v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "protocol",
+    "target_locale",
+    "actions",
+    "warnings",
+    "needs_human_review",
+    "validation"
+  ],
+  "properties": {
+    "protocol": {
+      "type": "string",
+      "const": "i18n-agent/v1"
+    },
+    "target_locale": {
+      "type": "string",
+      "minLength": 2
+    },
+    "actions": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/action"
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "needs_human_review": {
+      "type": "boolean"
+    },
+    "validation": {
+      "$ref": "#/$defs/validation"
+    }
+  },
+  "$defs": {
+    "action": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["key", "action", "status", "reason"],
+      "properties": {
+        "key": { "type": "string", "minLength": 1 },
+        "action": {
+          "type": "string",
+          "enum": [
+            "fill_missing",
+            "refresh_stale",
+            "refine_draft",
+            "keep_existing",
+            "skip"
+          ]
+        },
+        "translation": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string",
+          "enum": ["reviewed", "draft", "needs_human_review"]
+        },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["required_steps"],
+      "properties": {
+        "required_steps": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "executed_steps": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    }
+  }
+}

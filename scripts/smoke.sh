@@ -36,6 +36,12 @@ YAML
 log "build CLI"
 go build -o "$BIN" .
 
+log "version includes build metadata"
+"$BIN" version >"$TMP_DIR/version.out"
+grep -q 'build:' "$TMP_DIR/version.out"
+grep -q 'built:' "$TMP_DIR/version.out"
+grep -q 'assets:' "$TMP_DIR/version.out"
+
 log "CLI help exposes lifecycle flags"
 "$BIN" upgrade --help >"$TMP_DIR/upgrade-help.out"
 "$BIN" extract domain --help >"$TMP_DIR/extract-help.out"

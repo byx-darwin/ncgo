@@ -1,0 +1,16 @@
+syntax = "proto3";
+
+package demo;
+
+import "google/protobuf/any.proto";
+import "google/protobuf/struct.proto";
+
+message SearchReq {}
+message PutResp {}
+message EchoReq {}
+
+service Demo {
+  rpc Search(SearchReq) returns (google.protobuf.Struct) {}
+  rpc Put(google.protobuf.Any) returns (PutResp) {}
+  rpc Echo(EchoReq) returns (google.protobuf.Value) {}
+}

@@ -1,0 +1,39 @@
+syntax = "proto3";
+
+package demo;
+
+message SearchUsersReq {
+  string keyword = 1;
+  string status = 2;
+  string sort_by = 3;
+  int32 limit = 4;
+  bool debug = 5;
+  string extra = 6;
+}
+
+message SearchUsersResp {
+  repeated string users = 1;
+}
+
+message QueryUsersReq {
+  string keyword = 1;
+  int32 limit = 2;
+}
+
+message QueryUsersResp {
+  repeated string users = 1;
+}
+
+message GetUserReq {
+  string id = 1;
+}
+
+message GetUserResp {
+  string name = 1;
+}
+
+service Demo {
+  rpc SearchUsers(SearchUsersReq) returns (SearchUsersResp) {}
+  rpc QueryUsers(QueryUsersReq) returns (QueryUsersResp) {}
+  rpc GetUser(GetUserReq) returns (GetUserResp) {}
+}

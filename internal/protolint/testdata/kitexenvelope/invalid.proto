@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package demo;
+
+message GetUserReq {
+  string id = 1;
+}
+
+message GetUserResp {
+  int32 code = 1;
+  string msg = 2;
+  bool success = 3;
+  string name = 4;
+}
+
+message PingReq {}
+
+message PingResp {
+  string message = 1;
+}
+
+service Demo {
+  rpc GetUser(GetUserReq) returns (GetUserResp) {}
+  rpc Ping(PingReq) returns (PingResp) {}
+}

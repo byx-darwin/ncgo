@@ -1,0 +1,25 @@
+syntax = "proto3";
+
+package demo;
+
+import "api.proto";
+
+message PingReq {}
+message PingResp {}
+message PongReq {}
+message PongResp {}
+message OkayReq {}
+message OkayResp {}
+
+service Demo {
+  rpc Ping(PingReq) returns (PingResp) {}
+
+  rpc Pong(PongReq) returns (PongResp) {
+    option (api.get) = "/pong";
+    option (api.post) = "/pong";
+  }
+
+  rpc Okay(OkayReq) returns (OkayResp) {
+    option (api.get) = "/okay";
+  }
+}

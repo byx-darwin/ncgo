@@ -1,0 +1,47 @@
+syntax = "proto3";
+
+package demo;
+
+import "validate/validate.proto";
+
+message ListUsersReq {
+  string keyword = 1;
+  int32 limit = 2;
+}
+
+message ListUsersResp {
+  repeated string users = 1;
+}
+
+message SearchUsersReq {
+  string keyword = 1;
+  int32 page_size = 2 [(validate.rules).int32 = { gte: 1, lte: 100 }];
+}
+
+message SearchUsersResp {
+  repeated string users = 1;
+}
+
+message QueryUsersReq {
+  int32 offset = 1 [(validate.rules).int32 = { gte: 0 }];
+}
+
+message QueryUsersResp {
+  repeated string users = 1;
+}
+
+message GetUserReq {
+  string id = 1;
+  int32 page = 2;
+}
+
+message GetUserResp {
+  string name = 1;
+}
+
+service Demo {
+  rpc ListUsers(ListUsersReq) returns (ListUsersResp) {}
+  rpc SearchUsers(SearchUsersReq) returns (SearchUsersResp) {}
+  rpc QueryUsers(QueryUsersReq) returns (QueryUsersResp) {}
+  rpc GetUser(GetUserReq) returns (GetUserResp) {}
+}

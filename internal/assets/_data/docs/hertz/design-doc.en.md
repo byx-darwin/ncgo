@@ -50,8 +50,10 @@ looks like this:
 │   ├── pkg/
 │   │   ├── response/                # JSON/Protobuf reply helpers + error registry
 │   │   ├── errcode/                 # reservations for business codes
+│   │   ├── i18n/locales/            # default and custom locale JSON inputs for make i18n
 │   │   └── middleware/              # signature, token, rate_limit, idempotency, cors, …
 │   └── router/register.go           # hz insertion point
+├── tools/i18n/{gen,sync,report,check,util}/ # i18n toolchain and catalog generator
 ├── Makefile                         # build / dev / update / sqlc / migrate / lint / test
 ├── go.mod
 ├── .hz                              # hz tracker (DO NOT delete)
@@ -162,6 +164,19 @@ not by adding imports.
 - Producers raise errors as `oops.In("...").Code(code).Public("msg")…`;
   `response.Err` extracts `(code, msg)` and maps to HTTP status via
   `StatusFromCode`.
+- `internal/pkg/i18n` negotiates `en` / `zh-CN` / `zh-TW` / `ja-JP` / `ko-KR` /
+  `fr-FR` / `de-DE` / `es-ES` from `Accept-Language`; `response` translates JSON
+  response `msg` values and sets `Content-Language`. Missing translations fall
+  back to the original error key, and business messages can be added with
+  `i18n.Register` at startup.
+- Both the default locales and any additional locales are generated at build
+  time: maintain `{language, aliases, messages}` JSON files under
+  `internal/pkg/i18n/locales/*.json`, then run `make i18n` to write
+  `internal/pkg/i18n/catalog_gen.go`. The generated code calls
+  `i18n.RegisterLanguage(language, aliases...)` and `i18n.Register(...)`;
+  `i18n.go` keeps only the registration and negotiation logic instead of
+  embedding translation tables. This lets `FromAcceptLanguage` negotiate new
+  aliases such as `it` → `it-IT`.
 
 ### 3.3 Security Middleware (`internal/pkg/middleware`)
 
@@ -205,9 +220,10 @@ When the scaffolder is invoked with `--db postgres`:
   via `response.OK`. Both are added to `cfg.Auth.PublicPaths` and
   `cfg.Security.InternalPaths` defaults.
 - `Makefile` targets: `build`, `run`, `dev` (air or `go run .`),
+  `i18n` (generates `catalog_gen.go` from `locales/*.json`),
   `update` (re-runs `hz update` with the embedded `package.yaml`),
   `sqlc`, `migrate-{create,up,down,status}`, `lint`, `test`, `tidy`,
-  `install-tools`.
+  `install-tools`. `generate` chains `i18n update swagger sqlc`.
 - `cmd/server/main.go` simply calls `conf.Init()` then `server.Run()`;
   any wiring the agent adds belongs in `internal/base/server/server.go`.
 

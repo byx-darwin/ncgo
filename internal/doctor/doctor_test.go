@@ -40,6 +40,16 @@ func findCheck(t *testing.T, r *Report, id string) Check {
 	return Check{}
 }
 
+func findChecksByRule(r *Report, rule string) []Check {
+	var out []Check
+	for _, c := range r.Checks {
+		if c.Rule == rule {
+			out = append(out, c)
+		}
+	}
+	return out
+}
+
 func TestRunReportsHzKitexOK(t *testing.T) {
 	r := Run(context.Background(), Options{Runner: &scriptedRunner{
 		out: map[string]string{"hz": "hz version v0.9.7", "kitex": "v0.16.1"},
@@ -129,6 +139,29 @@ func seedProject(t *testing.T, withDB bool, dataJSON string) string {
 	return root
 }
 
+func seedProjectWithProto(t *testing.T, kind, idl, protoBody, dataJSON string) string {
+	t.Helper()
+	root := seedProject(t, false, dataJSON)
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	m.Service.Kind = kind
+	m.Service.IDL = idl
+	if err := manifest.Save(root, m); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+	if idl != "" {
+		if err := os.MkdirAll(filepath.Join(root, filepath.Dir(idl)), 0o755); err != nil {
+			t.Fatalf("mkdir idl dir: %v", err)
+		}
+		if err := os.WriteFile(filepath.Join(root, idl), []byte(protoBody), 0o644); err != nil {
+			t.Fatalf("write proto: %v", err)
+		}
+	}
+	return root
+}
+
 func TestRunProjectChecksHappyPath(t *testing.T) {
 	root := seedProject(t, false, `{"*":{"GoModule":"github.com/x/demo","ServiceName":"demo","WithDatabase":false}}`)
 	r := Run(context.Background(), Options{
@@ -142,6 +175,81 @@ func TestRunProjectChecksHappyPath(t *testing.T) {
 		if !c.OK {
 			t.Errorf("%s not OK: %+v", id, c)
 		}
+	}
+}
+
+func TestRunProjectChecksProtoLintPass(t *testing.T) {
+	root := seedProjectWithProto(t, manifest.KindKitex, "idl/demo.proto", `syntax = "proto3";
+
+package demo;
+
+message PingReq {}
+
+message PingResp {}
+
+service Demo {
+  rpc Ping(PingReq) returns (PingResp) {}
+}
+`, "")
+	r := Run(context.Background(), Options{Root: root, Runner: &scriptedRunner{out: map[string]string{
+		"hz": "hz version v0.9.7", "kitex": "v0.16.1",
+	}}})
+	c := findCheck(t, r, "protolint")
+	if !c.OK {
+		t.Fatalf("protolint not OK: %+v", c)
+	}
+	if !strings.Contains(c.Message, "proto lint passed") {
+		t.Fatalf("message = %q, want proto lint passed", c.Message)
+	}
+	if c.File != filepath.Join(root, "idl", "demo.proto") {
+		t.Fatalf("file = %q, want %q", c.File, filepath.Join(root, "idl", "demo.proto"))
+	}
+}
+
+func TestRunProjectChecksProtoLintFailure(t *testing.T) {
+	root := seedProjectWithProto(t, manifest.KindKitex, "idl/demo.proto", `syntax = "proto3";
+
+package demo;
+
+message GetUserReq {
+  string id = 1;
+}
+
+message GetUserResp {
+  int32 code = 1;
+  string msg = 2;
+  bool success = 3;
+  string name = 4;
+}
+
+service Demo {
+  rpc GetUser(GetUserReq) returns (GetUserResp) {}
+}
+`, "")
+	r := Run(context.Background(), Options{Root: root, Runner: &scriptedRunner{out: map[string]string{
+		"hz": "hz version v0.9.7", "kitex": "v0.16.1",
+	}}})
+	hits := findChecksByRule(r, "PIO301")
+	if len(hits) != 1 {
+		t.Fatalf("PIO301 checks = %d, want 1: %+v", len(hits), hits)
+	}
+	if hits[0].OK {
+		t.Fatalf("expected failing PIO301 check: %+v", hits[0])
+	}
+	if hits[0].Severity != SeverityError {
+		t.Fatalf("severity = %s, want error", hits[0].Severity)
+	}
+	if !strings.Contains(hits[0].Message, "transport envelope") {
+		t.Fatalf("message = %q, want transport envelope", hits[0].Message)
+	}
+	if hits[0].File != filepath.Join(root, "idl", "demo.proto") {
+		t.Fatalf("file = %q, want %q", hits[0].File, filepath.Join(root, "idl", "demo.proto"))
+	}
+	if hits[0].Line <= 0 {
+		t.Fatalf("line = %d, want > 0", hits[0].Line)
+	}
+	if r.OK() {
+		t.Fatalf("report unexpectedly OK: %+v", r.Checks)
 	}
 }
 

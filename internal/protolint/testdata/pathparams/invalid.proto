@@ -1,0 +1,37 @@
+syntax = "proto3";
+
+package demo;
+
+import "api.proto";
+
+message GetUserReq {
+  string user_id = 1 [(api.path) = "user_id"];
+}
+
+message GetUserResp {}
+
+message ListUsersReq {
+  string id = 1 [(api.path) = "id"];
+}
+
+message ListUsersResp {}
+
+message OkayReq {
+  string id = 1 [(api.path) = "id"];
+}
+
+message OkayResp {}
+
+service Demo {
+  rpc GetUser(GetUserReq) returns (GetUserResp) {
+    option (api.get) = "/users/:id";
+  }
+
+  rpc ListUsers(ListUsersReq) returns (ListUsersResp) {
+    option (api.get) = "/users";
+  }
+
+  rpc Okay(OkayReq) returns (OkayResp) {
+    option (api.get) = "/users/:id";
+  }
+}

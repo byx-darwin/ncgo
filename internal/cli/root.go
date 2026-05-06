@@ -5,6 +5,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -15,7 +17,11 @@ import (
 	"github.com/byx-darwin/ncgo/internal/scaffold/mono"
 )
 
-var Version = "0.1.0-dev"
+var (
+	Version      = "0.1.0-dev"
+	BuildVersion = "dev"
+	BuildTime    = "unknown"
+)
 
 func Main() {
 	root := newRootCmd()
@@ -39,6 +45,8 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newNewCmd())
 	cmd.AddCommand(newAddCmd())
 	cmd.AddCommand(newAICmd())
+	cmd.AddCommand(newI18NCmd())
+	cmd.AddCommand(newProtolintCmd())
 	cmd.AddCommand(newDoctorCmd())
 	cmd.AddCommand(newMCPCmd())
 	cmd.AddCommand(newUpgradeCmd())
@@ -49,12 +57,74 @@ func newRootCmd() *cobra.Command {
 func newVersionCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "version",
-		Short: "Print ncgo version and embedded assets version",
+		Short: "Print ncgo, build, and embedded assets versions",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			fmt.Fprintf(cmd.OutOrStdout(), "ncgo %s (assets: %s)\n", Version, assets.Version())
+			buildVersion, buildTime := effectiveBuildInfo(BuildVersion, BuildTime)
+			fmt.Fprintln(cmd.OutOrStdout(), versionLine(Version, assets.Version(), buildVersion, buildTime))
 			return nil
 		},
 	}
+}
+
+func effectiveBuildInfo(buildVersion, buildTime string) (string, string) {
+	settings := readBuildSettings()
+	return resolveBuildInfo(buildVersion, buildTime, settings)
+}
+
+func readBuildSettings() map[string]string {
+	info, ok := debug.ReadBuildInfo()
+	if !ok {
+		return nil
+	}
+	settings := make(map[string]string, len(info.Settings))
+	for _, setting := range info.Settings {
+		settings[setting.Key] = setting.Value
+	}
+	return settings
+}
+
+func resolveBuildInfo(buildVersion, buildTime string, settings map[string]string) (string, string) {
+	if isDefaultBuildVersion(buildVersion) {
+		if rev := settings["vcs.revision"]; rev != "" {
+			buildVersion = shortRevision(rev)
+			if settings["vcs.modified"] == "true" {
+				buildVersion += "-dirty"
+			}
+		}
+	}
+	if isDefaultBuildTime(buildTime) {
+		if t := settings["vcs.time"]; t != "" {
+			buildTime = t
+		}
+	}
+	return buildVersion, buildTime
+}
+
+func isDefaultBuildVersion(value string) bool {
+	return value == "" || value == "dev" || value == "unknown"
+}
+
+func isDefaultBuildTime(value string) bool {
+	return value == "" || value == "unknown"
+}
+
+func shortRevision(rev string) string {
+	rev = strings.TrimSpace(rev)
+	if len(rev) <= 7 {
+		return rev
+	}
+	return rev[:7]
+}
+
+func versionLine(ncgoVersion, assetsVersion, buildVersion, buildTime string) string {
+	return fmt.Sprintf("ncgo %s (build: %s, built: %s, assets: %s)", nonEmpty(ncgoVersion, "unknown"), nonEmpty(buildVersion, "unknown"), nonEmpty(buildTime, "unknown"), nonEmpty(assetsVersion, "unknown"))
+}
+
+func nonEmpty(value, fallback string) string {
+	if value == "" {
+		return fallback
+	}
+	return value
 }
 
 type newOptions struct {

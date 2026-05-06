@@ -18,10 +18,19 @@ const protocolVersion = "2025-06-18"
 type Server struct {
 	NCGOVersion   string
 	AssetsVersion string
+	BuildVersion  string
+	BuildTime     string
 }
 
-func New(ncgoVersion, assetsVersion string) *Server {
-	return &Server{NCGOVersion: ncgoVersion, AssetsVersion: assetsVersion}
+func New(ncgoVersion, assetsVersion string, buildInfo ...string) *Server {
+	s := &Server{NCGOVersion: ncgoVersion, AssetsVersion: assetsVersion, BuildVersion: "unknown", BuildTime: "unknown"}
+	if len(buildInfo) > 0 && buildInfo[0] != "" {
+		s.BuildVersion = buildInfo[0]
+	}
+	if len(buildInfo) > 1 && buildInfo[1] != "" {
+		s.BuildTime = buildInfo[1]
+	}
+	return s
 }
 
 type rpcRequest struct {

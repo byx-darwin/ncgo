@@ -1,0 +1,33 @@
+syntax = "proto3";
+
+package demo;
+
+import "api.proto";
+
+message ListReq {
+  string keyword = 1 [(api.query) = "keyword"];
+  int32 limit = 2;
+}
+
+message ListResp {
+  string next_cursor = 1;
+}
+
+message EchoReq {
+  string payload = 1 [(api.body) = "payload"];
+  string trace_id = 2 [(api.header) = "X-Trace-Id"];
+}
+
+message EchoResp {
+  string message = 1;
+}
+
+service Demo {
+  rpc List(ListReq) returns (ListResp) {
+    option (api.get) = "/items";
+  }
+
+  rpc Echo(EchoReq) returns (EchoResp) {
+    option (api.post) = "/echo";
+  }
+}

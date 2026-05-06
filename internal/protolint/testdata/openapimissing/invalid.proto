@@ -1,0 +1,36 @@
+syntax = "proto3";
+
+package demo;
+
+import "api.proto";
+import "openapi/annotations.proto";
+
+message ListReq {
+  string keyword = 1 [(api.query) = "keyword"];
+}
+
+message ListResp {
+  string next_cursor = 1 [(openapi.property) = { title: "Next cursor" }];
+}
+
+message CreateReq {
+  string name = 1 [
+    (api.body) = "name",
+    (openapi.property) = { title: "Name" }
+  ];
+}
+
+message CreateResp {
+  string id = 1 [(openapi.property) = { title: "ID" }];
+}
+
+service Demo {
+  rpc List(ListReq) returns (ListResp) {
+    option (api.get) = "/items";
+  }
+
+  rpc Create(CreateReq) returns (CreateResp) {
+    option (api.post) = "/items";
+    option (openapi.operation) = { summary: "Create" };
+  }
+}

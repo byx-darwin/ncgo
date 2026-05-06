@@ -1,0 +1,13 @@
+syntax = "proto2";
+
+package api;
+
+import "google/protobuf/descriptor.proto";
+
+extend google.protobuf.FieldOptions {
+  optional string path = 50106;
+}
+
+extend google.protobuf.MethodOptions {
+  optional string get = 72201;
+}

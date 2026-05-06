@@ -2,10 +2,11 @@
 // project, returning a structured Report consumable by humans, CI, and AI
 // agents (PRD §8).
 //
-// v0.1 covers three categories:
+// v0.1 covers four categories:
 //   - tools: hz / kitex presence on PATH and minimum version
 //   - manifest: .ncgo/manifest.yaml loads and validates
 //   - data: template/data.json values agree with the manifest
+//   - proto: manifest.service.idl passes Proto I/O lint checks
 //
 // Static layer-rule checks (handler→repo, usecase→hertz, SQL strings,
 // RequestContext leaks) are scoped to v0.2 because they need an AST scanner;
@@ -77,12 +78,12 @@ func Run(ctx context.Context, opts Options) *Report {
 	r.Checks = append(r.Checks, checkTool(ctx, runner, "hz", []string{"--version"}, exec.MinHzVersion))
 	r.Checks = append(r.Checks, checkTool(ctx, runner, "kitex", []string{"-version"}, exec.MinKitexVersion))
 	if opts.Root != "" {
-		r.Checks = append(r.Checks, projectChecks(opts.Root)...)
+		r.Checks = append(r.Checks, projectChecks(ctx, opts.Root)...)
 	}
 	return r
 }
 
-func projectChecks(root string) []Check {
+func projectChecks(ctx context.Context, root string) []Check {
 	var out []Check
 	m, mc := loadManifestCheck(root)
 	out = append(out, mc)
@@ -90,6 +91,7 @@ func projectChecks(root string) []Check {
 		return out
 	}
 	out = append(out, dataJSONCheck(root, m))
+	out = append(out, protoLintChecks(ctx, root, m)...)
 	out = append(out, scanLayers(root, m)...)
 	return out
 }

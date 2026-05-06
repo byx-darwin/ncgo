@@ -77,6 +77,8 @@ Deferred optionals remain documented but intentionally not implemented yet:
 - Go `1.25+`
 - `hz >= v0.9.7` when generating Hertz services
 - `kitex >= v0.16.1` when generating Kitex services
+- Hertz templates' `make swagger` target requires `protoc` and
+  `protoc-gen-http-swagger` on `PATH`
 
 If you only want manifests, IDL placeholders, and template inputs, use
 `--no-generate` and install the generators later.
@@ -123,7 +125,8 @@ below.
 | `ncgo add infra` | Add optional infra helpers such as Redis / logging / canary |
 | `ncgo add rpc` / `ncgo add bff` | Add services inside a micro workspace |
 | `ncgo ai sync` | Render `AGENTS.md`, `CLAUDE.md`, and Cursor rules |
-| `ncgo doctor` | Diagnose host tools and project metadata |
+| `ncgo protolint` | Lint selected `.proto` files with Proto I/O rules |
+| `ncgo doctor` | Diagnose host tools, project metadata, and default proto contract issues |
 | `ncgo upgrade` | Update ncgo/assets metadata |
 | `ncgo extract domain` | Plan or apply mono-to-micro extraction |
 | `ncgo mcp serve` | Expose selected ncgo operations over MCP stdio |
@@ -137,6 +140,8 @@ below.
 | Micro workspace | `ncgo new <name> --module <module> --mode micro` | You need multiple services under one workspace root |
 | Prepare first, generate later | `ncgo new ... --no-generate` | You want manifests/templates now and generator execution later |
 | Existing project enhancement | `ncgo add domain`, `ncgo add infra`, `ncgo ai sync` | You already have an ncgo project and want to expand it incrementally |
+| i18n translation in a generated project | `make i18n-report`, `ncgo i18n check --mode release --output json` | You want a stable workflow from locale/status updates to agent-assisted translation review and final validation |
+| Proto contract lint in a generated project | `ncgo protolint --root . --file idl/app/demo.proto --output json` | You want Req/Resp naming, Hertz binding, and Kitex response shape checks in a repeatable workflow |
 
 If you are starting fresh, pick one row above and then follow the matching
 Quick Start below.
@@ -160,6 +165,12 @@ make dev
 ```bash
 ncgo new user-api --module github.com/acme/user-api
 ```
+
+The Hertz template ships with `zh-CN`, `zh-TW`, `ja-JP`, `ko-KR`, `fr-FR`,
+`de-DE`, and `es-ES` by default. Both the default locales and any additional
+locales are maintained under `internal/pkg/i18n/locales/*.json` in the
+generated project, then compiled into `internal/pkg/i18n/catalog_gen.go` via
+`make i18n`.
 
 ### Kitex RPC service
 
@@ -299,6 +310,15 @@ continue to compile. Use opt-in `--wire` to mount traffic middleware automatical
 Use `--dry-run` with `--wire` to preview the source files that would change. See
 `docs/canary-release.zh-CN.md` for examples.
 
+The Hertz template includes lightweight localized response messages. `internal/pkg/i18n`
+selects `en`, `zh-CN`, `zh-TW`, `ja-JP`, `ko-KR`, `fr-FR`, `de-DE`, or `es-ES`
+from `Accept-Language`, and `internal/pkg/response` translates JSON response
+`msg` values while setting `Content-Language`. These default locales are also
+loaded from `internal/pkg/i18n/locales/*.json` and registered by the generated
+`catalog_gen.go`. Without an `Accept-Language` header, responses keep the
+existing English error keys. Business messages can be extended at startup with
+`i18n.Register`.
+
 ### Micro services
 
 ```bash
@@ -311,6 +331,7 @@ ncgo add bff web-bff --root commerce
 
 ```bash
 ncgo doctor --root .
+ncgo protolint --root . --file idl/app/demo.proto --output json
 ncgo mcp serve
 ncgo upgrade --root . --plan
 ncgo upgrade --root . --dry-run
@@ -319,11 +340,30 @@ ncgo extract domain device --root . --to services/device-rpc --apply
 ncgo version
 ```
 
-`ncgo mcp serve` starts a stdio MCP server. The MVP exposes `ncgo_version`,
-`ncgo_doctor`, `ncgo_ai_sync`, `ncgo_add_infra`, and `ncgo_add_method` tools.
+`ncgo doctor` now checks `hz` / `kitex`, the manifest, `template/data.json`, and
+runs proto lint automatically when `manifest.service.idl` is present.
+
+`ncgo mcp serve` starts a stdio MCP server. It currently exposes
+`ncgo_version`, `ncgo_doctor`, `ncgo_ai_sync`, `ncgo_i18n_report`,
+`ncgo_i18n_check`, `ncgo_protolint`, `ncgo_add_infra`, and `ncgo_add_method` tools.
 `ncgo_add_infra` accepts `root`, `kind`, `force`, `wire`, and `dryRun`; it
 supports the same infra kinds as the CLI, prints dependency next steps without
 running `go get`, and returns structured `plan` fields for agent previews.
+
+If you use the built-in i18n workflow in a generated Hertz project, you can now
+consume structured results via `ncgo i18n report` / `ncgo i18n check` or MCP via
+`ncgo_i18n_report` / `ncgo_i18n_check`. See the worked example in
+[`docs/examples.md`](docs/examples.md).
+
+If you want the same kind of structured workflow for `.proto` contracts, use
+`ncgo protolint --root . --file ...` or the MCP `ncgo_protolint` tool. See the
+worked example in [`docs/examples.md`](docs/examples.md).
+
+The built-in Proto I/O rules now include a first batch of default `phase2`
+warnings in addition to the existing `error` rules: `PIO111`, `PIO112`,
+`PIO113`, `PIO211`, `PIO212`, `PIO302`, `PIO303`, and `PIO401`. These warnings
+still appear in `diagnostics` and doctor reports, but **warning-only runs keep
+`ok=true`**; CLI / MCP / doctor only fail when an `error` rule is hit.
 
 `ncgo upgrade` updates ncgo/assets version metadata in `.ncgo/manifest.yaml` or
 `ncgo.workspace` (and listed micro service manifests). `--plan` prints a detailed
@@ -357,6 +397,39 @@ ncgo doctor
 ```
 
 If you want to prepare files first and run generators later, use `--no-generate`.
+
+### Hertz `make swagger` cannot find `protoc` or the plugin
+
+Hertz templates' `make swagger` runs `protoc --http-swagger_out=...`, so both of
+these tools must be available:
+
+- `protoc`: the Protocol Buffers compiler, installed via your system package
+  manager or an official release.
+- `protoc-gen-http-swagger`: the Go plugin, installed into `GOBIN` or
+  `$(go env GOPATH)/bin`; that directory must be on `PATH`.
+
+Common setup:
+
+```bash
+# macOS / Homebrew
+brew install protobuf
+
+# Go plugin
+go install github.com/hertz-contrib/swagger-generate/protoc-gen-http-swagger@latest
+
+# Verify PATH
+protoc --version
+protoc-gen-http-swagger --help
+```
+
+Generated Hertz projects also include `make install-tools`, which installs Go-side
+development tools including `protoc-gen-http-swagger`; `protoc` itself still needs
+to be installed through your system tooling.
+
+The Swagger spec is embedded into the service binary with `go:embed`. After
+`make swagger` updates `internal/docs/swagger/openapi.yaml`, rerun `go run .` /
+`make dev` or rebuild and restart the service so `/swagger/openapi.yaml` serves
+the updated spec.
 
 ## Development Checks
 

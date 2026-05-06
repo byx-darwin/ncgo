@@ -27,7 +27,8 @@ func newMCPServeCmd() *cobra.Command {
 			"and tools/call for selected ncgo operations.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			server := mcp.New(Version, assets.Version())
+			buildVersion, buildTime := effectiveBuildInfo(BuildVersion, BuildTime)
+			server := mcp.New(Version, assets.Version(), buildVersion, buildTime)
 			if err := server.Serve(cmd.Context(), os.Stdin, os.Stdout); err != nil {
 				return fmt.Errorf("mcp serve: %w", err)
 			}

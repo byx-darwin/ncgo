@@ -27,7 +27,13 @@
 - `darwin/arm64`；
 - `windows/amd64`。
 
-Release 二进制会通过 `-ldflags "-X github.com/byx-darwin/ncgo/internal/cli.Version=<tag>"` 写入 `ncgo version` 使用的版本号。
+Release 二进制会通过 `-ldflags` 写入 `ncgo version` 使用的版本信息：
+
+- `internal/cli.Version`：tag 版本号，非 tag 构建时为 `snapshot-<sha7>`；
+- `internal/cli.BuildVersion`：当前 commit 短 SHA；
+- `internal/cli.BuildTime`：UTC 编译时间，格式为 RFC3339。
+
+本地直接执行 `go install .` 时不会自动注入 `-ldflags`；此时 `ncgo version` 会优先从 Go build info 中读取 `vcs.revision` / `vcs.time` 作为 fallback，并在工作区有未提交变更时给 build version 追加 `-dirty`。
 
 GitHub Release 会使用 `gh release create --generate-notes` 自动生成发布说明；分类规则由 `.github/release.yml` 控制。
 
