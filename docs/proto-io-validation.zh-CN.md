@@ -232,14 +232,14 @@ PGV 不负责 request / response 命名、HTTP binding、path 对齐或 transpor
 
 ## 13. 待定事项
 
-以下问题建议后续单独决策：
+以下为原始待定问题及当前决策状态：
 
-- `google.protobuf.Empty` 是否从 warning 升级为 error
-- Hertz request 中未绑定字段是否直接报错
-- Kitex response 中 `code/msg/success` 是否直接作为 hard error
-- 是否只校验对外接口，还是所有 rpc
-- response 是否需要系统性接入 PGV
-- 是否引入更强的列表分页 / 搜索接口风格规则
+- **`google.protobuf.Empty` 是否从 warning 升级为 error**：维持 `warning`（`PIO111`）；该类型在健康检查等场景有合理用法，直接阻断误报风险较高。
+- **Hertz request 中未绑定字段是否直接报错**：维持 `warning`（`PIO211`）；框架默认处理字段的场景存在，直接报错误报风险较高。
+- **Kitex response 中 `code/msg/success` 是否直接作为 hard error**：已作为 `error`（`PIO301`）；命中 2 个及以上 transport envelope 字段时阻断，单字段不触发以控制误报。
+- **是否只校验对外接口，还是所有 rpc**：当前实现对所有 rpc 统一检查，不区分对外 / 内部；待有实际区分需求时再引入过滤机制。
+- **response 是否需要系统性接入 PGV**：当前不在规划范围；`PIO4xx` 仅覆盖 request 侧分页字段（`PIO401`），response PGV 暂缓。
+- **是否引入更强的列表分页 / 搜索接口风格规则**：已以最小实现落地为 `warning`（`PIO302`）；更强的强制规则暂缓，待收集真实 proto 反馈后评估。
 
 ## 14. 推进建议
 

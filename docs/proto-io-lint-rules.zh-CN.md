@@ -241,6 +241,33 @@
 - 说明：第一版可先从分页类字段开始，而不是试图穷举所有“应该有 PGV”的输入字段
 - 当前实现：检查 request 顶层字段名是否命中 `page`、`page_size`、`limit`、`offset`；若字段上未看到 `validate.rules` 中明显的 `gt/gte/lt/lte` 范围约束，则给出提示
 
+### 5.9 已知限制与误报说明
+
+以下为当前 phase2 启发式规则在保守实现下的已知误报场景，供维护者和 Agent 在消费 `diagnostics` 时参考。
+
+**PIO212**（Hertz 缺 OpenAPI 元信息）
+
+- 项目未启用 swagger / OpenAPI 文档时，所有 Hertz RPC 均会触发提示；此时可通过 `--rule` 参数排除该规则
+- 快速开发或内部服务阶段，annotation 尚未补全属于正常状态，该 warning 仅作提醒，不应阻断开发流
+
+**PIO302**（Kitex 列表接口缺分页）
+
+- 导出型接口（如 `ListAll`、`ExportAll`）本身不需要分页，会触发误报
+- 基于 cursor 分页但字段名不在识别集合（`page`、`page_size`、`limit`、`cursor`、`offset`）内的方案也会误报
+- `List` 前缀的工具类接口（如 `ListSupportedLanguages`）同样会被命中
+
+**PIO303**（Kitex request 结构过于"万能"）
+
+- 合理设计的搜索型接口本身就需要筛选 + 排序 + 分页，该规则对此场景有较高误报率
+- 字段名命中分类关键词的判断基于字符串前缀 / 后缀匹配，拼写碰巧与关键词重合的业务字段会被错误归类
+- 当前阈值（同时命中 ≥3 类职责且命中字段数 ≥4）是保守设定，可根据实际 proto 样本调整
+
+**PIO401**（分页类字段缺少 PGV 范围约束）
+
+- 内部服务或有意不加防御性校验的场景，PGV 约束缺失不属于真实问题
+- 字段名匹配集合（`page`、`page_size`、`limit`、`offset`）硬编码固定，与分页语义相同但命名不同的字段不会被检测
+- 通过框架层（如 handler middleware）统一做边界校验而不在 proto 声明 PGV 的项目会持续触发该提示
+
 ## 6. Phase 3：暂缓实现的规则方向
 
 以下方向不建议在当前阶段直接实现为 lint 规则：
