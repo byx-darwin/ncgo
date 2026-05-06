@@ -1,5 +1,6 @@
 // Package ai renders the AI collaboration artifacts described in
-// docs/prd.md §6: AGENTS.md, CLAUDE.md and .cursor/rules/ncgo.mdc.
+// docs/prd.md §6: AGENTS.md, CLAUDE.md, .cursor/rules/ncgo.mdc, and
+// .claude/generated/project-context.md.
 //
 // The renderer is idempotent and reads only from the project manifest
 // and the ncgo-embedded design doc (`internal/assets/_data/docs/<kind>/
@@ -27,7 +28,8 @@ const (
 	ManagedMarker = "<!-- ncgo:managed -->"
 
 	// LocalNotesFile is the optional, user-owned companion appended under
-	// the "Local Notes" section of every rendered target when present.
+	// the "Local Notes" section of the long-form rendered targets when
+	// present.
 	LocalNotesFile = "AGENTS.local.md"
 
 	LangEN   = "en"
@@ -69,13 +71,13 @@ func Sync(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	body, err := buildBody(m, opts)
+	inputs, err := buildInputs(m, opts)
 	if err != nil {
 		return nil, err
 	}
 	res := &Result{}
 	for _, t := range targets() {
-		if err := writeTarget(opts, t, body, res); err != nil {
+		if err := writeTarget(opts, t, inputs, res); err != nil {
 			return res, err
 		}
 	}
@@ -108,11 +110,11 @@ func readLocalNotes(root string) (string, error) {
 }
 
 // writeTarget renders one target file relative to opts.Root, honouring
-// the managed-marker / Force / DryRun rules. The body argument is the
-// shared markdown body produced by buildBody.
-func writeTarget(opts Options, t target, body string, res *Result) error {
+// the managed-marker / Force / DryRun rules. The inputs argument contains
+// the pre-rendered shared bodies produced by buildInputs.
+func writeTarget(opts Options, t target, inputs renderInputs, res *Result) error {
 	full := filepath.Join(opts.Root, t.RelPath)
-	rendered := t.Render(body)
+	rendered := t.Render(inputs)
 	if existing, err := os.ReadFile(full); err == nil {
 		if !isManaged(existing) && !opts.Force {
 			res.Skipped = append(res.Skipped, Skip{

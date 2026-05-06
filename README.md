@@ -22,13 +22,13 @@ agent handoff, see [docs/context-handoff.zh-CN.md](docs/context-handoff.zh-CN.md
 
 - **Deterministic scaffolding**: keep manifests, IDL placeholders, and templates under version control
 - **Generator-aware**: orchestrate `hz` / `kitex`, but still allow `--no-generate` workflows
-- **Agent-friendly by default**: render `AGENTS.md`, `CLAUDE.md`, Cursor rules, and expose MCP tools
+- **Agent-friendly by default**: render `AGENTS.md`, `CLAUDE.md`, `.claude/generated/project-context.md`, Cursor rules, and expose MCP tools
 - **Lifecycle helpers included**: ship `doctor`, `upgrade`, and conservative `extract domain` flows in the same CLI
 
 ## Highlights
 
 | Area | What you get |
-|---|---|
+| --- | --- |
 | Service scaffolding | Mono Hertz/Kitex scaffolds plus micro workspaces with `add rpc` / `add bff` |
 | Project context | Versioned manifests, template inputs, and AI collaboration files |
 | Optional infra | Redis, Kafka, Elasticsearch, ClickHouse, logging, canary, and more |
@@ -65,13 +65,13 @@ Deferred optionals remain documented but intentionally not implemented yet:
 ## What ncgo Generates
 
 | Area | Output |
-|---|---|
+| --- | --- |
 | Project metadata | `.ncgo/manifest.yaml` for services; `ncgo.workspace` for micro roots |
 | Hertz | IDL placeholder, custom `hz` layout/package inputs, HTTP service skeleton |
 | Kitex | IDL placeholder, custom Kitex template tree, RPC service skeleton |
 | Domain | `internal/usecase/<name>`, `internal/repository/<name>`, DI register file |
 | Infra | Optional drop-in Go files under `internal/base/...` |
-| AI context | `AGENTS.md`, `CLAUDE.md`, `.cursor/rules/ncgo.mdc` |
+| AI context | `AGENTS.md`, `CLAUDE.md`, `.claude/generated/project-context.md`, `.cursor/rules/ncgo.mdc` |
 
 ## Requirements
 
@@ -119,13 +119,13 @@ below.
 ## Common Commands
 
 | Command | Purpose |
-|---|---|
+| --- | --- |
 | `ncgo new` | Scaffold a mono service or micro workspace |
 | `ncgo add domain` | Generate usecase / repository / DI register files |
 | `ncgo add method` | Insert a method stub at ncgo anchor markers |
 | `ncgo add infra` | Add optional infra helpers such as Redis / logging / canary |
 | `ncgo add rpc` / `ncgo add bff` | Add services inside a micro workspace |
-| `ncgo ai sync` | Render `AGENTS.md`, `CLAUDE.md`, and Cursor rules |
+| `ncgo ai sync` | Render `AGENTS.md`, `CLAUDE.md`, `.claude/generated/project-context.md`, and Cursor rules |
 | `ncgo protolint` | Lint selected `.proto` files with Proto I/O rules |
 | `ncgo doctor` | Diagnose host tools, project metadata, and default proto contract issues |
 | `ncgo upgrade` | Update ncgo/assets metadata |
@@ -135,7 +135,7 @@ below.
 ## Typical Workflows
 
 | Scenario | Start with | Best when |
-|---|---|---|
+| --- | --- | --- |
 | Single Hertz service | `ncgo new <name> --module <module>` | You want the fastest path to an HTTP service scaffold |
 | Single Kitex service | `ncgo new <name> --module <module> --kind kitex` | You are building an RPC-first service with Kitex |
 | Micro workspace | `ncgo new <name> --module <module> --mode micro` | You need multiple services under one workspace root |
@@ -241,11 +241,13 @@ This writes managed files:
 
 - `AGENTS.md`
 - `CLAUDE.md`
+- `.claude/generated/project-context.md`
 - `.cursor/rules/ncgo.mdc`
 
 Files contain `<!-- ncgo:managed -->`; existing files without the marker are
 skipped unless `--force` is passed. Add project-specific notes in
-`AGENTS.local.md`; they are appended on every sync.
+`AGENTS.local.md`; they are appended to the long-form generated context files,
+while `.claude/generated/project-context.md` stays deterministic.
 
 ## Command Reference
 
@@ -332,6 +334,8 @@ ncgo add bff web-bff --root commerce
 
 ```bash
 ncgo doctor --root .
+ncgo doctor --root . --output json
+ncgo doctor --root . --output sarif > doctor.sarif.json
 ncgo protolint --root . --file idl/app/demo.proto --output json
 ncgo mcp serve
 ncgo upgrade --root . --plan
@@ -342,29 +346,41 @@ ncgo version
 ```
 
 `ncgo doctor` now checks `hz` / `kitex`, the manifest, `template/data.json`, and
-runs proto lint automatically when `manifest.service.idl` is present.
+runs proto lint automatically when `manifest.service.idl` is present. The CLI
+supports `--output text|json|sarif`; `--json` remains as a compatibility alias
+for `--output json`. SARIF output is suitable for code scanning, IDE problems,
+and CI artifact pipelines.
 
 `ncgo mcp serve` starts a stdio MCP server. It currently exposes
 `ncgo_version`, `ncgo_doctor`, `ncgo_ai_sync`, `ncgo_i18n_report`,
 `ncgo_i18n_check`, `ncgo_protolint`, `ncgo_add_infra`, and `ncgo_add_method` tools.
-`ncgo_add_infra` accepts `root`, `kind`, `force`, `wire`, and `dryRun`; it
-supports the same infra kinds as the CLI, prints dependency next steps without
-running `go get`, and returns structured `plan` fields for agent previews.
+The MCP interface is now documented in a contract-first layout in
+[`docs/examples.md#0-mcp-contract-first-reference`](docs/examples.md#0-mcp-contract-first-reference): see `0. MCP contract-first reference`
+for each tool's inputs, supported `output` values, and stable top-level result
+fields before the workflow examples. In short, structured MCP tools keep
+`content[0].text` as the display/export payload and expose sibling top-level
+fields for agent use; `output` only changes the text payload format.
 
 If you use the built-in i18n workflow in a generated Hertz project, you can now
 consume structured results via `ncgo i18n report` / `ncgo i18n check` or MCP via
 `ncgo_i18n_report` / `ncgo_i18n_check`. See the worked example in
-[`docs/examples.md`](docs/examples.md).
+[`docs/examples.md#5-i18n-translation-workflow-in-a-generated-project`](docs/examples.md#5-i18n-translation-workflow-in-a-generated-project).
 
 If you want the same kind of structured workflow for `.proto` contracts, use
-`ncgo protolint --root . --file ...` or the MCP `ncgo_protolint` tool. See the
-worked example in [`docs/examples.md`](docs/examples.md).
+`ncgo protolint --root . --file ...` or the MCP `ncgo_protolint` tool. The CLI
+supports `--output text|json|sarif`; SARIF can be fed directly into code
+scanning and IDE tooling. You can also suppress known legacy findings with
+`--ignore-rule` / `--ignore-file` (MCP: `ignoreRules` / `ignoreFiles`). In mono
+service roots or micro workspace roots, omitting `--file` lets ncgo auto-
+discover entry proto files from the manifest or workspace. See the worked
+example in [`docs/examples.md#6-proto-contract-lint-workflow-in-a-generated-project`](docs/examples.md#6-proto-contract-lint-workflow-in-a-generated-project).
 
 The built-in Proto I/O rules now include a first batch of default `phase2`
 warnings in addition to the existing `error` rules: `PIO111`, `PIO112`,
-`PIO113`, `PIO211`, `PIO212`, `PIO302`, `PIO303`, and `PIO401`. These warnings
-still appear in `diagnostics` and doctor reports, but **warning-only runs keep
-`ok=true`**; CLI / MCP / doctor only fail when an `error` rule is hit.
+`PIO113`, `PIO211`, `PIO212`, `PIO302`, `PIO303`, `PIO401`, `PIO402`, `PIO403`,
+and `PIO404`. These warnings still appear in `diagnostics` and doctor reports,
+but **warning-only runs keep `ok=true`**; CLI / MCP / doctor only fail when an
+`error` rule is hit.
 
 `ncgo upgrade` updates ncgo/assets version metadata in `.ncgo/manifest.yaml` or
 `ncgo.workspace` (and listed micro service manifests). `--plan` prints a detailed

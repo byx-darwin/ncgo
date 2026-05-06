@@ -17,7 +17,7 @@
 ## 3. 核心决策
 
 | # | 决策 | 内容 |
-|---|---|---|
+| --- | --- | --- |
 | 1 | 策略 | 先封装 `hz` / `kitex`，后续再叠加 AI Runtime |
 | 2 | 当前脚手架范围 | Hertz / Kitex mono 服务 + micro workspace（Kitex RPC、Hertz BFF） |
 | 3 | CLI | cobra + viper |
@@ -71,12 +71,13 @@ Micro 根目录使用 `ncgo.workspace`，每个服务仍有自己的 `.ncgo/mani
 `ncgo ai sync` 生成：
 
 | 文件 | 受众 | 来源 |
-|---|---|---|
+| --- | --- | --- |
 | `AGENTS.md` | 任意 Agent | manifest + 内置设计文档 + `AGENTS.local.md` |
-| `CLAUDE.md` | Claude Code | 同上，Claude 风格格式 |
-| `.cursor/rules/ncgo.mdc` | Cursor | 同上，带 MDC frontmatter |
+| `CLAUDE.md` | Claude Code | manifest + 内置设计文档 + `AGENTS.local.md`，Claude 风格格式 |
+| `.claude/generated/project-context.md` | Claude Code（`.claude` 生成事实） | manifest + 内置设计文档（不读取 `AGENTS.local.md`） |
+| `.cursor/rules/ncgo.mdc` | Cursor | manifest + 内置设计文档 + `AGENTS.local.md`，带 MDC frontmatter |
 
-生成是幂等的。受管理文件顶部带 `<!-- ncgo:managed -->`。项目自定义内容放入 `AGENTS.local.md`。
+生成是幂等的。受管理文件顶部带 `<!-- ncgo:managed -->`。项目自定义内容放入 `AGENTS.local.md`，并且只会附加到长版上下文产物。
 
 ## 7. Agent-friendly Anchors
 
@@ -164,7 +165,7 @@ MVP 支持 release metadata、`Traffic` context、Hertz Header adapter、Kitex m
 ## 10. 里程碑
 
 | 版本 | 范围 | 状态 |
-|---|---|---|
+| --- | --- | --- |
 | v0.1 | Hertz mono、domain、infra、doctor、golden tests | done |
 | v0.2 | Kitex mono、内置设计文档、`ai sync` | done |
 | v0.3 | micro、add rpc、add bff、mcp serve、anchor system | done (MVP) |

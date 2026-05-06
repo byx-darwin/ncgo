@@ -34,7 +34,7 @@ func TestSyncWritesAllTargets(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	wantPaths := []string{"AGENTS.md", "CLAUDE.md", ".cursor/rules/ncgo.mdc"}
+	wantPaths := []string{"AGENTS.md", "CLAUDE.md", ".cursor/rules/ncgo.mdc", ".claude/generated/project-context.md"}
 	if len(res.Written) != len(wantPaths) {
 		t.Fatalf("Written = %v, want %v", res.Written, wantPaths)
 	}
@@ -56,6 +56,18 @@ func TestSyncWritesAllTargets(t *testing.T) {
 		}
 		if !strings.Contains(body, "domains: `[device]`") {
 			t.Errorf("%s missing manifest domains summary", p)
+		}
+		if p == ".claude/generated/project-context.md" {
+			if !strings.Contains(body, "# Claude Project Context") {
+				t.Errorf("%s missing Claude project context title", p)
+			}
+			if !strings.Contains(body, ".claude/rules/go.md") || !strings.Contains(body, ".claude/rules/agent-engineering.md") {
+				t.Errorf("%s missing repository rules links", p)
+			}
+			if !strings.Contains(body, "The Hertz template family backs") {
+				t.Errorf("%s missing design-doc overview summary", p)
+			}
+			continue
 		}
 		if !strings.Contains(body, "Hertz Template Design Doc") &&
 			!strings.Contains(body, "## 2. Generated Project Architecture") {
@@ -137,6 +149,10 @@ func TestSyncAppendsLocalNotes(t *testing.T) {
 	if !strings.Contains(string(body), "## Local Notes") || !strings.Contains(string(body), "avoid global variables") {
 		t.Errorf("Local Notes section missing from AGENTS.md")
 	}
+	projectContext, _ := os.ReadFile(filepath.Join(root, ".claude/generated/project-context.md"))
+	if strings.Contains(string(projectContext), "Local Notes") || strings.Contains(string(projectContext), "avoid global variables") {
+		t.Errorf("project-context.md must not include AGENTS.local.md content")
+	}
 }
 
 func TestSyncDryRunWritesNothing(t *testing.T) {
@@ -174,5 +190,9 @@ func TestSyncZhLangPicksZhDoc(t *testing.T) {
 	body, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
 	if !strings.Contains(string(body), "生成项目架构") {
 		t.Errorf("zh-CN sync should embed Chinese design doc")
+	}
+	projectContext, _ := os.ReadFile(filepath.Join(root, ".claude/generated/project-context.md"))
+	if !strings.Contains(string(projectContext), "Hertz 模板族支撑") {
+		t.Errorf("zh-CN sync should render Chinese overview in project-context.md")
 	}
 }

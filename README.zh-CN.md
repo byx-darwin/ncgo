@@ -17,13 +17,13 @@ English documentation: [README.md](README.md)。产品需求文档见 [docs/prd.
 
 - **可复现的脚手架**：把 manifest、IDL 占位和模板输入纳入版本控制
 - **理解生成器工作流**：可以协调 `hz` / `kitex`，也支持 `--no-generate` 先准备后生成
-- **默认对 Agent 友好**：可生成 `AGENTS.md`、`CLAUDE.md`、Cursor 规则，并提供 MCP 能力
+- **默认对 Agent 友好**：可生成 `AGENTS.md`、`CLAUDE.md`、`.claude/generated/project-context.md`、Cursor 规则，并提供 MCP 能力
 - **内置生命周期工具**：同一个 CLI 里包含 `doctor`、`upgrade` 和保守的 `extract domain`
 
 ## 核心能力
 
 | 范围 | 你能得到什么 |
-|---|---|
+| --- | --- |
 | 服务脚手架 | 支持 Mono Hertz/Kitex 脚手架，也支持带 `add rpc` / `add bff` 的 Micro 工作区 |
 | 项目上下文 | 可版本化的 manifest、模板输入，以及面向 AI 的协作文件 |
 | 可选基础设施 | Redis、Kafka、Elasticsearch、ClickHouse、logging、canary 等 helper |
@@ -44,6 +44,7 @@ English documentation: [README.md](README.md)。产品需求文档见 [docs/prd.
 - 你期待 CLI 自动安装依赖或自动重构任意已有服务
 
 ## 当前状态
+
 v0.5 MVP 已完成：
 
 - Mono 脚手架：Hertz HTTP 服务、Kitex RPC 服务。
@@ -58,13 +59,13 @@ v0.5 MVP 已完成：
 ## ncgo 会生成什么
 
 | 范围 | 输出 |
-|---|---|
+| --- | --- |
 | 项目元数据 | 服务内 `.ncgo/manifest.yaml`；micro 根目录 `ncgo.workspace` |
 | Hertz | IDL 占位、`hz` 自定义 layout/package 输入、HTTP 服务骨架 |
 | Kitex | IDL 占位、Kitex template tree、RPC 服务骨架 |
 | Domain | `internal/usecase/<name>`、`internal/repository/<name>`、DI register 文件 |
 | Infra | `internal/base/...` 下的可选 Go 文件 |
-| AI 上下文 | `AGENTS.md`、`CLAUDE.md`、`.cursor/rules/ncgo.mdc` |
+| AI 上下文 | `AGENTS.md`、`CLAUDE.md`、`.claude/generated/project-context.md`、`.cursor/rules/ncgo.mdc` |
 
 ## 要求
 
@@ -110,13 +111,13 @@ make dev
 ## 常用命令总览
 
 | 命令 | 作用 |
-|---|---|
+| --- | --- |
 | `ncgo new` | 创建 mono 服务或 micro 工作区 |
 | `ncgo add domain` | 生成 usecase / repository / DI register 文件 |
 | `ncgo add method` | 在 ncgo anchor 标记中插入方法桩 |
 | `ncgo add infra` | 添加 Redis / logging / canary 等可选基础设施 helper |
 | `ncgo add rpc` / `ncgo add bff` | 在 micro 工作区中新增服务 |
-| `ncgo ai sync` | 生成 `AGENTS.md`、`CLAUDE.md` 与 Cursor 规则 |
+| `ncgo ai sync` | 生成 `AGENTS.md`、`CLAUDE.md`、`.claude/generated/project-context.md` 与 Cursor 规则 |
 | `ncgo doctor` | 检查宿主机工具、项目元数据与默认 proto 契约问题 |
 | `ncgo upgrade` | 更新 ncgo/assets 元数据 |
 | `ncgo extract domain` | 规划或执行 mono-to-micro 迁移 |
@@ -125,7 +126,7 @@ make dev
 ## 典型使用路径
 
 | 场景 | 起步命令 | 适合什么时候 |
-|---|---|---|
+| --- | --- | --- |
 | 单个 Hertz 服务 | `ncgo new <name> --module <module>` | 你希望最快得到一个 HTTP 服务脚手架 |
 | 单个 Kitex 服务 | `ncgo new <name> --module <module> --kind kitex` | 你在做以 RPC 为主的 Kitex 服务 |
 | Micro 工作区 | `ncgo new <name> --module <module> --mode micro` | 你需要在一个工作区根目录下管理多个服务 |
@@ -139,6 +140,7 @@ make dev
 ## 快速开始
 
 ### Hertz HTTP 服务
+
 ```bash
 ncgo new user-api --module github.com/acme/user-api --kind hertz
 cd user-api
@@ -158,6 +160,7 @@ Hertz 模板默认提供 `zh-CN`、`zh-TW`、`ja-JP`、`ko-KR`、`fr-FR`、`de-D
 `internal/pkg/i18n/catalog_gen.go`。
 
 ### Kitex RPC 服务
+
 ```bash
 ncgo new user-api --module github.com/acme/user-api --kind kitex
 cd user-api
@@ -168,6 +171,7 @@ make dev
 Kitex 服务名会被规范化为合法 proto / Go 标识符。例如 `user-api` 会生成 `idl/userapi.proto`、proto package `userapi`、service `UserApi`。
 
 ### Micro 工作区
+
 ```bash
 ncgo new commerce --module github.com/acme/commerce --mode micro
 cd commerce
@@ -176,6 +180,10 @@ ncgo add bff web-bff --root .
 ```
 
 根目录保存 `ncgo.workspace`，每个生成的服务保存自己的 `.ncgo/manifest.yaml`。
+
+当你在 micro 根目录执行 `ncgo doctor --root .` 或 `ncgo protolint --root .` 时，ncgo
+现在会自动遍历 `ncgo.workspace` 里登记的服务，并聚合各服务 `manifest.service.idl`
+上的 proto lint 结果。
 
 ## Prepare vs Generate
 
@@ -202,9 +210,10 @@ ncgo ai sync --root user-api --lang zh-CN
 
 - `AGENTS.md`
 - `CLAUDE.md`
+- `.claude/generated/project-context.md`
 - `.cursor/rules/ncgo.mdc`
 
-这些文件带有 `<!-- ncgo:managed -->` 标记。没有该标记的已有文件默认不会覆盖，除非传 `--force`。项目私有说明放在 `AGENTS.local.md`。
+这些文件带有 `<!-- ncgo:managed -->` 标记。没有该标记的已有文件默认不会覆盖，除非传 `--force`。项目私有说明放在 `AGENTS.local.md`，会附加到长版上下文文件；`.claude/generated/project-context.md` 保持 deterministic。
 
 ## 命令参考
 
@@ -257,6 +266,8 @@ ncgo add bff web-bff --root commerce
 
 ```bash
 ncgo doctor --root .
+ncgo doctor --root . --output json
+ncgo doctor --root . --output sarif > doctor.sarif.json
 ncgo protolint --root . --file idl/app/demo.proto --output json
 ncgo mcp serve
 ncgo upgrade --root . --plan
@@ -266,15 +277,15 @@ ncgo extract domain device --root . --to services/device-rpc --apply
 ncgo version
 ```
 
-`ncgo doctor` 现在除了检查 `hz` / `kitex`、manifest 与 `template/data.json` 之外，还会在 `manifest.service.idl` 存在时默认执行 proto lint，并把命中的 Proto I/O 规则映射到 doctor report 中。
+`ncgo doctor` 现在除了检查 `hz` / `kitex`、manifest 与 `template/data.json` 之外，还会在 `manifest.service.idl` 存在时默认执行 proto lint，并把命中的 Proto I/O 规则映射到 doctor report 中。CLI 现在支持 `--output text|json|sarif`；其中 `--json` 仍保留为兼容别名，等价于 `--output json`。`sarif` 适合接入 code scanning、IDE 诊断面板或 CI 归档。
 
-`ncgo mcp serve` 会启动 stdio MCP server。当前暴露 `ncgo_version`、`ncgo_doctor`、`ncgo_ai_sync`、`ncgo_i18n_report`、`ncgo_i18n_check`、`ncgo_protolint`、`ncgo_add_infra`、`ncgo_add_method`。`ncgo_add_infra` 参数为 `root`、`kind`、`force`、`wire`、`dryRun`，支持与 CLI 相同的 infra kind，只打印依赖安装 next steps，不自动执行 `go get`，并返回结构化 `plan` 字段供 agent 预览。
+`ncgo mcp serve` 会启动 stdio MCP server。当前暴露 `ncgo_version`、`ncgo_doctor`、`ncgo_ai_sync`、`ncgo_i18n_report`、`ncgo_i18n_check`、`ncgo_protolint`、`ncgo_add_infra`、`ncgo_add_method`。现在这套 MCP 接口已经按 contract-first 方式集中整理到 [docs/examples.zh-CN.md#0-mcp-contract-first-参考](docs/examples.zh-CN.md#0-mcp-contract-first-参考) 的 `0. MCP contract-first 参考` 一节：会先说明每个工具的输入、支持的 `output`，以及稳定的顶层结果字段，再进入具体 workflow 示例。简而言之，结构化 MCP 工具会把 `content[0].text` 作为展示/转存载荷，同时保留同级顶层字段供 Agent 直接消费；`output` 只影响文本载荷格式。
 
-如果你在生成后的 Hertz 项目里使用内置 i18n 工作流，现在也可以用 `ncgo i18n report` / `ncgo i18n check`，或通过 MCP 的 `ncgo_i18n_report` / `ncgo_i18n_check` 消费结构化结果。可直接参考 [docs/examples.zh-CN.md](docs/examples.zh-CN.md) 中的“生成项目中的 i18n 补译工作流”。
+如果你在生成后的 Hertz 项目里使用内置 i18n 工作流，现在也可以用 `ncgo i18n report` / `ncgo i18n check`，或通过 MCP 的 `ncgo_i18n_report` / `ncgo_i18n_check` 消费结构化结果。可直接参考 [docs/examples.zh-CN.md#5-生成项目中的-i18n-补译工作流](docs/examples.zh-CN.md#5-生成项目中的-i18n-补译工作流) 中的“生成项目中的 i18n 补译工作流”。
 
-如果你希望把 `.proto` 契约校验也纳入 CLI / MCP 工作流，可以使用 `ncgo protolint --root . --file ...`，或通过 MCP 的 `ncgo_protolint` 消费同一份结构化 diagnostics。可直接参考 [docs/examples.zh-CN.md](docs/examples.zh-CN.md) 中新增的“生成项目中的 Proto 契约校验工作流”。
+如果你希望把 `.proto` 契约校验也纳入 CLI / MCP 工作流，可以使用 `ncgo protolint --root . --file ...`，或通过 MCP 的 `ncgo_protolint` 消费同一份结构化 diagnostics。CLI 当前支持 `--output text|json|sarif`；其中 `sarif` 可直接接入 code scanning / IDE 分析工具。现在也支持用 `--ignore-rule` / `--ignore-file`（MCP 对应 `ignoreRules` / `ignoreFiles`）对已知历史问题做显式抑制；在 mono 服务或 micro workspace 根目录下，如果省略 `--file`，ncgo 会尝试从 manifest / workspace 自动发现要 lint 的 proto。可直接参考 [docs/examples.zh-CN.md#6-生成项目中的-proto-契约校验工作流](docs/examples.zh-CN.md#6-生成项目中的-proto-契约校验工作流) 中新增的“生成项目中的 Proto 契约校验工作流”。
 
-当前内置的 Proto I/O 规则里，除了 `PIO101~PIO206`、`PIO301` 这类 `error` 规则外，也已经包含一批默认启用的 `phase2 warning`：`PIO111`、`PIO112`、`PIO113`、`PIO211`、`PIO212`、`PIO302`、`PIO303`、`PIO401`。这些 warning 会继续出现在 `diagnostics` / doctor report 中，但 **warning-only 不会让 `ok=false`**；只有命中 `error` 级规则时，CLI / MCP / doctor 才会进入失败态。
+当前内置的 Proto I/O 规则里，除了 `PIO101~PIO206`、`PIO301` 这类 `error` 规则外，也已经包含一批默认启用的 `phase2 warning`：`PIO111`、`PIO112`、`PIO113`、`PIO211`、`PIO212`、`PIO302`、`PIO303`、`PIO401`、`PIO402`、`PIO403`、`PIO404`。这些 warning 会继续出现在 `diagnostics` / doctor report 中，但 **warning-only 不会让 `ok=false`**；只有命中 `error` 级规则时，CLI / MCP / doctor 才会进入失败态。
 
 `upgrade` 当前只更新 ncgo/assets 版本元数据。`--plan` 会输出 root/workspace 与 service manifest 的详细只读升级计划；`--dry-run` 保留较简洁的无写入输出。`extract domain` 默认输出迁移计划；加 `--apply` 后会把计划中的 domain 文件复制到已存在的 Kitex 目标服务，并把域内 import 重写为目标 module。它不会删除源文件、覆盖目标文件或自动接好跨服务 client。
 

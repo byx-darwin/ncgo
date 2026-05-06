@@ -23,7 +23,7 @@ and MCP.
 ## 3. Core Decisions
 
 | # | Decision | Value |
-|---|---|---|
+| --- | --- | --- |
 | 1 | Strategy | A → C: wrap `hz`/`kitex` first, layer AI Runtime later |
 | 2 | Current scaffold scope | Hertz/Kitex mono services plus micro workspace with Kitex RPC and Hertz BFF services |
 | 3 | CLI | cobra + viper |
@@ -35,7 +35,7 @@ and MCP.
 
 ## 4. Command Surface
 
-```
+```text
 ncgo new <name>            --module --mode mono|micro --kind hertz|kitex --db postgres|none --idl --dir --no-generate
 ncgo add domain <name>     --root --force
 ncgo add method <domain.Method> --root --in usecase
@@ -89,16 +89,17 @@ generated_at: 2026-04-29T15:00:00+08:00
 ## 6. AI Collaboration Artifacts (`ncgo ai sync`)
 
 | File | Audience | Source |
-|---|---|---|
+| --- | --- | --- |
 | `AGENTS.md` | any agent | manifest + embedded Hertz/Kitex design doc + optional `AGENTS.local.md` |
-| `CLAUDE.md` | Claude Code | same, Claude formatting |
-| `.cursor/rules/ncgo.mdc` | Cursor | same, with MDC frontmatter |
+| `CLAUDE.md` | Claude Code | manifest + embedded Hertz/Kitex design doc + optional `AGENTS.local.md`, Claude formatting |
+| `.claude/generated/project-context.md` | Claude Code (`.claude` generated facts) | manifest + embedded Hertz/Kitex design doc (no `AGENTS.local.md`) |
+| `.cursor/rules/ncgo.mdc` | Cursor | manifest + embedded Hertz/Kitex design doc + optional `AGENTS.local.md`, with MDC frontmatter |
 | `docs/ai-context/architecture.md` | RAG | future: actual tree + domain port signatures |
 
 - Current generation is idempotent and based on manifest + embedded design docs,
   never on the previous generated file. AST-derived `architecture.md` is deferred.
 - Top of every managed file: `<!-- ncgo:managed -->`.
-- Custom content lives in `AGENTS.local.md`, included on render.
+- Custom content lives in `AGENTS.local.md`, included on long-form render targets only.
 
 ## 7. Agent-friendly Anchors
 
@@ -121,7 +122,7 @@ method insertion remains future work.
 External tool baseline (single source of truth in `internal/exec`):
 
 | Tool | Minimum | Rationale |
-|---|---|---|
+| --- | --- | --- |
 | `hz` | `v0.9.7` | latest stable of `github.com/cloudwego/hertz/cmd/hz` |
 | `kitex` | `v0.16.1` | latest stable of `github.com/cloudwego/kitex` |
 
@@ -151,7 +152,7 @@ Static checks mapped to `nc-skills-golang/docs/checklist.md` §1:
 
 ## 9. Repository Layout (ncgo itself)
 
-```
+```text
 ncgo/
 ├── main.go           root install entry
 ├── internal/
@@ -159,7 +160,7 @@ ncgo/
 │   ├── scaffold/     new/add logic (mono, micro, domain, infra, rpc, bff)
 │   ├── doctor/       static scanner
 │   ├── manifest/     .ncgo/manifest.yaml read/write
-│   ├── ai/           AGENTS.md / CLAUDE.md rendering
+│   ├── ai/           AGENTS.md / CLAUDE.md / `.claude` generated-facts rendering
 │   ├── mcp/          MCP stdio server (v0.3)
 │   ├── upgrade/      metadata-only lifecycle upgrade/plan MVP
 │   ├── extract/      mono-to-micro extraction plan/apply MVP
@@ -178,7 +179,7 @@ ncgo is a binary; nothing is exposed under `pkg/`.
 ## 10. Milestones
 
 | Version | Scope | Estimate |
-|---|---|---|
+| --- | --- | --- |
 | v0.1 | `new mono --kind hertz`, `add domain`, `add infra`, doctor scans, golden tests | done |
 | v0.2 | `new mono --kind kitex`, embedded design docs, `ai sync` | done |
 | v0.3 | `new micro`, `add rpc`, `add bff`, `mcp serve`, anchor system | done (MVP) |
@@ -191,14 +192,14 @@ The `observability_otel` optional is implemented as an `add infra` optional for
 Alibaba LoongSuite Go Agent, not as generator hard-coded Go strings. The source
 of truth is an embedded asset template under:
 
-```
+```text
 internal/assets/_data/optional/observability_otel.go
 ```
 
 `ncgo add infra observability_otel --root .` copies that template into the
 target project at:
 
-```
+```text
 internal/base/observability/otel.go
 ```
 
@@ -231,7 +232,7 @@ func (c LoongSuiteConfig) Env() map[string]string
 
 CLI next steps should include:
 
-```
+```bash
 curl -fsSL https://cdn.jsdelivr.net/gh/alibaba/loongsuite-go-agent@main/install.sh | sudo bash
 otel version
 otel go build ./...
