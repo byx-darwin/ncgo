@@ -74,7 +74,7 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if idl == "" {
 		idl = defaultIDL(opts)
 	}
-	if err := writeTemplate(dir, opts, idl); err != nil {
+	if err := writeTemplate(dir, opts); err != nil {
 		return nil, err
 	}
 	if err := writeIDLPlaceholder(dir, idl, opts); err != nil {
@@ -181,6 +181,7 @@ func hzArgs(opts Options, idl string) []string {
 		"new",
 		"--mod=" + opts.Module,
 		"--idl=" + idl,
+		"-I", "idl",
 		"--handler_dir=internal/handler",
 		"--model_dir=internal/pb",
 		"--router_dir=internal/router",

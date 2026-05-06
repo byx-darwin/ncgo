@@ -131,6 +131,14 @@ layouts:
         keep_alive_timeout_seconds: 60
         # 单个请求在业务层允许执行的最长时间
         request_timeout_seconds: 30
+      # Swagger / OpenAPI 文档配置
+      swagger:
+        # 是否启用 Swagger UI；建议仅在开发/测试环境开启
+        enabled: false
+        # Swagger UI 访问前缀；会暴露 <path>/index.html 与 <path>/openapi.yaml
+        path: /swagger
+        # OpenAPI YAML 文件在本地磁盘中的生成位置；默认由 `make swagger` 写入
+        spec_file: internal/docs/swagger/openapi.yaml
       # 安全控制：这些路径只允许来自 internal_cidrs 的请求访问
       security:
         # 典型内部探活/管理接口
@@ -338,6 +346,7 @@ layouts:
         public_paths:
           - /healthz
           - /readyz
+          - /swagger/*
         # 签名鉴权配置：适合 server-to-server 调用
         signature:
           # 总开关
@@ -437,6 +446,7 @@ layouts:
           Env    string       `json:"env" yaml:"env"`
           Debug  bool         `json:"debug" yaml:"debug"`
           Server ServerConfig `json:"server" yaml:"server"`
+          Swagger SwaggerConfig `json:"swagger" yaml:"swagger"`
           Security SecurityConfig `json:"security" yaml:"security"`
           CORS   CORSConfig   `json:"cors" yaml:"cors"`
           RateLimit RateLimitConfig `json:"rate_limit" yaml:"rate_limit"`
@@ -453,6 +463,12 @@ layouts:
           IdleTimeoutSeconds      int    `json:"idle_timeout_seconds" yaml:"idle_timeout_seconds"`
           KeepAliveTimeoutSeconds int    `json:"keep_alive_timeout_seconds" yaml:"keep_alive_timeout_seconds"`
           RequestTimeoutSeconds   int    `json:"request_timeout_seconds" yaml:"request_timeout_seconds"`
+      }
+
+      type SwaggerConfig struct {
+          Enabled  bool   `json:"enabled" yaml:"enabled"`
+          Path     string `json:"path" yaml:"path"`
+          SpecFile string `json:"spec_file" yaml:"spec_file"`
       }
 
       type SecurityConfig struct {
@@ -639,6 +655,10 @@ layouts:
                   KeepAliveTimeoutSeconds: 60,
                   RequestTimeoutSeconds:   30,
               },
+              Swagger: SwaggerConfig{
+                  Path:     "/swagger",
+                  SpecFile: "internal/docs/swagger/openapi.yaml",
+              },
               Security: SecurityConfig{
                   InternalPaths: []string{"/healthz", "/readyz"},
                   InternalCIDRs: []string{"127.0.0.0/8", "::1/128", "10.0.0.0/8", "172.16.0.0/12", "192.168.0.0/16", "fc00::/7", "fe80::/10"},
@@ -707,7 +727,7 @@ layouts:
                   },
               },
               Auth: AuthConfig{
-                  PublicPaths: []string{"/healthz", "/readyz"},
+                  PublicPaths: []string{"/healthz", "/readyz", "/swagger/*"},
                   Signature: SignatureConfig{
                       HeaderAppKey:        "X-App-Key",
                       HeaderTimestamp:     "X-Timestamp",
@@ -742,6 +762,14 @@ layouts:
           }
           if c.Server.ReadTimeoutSeconds < 0 || c.Server.WriteTimeoutSeconds < 0 || c.Server.IdleTimeoutSeconds < 0 || c.Server.KeepAliveTimeoutSeconds < 0 || c.Server.RequestTimeoutSeconds < 0 {
               return oops.In("config").Code(10308).Public("config_invalid").New("server timeout seconds must not be negative")
+          }
+          if c.Swagger.Enabled {
+              if !strings.HasPrefix(strings.TrimSpace(c.Swagger.Path), "/") {
+                  return oops.In("config").Code(10308).Public("config_invalid").New("swagger.path must start with /")
+              }
+              if strings.TrimSpace(c.Swagger.SpecFile) == "" {
+                  return oops.In("config").Code(10308).Public("config_invalid").New("swagger.spec_file is empty")
+              }
           }
           if c.Auth.Signature.Enabled && c.Auth.Signature.StaticSecret == "" {
               return oops.In("config").Code(10308).Public("config_invalid").New("auth.signature.static_secret is empty")
@@ -1701,15 +1729,28 @@ layouts:
 
       func PathSkipper(paths ...string) Skipper {
           allowed := make(map[string]struct{}, len(paths))
+          prefixes := make([]string, 0, len(paths))
           for _, path := range paths {
               if path != "" {
+                  if strings.HasSuffix(path, "*") {
+                      prefixes = append(prefixes, strings.TrimSuffix(path, "*"))
+                      continue
+                  }
                   allowed[path] = struct{}{}
               }
           }
           return func(ctx context.Context, c *app.RequestContext) bool {
               _ = ctx
-              _, ok := allowed[string(c.Path())]
-              return ok
+              currentPath := string(c.Path())
+              if _, ok := allowed[currentPath]; ok {
+                  return true
+              }
+              for _, prefix := range prefixes {
+                  if strings.HasPrefix(currentPath, prefix) {
+                      return true
+                  }
+              }
+              return false
           }
       }
 
@@ -1782,6 +1823,16 @@ layouts:
           }
           if got, want := string(c.Response.Body()), `{"code":10108,"msg":"permission_denied"}`; got != want {
               t.Fatalf("body = %s, want %s", got, want)
+          }
+      }
+
+      func TestPathSkipperSupportsWildcardPrefix(t *testing.T) {
+          c := app.NewContext(0)
+          req := protocol.NewRequest("GET", "/swagger/index.html", nil)
+          req.CopyTo(&c.Request)
+
+          if !PathSkipper("/swagger/*")(context.Background(), c) {
+              t.Fatalf("expected wildcard path to be skipped")
           }
       }
 
@@ -3235,9 +3286,16 @@ layouts:
       package server
 
       import (
+          "context"
+          "os"
+          "strings"
           "time"
 
+          "github.com/cloudwego/hertz/pkg/app"
           "github.com/cloudwego/hertz/pkg/app/server"
+          "github.com/cloudwego/hertz/pkg/protocol/consts"
+          swaggerui "github.com/hertz-contrib/swagger"
+          swaggerFiles "github.com/swaggo/files"
           "github.com/samber/do/v2"
 
           "{{.GoModule}}/internal/base/conf"
@@ -3325,6 +3383,9 @@ layouts:
           }
 
           health.Register(h)
+          if cfg.Swagger.Enabled {
+              registerSwaggerRoutes(h, cfg.Swagger)
+          }
 
           // Register routes generated by hz from the IDL annotations.
           router.GeneratedRegister(h)
@@ -3337,6 +3398,33 @@ layouts:
               return 0
           }
           return time.Duration(value) * time.Second
+      }
+
+      func registerSwaggerRoutes(h *server.Hertz, cfg conf.SwaggerConfig) {
+          basePath := normalizeSwaggerPath(cfg.Path)
+          specRoute := basePath + "/openapi.yaml"
+
+          h.GET(basePath+"/*any", swaggerui.WrapHandler(
+              swaggerFiles.Handler,
+              swaggerui.URL(specRoute),
+          ))
+          h.GET(specRoute, func(ctx context.Context, c *app.RequestContext) {
+              body, err := os.ReadFile(cfg.SpecFile)
+              if err != nil {
+                  c.String(consts.StatusServiceUnavailable, "swagger spec not generated; run `make swagger`")
+                  return
+              }
+              c.Header("Content-Type", "application/x-yaml")
+              _, _ = c.Write(body)
+          })
+      }
+
+      func normalizeSwaggerPath(value string) string {
+          value = strings.TrimSpace(value)
+          if value == "" || value == "/" {
+              return "/swagger"
+          }
+          return "/" + strings.Trim(value, "/")
       }
 
   # ── router/register.go (required by hz, do not delete) ──────────────────
@@ -3366,7 +3454,7 @@ layouts:
       GOOSE_DBSTRING ?= $(DATABASE_URL)
       GOOSE_MIGRATION_DIR ?= internal/db/migrations
 
-      .PHONY: build run dev update generate sqlc migrate-create migrate-up migrate-down migrate-status lint test check tidy clean install-tools
+      .PHONY: build run dev update swagger generate sqlc migrate-create migrate-up migrate-down migrate-status lint test check tidy clean install-tools
 
       # ── Build ──────────────────────────────────────────────────────────────
       build: ; @echo "Building $(APP_NAME)..."; mkdir -p output/bin; go build -o output/bin/$(APP_NAME) .; echo "Build complete → output/bin/$(APP_NAME)"
@@ -3380,6 +3468,8 @@ layouts:
       # router_dir is persisted in .hz from the initial hz new command.
       update: ; @echo "Generating Hertz code from IDL..."; hz update --idl=idl/app/{{.ServiceName}}.proto -I idl --handler_dir=internal/handler --model_dir=internal/pb --customize_package=template/package.yaml; echo "Code generation complete"
 
+      swagger: ; @echo "Generating Swagger docs from IDL..."; mkdir -p internal/docs/swagger; protoc --http-swagger_out=internal/docs/swagger -I idl idl/app/{{.ServiceName}}.proto && rm -f internal/docs/swagger/swagger.go && echo "Swagger generation complete → internal/docs/swagger"
+
       sqlc: ; @echo "Generating sqlc code..."; sqlc generate -f internal/db/sqlc.yaml
 
       migrate-create: ; @test -n "$(name)" || (echo "usage: make migrate-create name=create_users" && exit 1); goose -dir $(GOOSE_MIGRATION_DIR) create $(name) sql
@@ -3390,7 +3480,7 @@ layouts:
 
       migrate-status: ; @test -n "$(GOOSE_DBSTRING)" || (echo "DATABASE_URL is required" && exit 1); goose -dir $(GOOSE_MIGRATION_DIR) $(GOOSE_DRIVER) "$(GOOSE_DBSTRING)" status
 
-      generate: update sqlc ; @echo "All code generation complete"
+      generate: update swagger sqlc ; @echo "All code generation complete"
 
       # ── Quality ────────────────────────────────────────────────────────────
       lint: ; @golangci-lint run ./...
@@ -3403,7 +3493,7 @@ layouts:
       tidy: ; @go mod tidy
 
       # ── Install tools ──────────────────────────────────────────────────────
-      install-tools: ; @echo "Installing development tools..."; go install github.com/cloudwego/hertz/cmd/hz@latest; go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest; go install github.com/pressly/goose/v3/cmd/goose@latest; go install github.com/air-verse/air@latest; go install golang.org/x/tools/cmd/goimports@latest; echo "Install complete"
+      install-tools: ; @echo "Installing development tools..."; go install github.com/cloudwego/hertz/cmd/hz@latest; go install github.com/hertz-contrib/swagger-generate/protoc-gen-http-swagger@latest; go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest; go install github.com/pressly/goose/v3/cmd/goose@latest; go install github.com/air-verse/air@latest; go install golang.org/x/tools/cmd/goimports@latest; command -v protoc > /dev/null 2>&1 || echo "Warning: protoc is required for make swagger"; echo "Install complete"
 
       # ── Cleanup ────────────────────────────────────────────────────────────
       clean: ; @rm -rf output/

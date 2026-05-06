@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -48,13 +49,90 @@ func TestGenerateNoGenerateProducesGoldenTree(t *testing.T) {
 	got := walk(t, res.Dir)
 	want := []string{
 		".ncgo/manifest.yaml",
+		"idl/api.proto",
 		"idl/app/demo.proto",
+		"idl/openapi/annotations.proto",
+		"idl/openapi/openapi.proto",
 		"template/data.json",
 		"template/layout.yaml",
 		"template/package.yaml",
 	}
 	if !equal(got, want) {
 		t.Errorf("tree mismatch\n got: %v\nwant: %v", got, want)
+	}
+}
+
+func TestGenerateWritesHertzStarterIDLs(t *testing.T) {
+	opts := baseOpts(t)
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	apiBody, err := os.ReadFile(filepath.Join(res.Dir, "idl", "api.proto"))
+	if err != nil {
+		t.Fatalf("read api.proto: %v", err)
+	}
+	for _, want := range []string{
+		`syntax = "proto2";`,
+		`package api;`,
+		`import "google/protobuf/descriptor.proto";`,
+		`optional string file_name = 50110;`,
+		`optional string base_domain = 50402;`,
+		`optional string get = 50201;`,
+	} {
+		if !strings.Contains(string(apiBody), want) {
+			t.Errorf("api.proto missing %q\n---\n%s", want, string(apiBody))
+		}
+	}
+	annotationsBody, err := os.ReadFile(filepath.Join(res.Dir, "idl", "openapi", "annotations.proto"))
+	if err != nil {
+		t.Fatalf("read annotations.proto: %v", err)
+	}
+	for _, want := range []string{
+		`package openapi;`,
+		`import "openapi/openapi.proto";`,
+		`openapi.v3.Document document = 1143;`,
+		`openapi.v3.Operation operation = 1143;`,
+	} {
+		if !strings.Contains(string(annotationsBody), want) {
+			t.Errorf("annotations.proto missing %q\n---\n%s", want, string(annotationsBody))
+		}
+	}
+	serviceBody, err := os.ReadFile(filepath.Join(res.Dir, "idl", "app", "demo.proto"))
+	if err != nil {
+		t.Fatalf("read demo.proto: %v", err)
+	}
+	for _, want := range []string{
+		`package app;`,
+		`option go_package = "github.com/x/demo/internal/pb;pb";`,
+		`import "api.proto";`,
+		`import "openapi/annotations.proto";`,
+		`option (openapi.document) = {`,
+		`message PingReq {`,
+		`(openapi.parameter) = { required: true },`,
+		`message PingResp {`,
+		`(api.body) = "message",`,
+		`service DemoService {`,
+		`rpc Ping(PingReq) returns (PingResp) {`,
+		`option (api.get) = "/ping";`,
+		`option (openapi.operation) = {`,
+	} {
+		if !strings.Contains(string(serviceBody), want) {
+			t.Errorf("demo.proto missing %q\n---\n%s", want, string(serviceBody))
+		}
+	}
+}
+
+func TestGenerateHertzNextStepsIncludeIDLImportPath(t *testing.T) {
+	opts := baseOpts(t)
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	want := "hz new --mod=github.com/x/demo --idl=idl/app/demo.proto -I idl --handler_dir=internal/handler --model_dir=internal/pb --router_dir=internal/router --customize_layout=template/layout.yaml --customize_layout_data_path=template/data.json --customize_package=template/package.yaml"
+	if !strings.Contains(joined, want) {
+		t.Fatalf("next steps missing updated hz command %q\n---\n%s", want, joined)
 	}
 }
 
@@ -103,6 +181,7 @@ func TestGenerateHertzTemplateRendersMakefileRecipes(t *testing.T) {
 		"build: ; @echo \"Building $(APP_NAME)...\"",
 		"dev: ; @which air > /dev/null 2>&1 && air || go run .",
 		"update: ; @echo \"Generating Hertz code from IDL...\"; hz update --idl=idl/app/{{.ServiceName}}.proto -I idl --handler_dir=internal/handler --model_dir=internal/pb --customize_package=template/package.yaml; echo \"Code generation complete\"",
+		"swagger: ; @echo \"Generating Swagger docs from IDL...\"; mkdir -p internal/docs/swagger; protoc --http-swagger_out=internal/docs/swagger -I idl idl/app/{{.ServiceName}}.proto && rm -f internal/docs/swagger/swagger.go && echo \"Swagger generation complete → internal/docs/swagger\"",
 		"test: ; @go test -race -count=1 ./...",
 	} {
 		if !strings.Contains(s, want) {
@@ -127,6 +206,8 @@ func TestGenerateHertzTemplateIncludesChineseConfigComments(t *testing.T) {
 		"# env 会决定默认读取 conf/<env>/conf.yaml；常见值为 dev/test/staging/prod",
 		"# 以下超时时间单位均为秒",
 		"# 运维建议：pool_size 需结合单实例并发、Redis 实例连接上限和副本数综合评估",
+		"# Swagger / OpenAPI 文档配置",
+		"# 是否启用 Swagger UI；建议仅在开发/测试环境开启",
 		"# 当 key_by 包含 ak / ak_user_uuid 等维度时，从该请求头读取 app key",
 		"# 开发环境静态密钥；生产环境建议改为配置中心或密钥管理系统",
 		"# 运维建议：不要把真实生产密钥直接写入仓库或镜像",
@@ -217,7 +298,7 @@ func TestGenerateInvokesHZViaRunner(t *testing.T) {
 	}
 	args := strings.Join(r.calls[0].Args, " ")
 	for _, want := range []string{
-		"new", "--mod=github.com/x/demo", "--idl=idl/app/demo.proto",
+		"new", "--mod=github.com/x/demo", "--idl=idl/app/demo.proto", "-I idl",
 		"--customize_layout=template/layout.yaml",
 		"--customize_layout_data_path=template/data.json",
 	} {
@@ -264,7 +345,10 @@ func TestGenerateKitexNoGenerateProducesTree(t *testing.T) {
 		"template/data.json",
 		"template/layout.yaml",
 		"template/package.yaml",
+		"idl/api.proto",
 		"idl/app/demo.proto",
+		"idl/openapi/annotations.proto",
+		"idl/openapi/openapi.proto",
 	} {
 		if contains(got, unwanted) {
 			t.Errorf("kitex tree must not include hertz file %q", unwanted)
@@ -479,10 +563,5 @@ func equal(a, b []string) bool {
 }
 
 func contains(xs []string, want string) bool {
-	for _, x := range xs {
-		if x == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, want)
 }

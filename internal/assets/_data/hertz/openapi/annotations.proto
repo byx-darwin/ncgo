@@ -1,0 +1,46 @@
+// Copyright 2022 Google LLC. All Rights Reserved.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//    http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
+syntax = "proto3";
+
+package openapi;
+
+import "openapi/openapi.proto";
+import "google/protobuf/descriptor.proto";
+
+option java_multiple_files = true;
+option java_outer_classname = "AnnotationsProto";
+option java_package = "org.openapi_v3";
+option objc_class_prefix = "OAS";
+option go_package = "/openapi";
+
+extend google.protobuf.FileOptions {
+  openapi.v3.Document document = 1143;
+}
+
+extend google.protobuf.MethodOptions {
+  openapi.v3.Operation operation = 1143;
+}
+
+extend google.protobuf.MessageOptions {
+  openapi.v3.Schema schema = 1143;
+}
+
+extend google.protobuf.FieldOptions {
+  openapi.v3.Parameter parameter = 1144;
+}
+
+extend google.protobuf.FieldOptions {
+  openapi.v3.Schema property = 1143;
+}
