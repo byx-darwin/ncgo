@@ -154,14 +154,22 @@ func (b *builder) buildMessage(md protoreflect.MessageDescriptor) *Message {
 }
 
 func (b *builder) buildField(fd protoreflect.FieldDescriptor, parent protoreflect.MessageDescriptor) *Field {
+	opts := fd.Options().ProtoReflect()
 	return &Field{
 		Name:                  string(fd.Name()),
 		Number:                int32(fd.Number()),
 		TypeName:              typeNameFor(fd),
 		ParentMessage:         string(parent.FullName()),
 		Bindings:              extractBindings(fd),
-		HasOpenAPIProperty:    hasOption(fd.Options().ProtoReflect(), openAPIPropertyOption),
-		HasPGVRangeConstraint: hasPGVRangeConstraint(fd.Options().ProtoReflect()),
+		HasOpenAPIProperty:    hasOption(opts, openAPIPropertyOption),
+		HasPGVRangeConstraint: hasPGVRangeConstraint(opts),
+		IsString:              fd.Kind() == protoreflect.StringKind,
+		IsRepeated:            fd.IsList(),
+		IsMap:                 fd.IsMap(),
+		IsEnum:                fd.Kind() == protoreflect.EnumKind,
+		HasPGVLenConstraint:   hasPGVConstraintFields(opts, "min_len", "max_len", "len", "len_bytes", "min_bytes", "max_bytes", "pattern"),
+		HasPGVItemsConstraint: hasPGVConstraintFields(opts, "min_items", "max_items", "min_pairs", "max_pairs"),
+		HasPGVDefinedOnly:     hasPGVConstraintFields(opts, "defined_only"),
 		Location:              locationFor(fd),
 	}
 }
@@ -196,6 +204,51 @@ func messageHasRangeConstraint(msg protoreflect.Message) bool {
 		}
 		if fd.Kind() == protoreflect.MessageKind || fd.Kind() == protoreflect.GroupKind {
 			if messageHasRangeConstraint(v.Message()) {
+				found = true
+				return false
+			}
+		}
+		return true
+	})
+	return found
+}
+
+// hasPGVConstraintFields returns true when the field options message contains a
+// validate.rules option whose nested messages have at least one field whose
+// name matches any of the provided names (searched recursively).
+func hasPGVConstraintFields(opts protoreflect.Message, names ...string) bool {
+	if !opts.IsValid() {
+		return false
+	}
+	found := false
+	opts.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
+		if fd.FullName() != validateRulesOption {
+			return true
+		}
+		if fd.Kind() == protoreflect.MessageKind || fd.Kind() == protoreflect.GroupKind {
+			found = messageHasNamedField(v.Message(), names)
+		}
+		return !found
+	})
+	return found
+}
+
+// messageHasNamedField recursively searches msg for any set field whose name
+// is in names, descending into nested messages.
+func messageHasNamedField(msg protoreflect.Message, names []string) bool {
+	if !msg.IsValid() {
+		return false
+	}
+	found := false
+	msg.Range(func(fd protoreflect.FieldDescriptor, v protoreflect.Value) bool {
+		for _, name := range names {
+			if string(fd.Name()) == name {
+				found = true
+				return false
+			}
+		}
+		if fd.Kind() == protoreflect.MessageKind || fd.Kind() == protoreflect.GroupKind {
+			if messageHasNamedField(v.Message(), names) {
 				found = true
 				return false
 			}

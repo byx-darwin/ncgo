@@ -3,12 +3,15 @@ package mcp
 import (
 	"bytes"
 	"context"
+	"encoding/json"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
 
+	"github.com/byx-darwin/ncgo/internal/doctor"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 )
 
@@ -31,13 +34,29 @@ func TestServeInitializeAndToolsList(t *testing.T) {
 	}
 	listed := responses[1].Result.(map[string]any)["tools"].([]any)
 	var names []string
+	var doctorTool map[string]any
 	var addInfra map[string]any
+	var i18nReportTool map[string]any
+	var i18nCheckTool map[string]any
+	var protolintTool map[string]any
 	for _, item := range listed {
 		tool := item.(map[string]any)
 		name := tool["name"].(string)
 		names = append(names, name)
+		if name == "ncgo_doctor" {
+			doctorTool = tool
+		}
 		if name == "ncgo_add_infra" {
 			addInfra = tool
+		}
+		if name == "ncgo_i18n_report" {
+			i18nReportTool = tool
+		}
+		if name == "ncgo_i18n_check" {
+			i18nCheckTool = tool
+		}
+		if name == "ncgo_protolint" {
+			protolintTool = tool
 		}
 	}
 	for _, want := range []string{"ncgo_version", "ncgo_doctor", "ncgo_ai_sync", "ncgo_i18n_report", "ncgo_i18n_check", "ncgo_protolint", "ncgo_add_infra", "ncgo_add_method"} {
@@ -51,6 +70,31 @@ func TestServeInitializeAndToolsList(t *testing.T) {
 	}
 	if _, ok := props["dryRun"]; !ok {
 		t.Fatalf("ncgo_add_infra schema missing dryRun property: %+v", props)
+	}
+	if _, ok := props["output"]; !ok {
+		t.Fatalf("ncgo_add_infra schema missing output property: %+v", props)
+	}
+	i18nReportProps := i18nReportTool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := i18nReportProps["output"]; !ok {
+		t.Fatalf("ncgo_i18n_report schema missing output property: %+v", i18nReportProps)
+	}
+	i18nCheckProps := i18nCheckTool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := i18nCheckProps["output"]; !ok {
+		t.Fatalf("ncgo_i18n_check schema missing output property: %+v", i18nCheckProps)
+	}
+	protolintProps := protolintTool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := protolintProps["ignoreRules"]; !ok {
+		t.Fatalf("ncgo_protolint schema missing ignoreRules property: %+v", protolintProps)
+	}
+	if _, ok := protolintProps["ignoreFiles"]; !ok {
+		t.Fatalf("ncgo_protolint schema missing ignoreFiles property: %+v", protolintProps)
+	}
+	if _, ok := protolintProps["output"]; !ok {
+		t.Fatalf("ncgo_protolint schema missing output property: %+v", protolintProps)
+	}
+	doctorProps := doctorTool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := doctorProps["output"]; !ok {
+		t.Fatalf("ncgo_doctor schema missing output property: %+v", doctorProps)
 	}
 }
 
@@ -74,6 +118,115 @@ func TestServeToolCallVersion(t *testing.T) {
 	content := result["content"].([]any)[0].(map[string]any)["text"].(string)
 	if !strings.Contains(content, "test-version") || !strings.Contains(content, "test-assets") || !strings.Contains(content, "test-build") || !strings.Contains(content, "2026-05-06T12:00:00Z") {
 		t.Fatalf("version content = %q", content)
+	}
+}
+
+func TestServeToolCallDoctor(t *testing.T) {
+	old := runDoctorReport
+	runDoctorReport = func(context.Context, doctor.Options) *doctor.Report {
+		return &doctor.Report{
+			Root:  "/repo/demo",
+			Scope: doctor.ScopeService,
+			Summary: doctor.ReportSummary{
+				CheckCount: 2, PassedCount: 1, FailedCount: 1, ErrorCount: 1,
+			},
+			Checks: []doctor.Check{{ID: "tool.hz", OK: true, Severity: doctor.SeverityError, Message: "hz v0.9.7"}, {ID: "manifest.load", OK: false, Severity: doctor.SeverityError, Message: "manifest missing", File: "/repo/demo/.ncgo/manifest.yaml"}},
+		}
+	}
+	defer func() { runDoctorReport = old }()
+
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_doctor", "arguments": map[string]any{"root": "/repo/demo"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("doctor failure unexpectedly succeeded: %+v", result)
+	}
+	if result["root"].(string) != "/repo/demo" || result["scope"].(string) != string(doctor.ScopeService) {
+		t.Fatalf("header = %+v", result)
+	}
+	if !strings.Contains(resultText(result), "manifest missing") {
+		t.Fatalf("content = %q", resultText(result))
+	}
+	if result["ok"].(bool) {
+		t.Fatalf("ok = true, want false")
+	}
+	summary := result["summary"].(map[string]any)
+	if summary["errorCount"].(float64) != 1 {
+		t.Fatalf("summary = %+v", summary)
+	}
+	if got := len(result["checks"].([]any)); got != 2 {
+		t.Fatalf("checks len = %d, want 2", got)
+	}
+}
+
+func TestServeToolCallDoctorSARIF(t *testing.T) {
+	old := runDoctorReport
+	runDoctorReport = func(context.Context, doctor.Options) *doctor.Report {
+		return &doctor.Report{
+			Root:  "/repo/demo",
+			Scope: doctor.ScopeService,
+			Summary: doctor.ReportSummary{
+				CheckCount: 2, PassedCount: 1, FailedCount: 1, ErrorCount: 1,
+			},
+			Checks: []doctor.Check{{ID: "tool.hz", OK: true, Severity: doctor.SeverityError, Message: "hz v0.9.7"}, {ID: "manifest.load", OK: false, Severity: doctor.SeverityError, Message: "manifest missing", File: "/repo/demo/.ncgo/manifest.yaml"}},
+		}
+	}
+	defer func() { runDoctorReport = old }()
+
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_doctor", "arguments": map[string]any{"root": "/repo/demo", "output": "sarif"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("doctor sarif failure unexpectedly succeeded: %+v", result)
+	}
+	content := resultText(result)
+	if !strings.Contains(content, `"version": "2.1.0"`) || !strings.Contains(content, `"name": "ncgo doctor"`) {
+		t.Fatalf("content = %q", content)
+	}
+	if result["root"].(string) != "/repo/demo" || result["scope"].(string) != string(doctor.ScopeService) {
+		t.Fatalf("header = %+v", result)
+	}
+}
+
+func TestServeToolCallDoctorInvalidOutput(t *testing.T) {
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_doctor", "arguments": map[string]any{"root": "/repo/demo", "output": "xml"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("invalid output unexpectedly succeeded: %+v", result)
+	}
+	if !strings.Contains(resultText(result), `doctor: unsupported output "xml"; want text, json, or sarif`) {
+		t.Fatalf("content = %q", resultText(result))
 	}
 }
 
@@ -166,6 +319,36 @@ func TestServeToolCallI18NReport(t *testing.T) {
 	}
 }
 
+func TestServeToolCallI18NReportJSON(t *testing.T) {
+	root := seedMCPI18NProject(t)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_i18n_report", "arguments": map[string]any{"root": root, "output": "json"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("i18n report json returned error: %s", resultText(result))
+	}
+	content := resultJSONObject(t, result)
+	if content["root"] != root || content["sourceLocale"] != "zh-CN" {
+		t.Fatalf("json content = %+v", content)
+	}
+	if result["root"].(string) != root {
+		t.Fatalf("root = %q, want %q", result["root"], root)
+	}
+	if result["sourceLocale"].(string) != "zh-CN" {
+		t.Fatalf("sourceLocale = %q", result["sourceLocale"])
+	}
+}
+
 func TestServeToolCallI18NReportMissing(t *testing.T) {
 	root := t.TempDir()
 	input := EncodeMessage(map[string]any{
@@ -186,6 +369,29 @@ func TestServeToolCallI18NReportMissing(t *testing.T) {
 	}
 	if !strings.Contains(resultText(result), "run `make i18n-report`") {
 		t.Fatalf("missing report content = %q", resultText(result))
+	}
+}
+
+func TestServeToolCallI18NReportInvalidOutput(t *testing.T) {
+	root := seedMCPI18NProject(t)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_i18n_report", "arguments": map[string]any{"root": root, "output": "xml"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("invalid output unexpectedly succeeded: %+v", result)
+	}
+	if !strings.Contains(resultText(result), `i18n report: unsupported output "xml"; want text or json`) {
+		t.Fatalf("content = %q", resultText(result))
 	}
 }
 
@@ -221,6 +427,33 @@ func TestServeToolCallI18NCheckDev(t *testing.T) {
 	}
 	if !strings.Contains(resultText(result), "i18n check (dev): ok") {
 		t.Fatalf("content = %q", resultText(result))
+	}
+}
+
+func TestServeToolCallI18NCheckJSON(t *testing.T) {
+	root := seedMCPI18NProject(t)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_i18n_check", "arguments": map[string]any{"root": root, "mode": "dev", "output": "json"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("i18n check json returned error: %s", resultText(result))
+	}
+	content := resultJSONObject(t, result)
+	if content["mode"] != "dev" || content["ok"] != true {
+		t.Fatalf("json content = %+v", content)
+	}
+	if !result["ok"].(bool) {
+		t.Fatalf("ok = false, want true: %+v", result)
 	}
 }
 
@@ -272,6 +505,29 @@ func TestServeToolCallI18NCheckInvalidMode(t *testing.T) {
 		t.Fatalf("invalid mode unexpectedly succeeded: %+v", result)
 	}
 	if !strings.Contains(resultText(result), "unsupported --mode") {
+		t.Fatalf("content = %q", resultText(result))
+	}
+}
+
+func TestServeToolCallI18NCheckInvalidOutput(t *testing.T) {
+	root := seedMCPI18NProject(t)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_i18n_check", "arguments": map[string]any{"root": root, "mode": "dev", "output": "xml"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("invalid output unexpectedly succeeded: %+v", result)
+	}
+	if !strings.Contains(resultText(result), `i18n check: unsupported output "xml"; want text or json`) {
 		t.Fatalf("content = %q", resultText(result))
 	}
 }
@@ -340,6 +596,33 @@ func TestServeToolCallProtolintFailure(t *testing.T) {
 	}
 }
 
+func TestServeToolCallProtolintSARIF(t *testing.T) {
+	root := mcpFixtureRoot(t, "..", "protolint", "testdata", "kitexenvelope")
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_protolint", "arguments": map[string]any{"root": root, "files": []string{"invalid.proto"}, "rules": []string{"PIO301"}, "output": "sarif"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("protolint sarif failure unexpectedly succeeded: %+v", result)
+	}
+	content := resultText(result)
+	if !strings.Contains(content, `"version": "2.1.0"`) || !strings.Contains(content, `"ruleId": "PIO301"`) {
+		t.Fatalf("content = %q", content)
+	}
+	if got := len(result["diagnostics"].([]any)); got != 1 {
+		t.Fatalf("diagnostics len = %d, want 1", got)
+	}
+}
+
 func TestServeToolCallProtolintWarningsAreNonBlocking(t *testing.T) {
 	root := mcpFixtureRoot(t, "..", "protolint", "testdata", "phase2warnings")
 	input := EncodeMessage(map[string]any{
@@ -365,6 +648,67 @@ func TestServeToolCallProtolintWarningsAreNonBlocking(t *testing.T) {
 		t.Fatalf("diagnostics len = %d, want 5", got)
 	}
 	if !strings.Contains(resultText(result), "! [PIO111]") {
+		t.Fatalf("content = %q", resultText(result))
+	}
+}
+
+func TestServeToolCallProtolintIgnoreRule(t *testing.T) {
+	root := mcpFixtureRoot(t, "..", "protolint", "testdata", "kitexenvelope")
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_protolint", "arguments": map[string]any{"root": root, "files": []string{"invalid.proto"}, "rules": []string{"PIO301"}, "ignoreRules": []string{"PIO301"}}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("ignored protolint should not be error: %+v", result)
+	}
+	if !result["ok"].(bool) {
+		t.Fatalf("ok = false, want true: %+v", result)
+	}
+	if got := len(result["diagnostics"].([]any)); got != 0 {
+		t.Fatalf("diagnostics len = %d, want 0", got)
+	}
+	if got := len(result["ignoredRules"].([]any)); got != 1 {
+		t.Fatalf("ignoredRules len = %d, want 1", got)
+	}
+	if !strings.Contains(resultText(result), "suppressed=1") {
+		t.Fatalf("content = %q", resultText(result))
+	}
+}
+
+func TestServeToolCallProtolintWorkspaceAutoDiscovery(t *testing.T) {
+	root := seedMCPProtoWorkspace(t)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_protolint", "arguments": map[string]any{"root": root, "rules": []string{"PIO301"}}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("workspace protolint unexpectedly succeeded: %+v", result)
+	}
+	if result["ok"].(bool) {
+		t.Fatalf("ok = true, want false")
+	}
+	if got := len(result["files"].([]any)); got != 2 {
+		t.Fatalf("files len = %d, want 2", got)
+	}
+	if !strings.Contains(resultText(result), "services/order-rpc/idl/orderrpc.proto") {
 		t.Fatalf("content = %q", resultText(result))
 	}
 }
@@ -406,7 +750,26 @@ func TestServeToolCallProtolintInvalidArgs(t *testing.T) {
 	if !result["isError"].(bool) {
 		t.Fatalf("missing files unexpectedly succeeded: %+v", result)
 	}
-	if !strings.Contains(resultText(result), "at least one file is required") {
+	if !strings.Contains(resultText(result), "at least one --file is required unless --root points to an ncgo service or micro workspace") {
+		t.Fatalf("content = %q", resultText(result))
+	}
+	input = EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 3, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_protolint", "arguments": map[string]any{"root": root, "files": []string{"invalid.proto"}, "output": "xml"}},
+	})
+	out.Reset()
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err = DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result = responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("invalid output unexpectedly succeeded: %+v", result)
+	}
+	if !strings.Contains(resultText(result), "unsupported output \"xml\"; want text, json, or sarif") {
 		t.Fatalf("content = %q", resultText(result))
 	}
 }
@@ -459,6 +822,56 @@ func TestServeToolCallAddInfraDryRun(t *testing.T) {
 	}
 }
 
+func TestServeToolCallAddInfraJSON(t *testing.T) {
+	root := seedMCPProject(t, manifest.KindHertz)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_add_infra", "arguments": map[string]any{"root": root, "kind": "otel", "dryRun": true, "output": "json"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("add infra json returned error: %s", resultText(result))
+	}
+	content := resultJSONObject(t, result)
+	if content["dryRun"] != true || content["updated"] != true {
+		t.Fatalf("json content = %+v", content)
+	}
+	if !mcpPlanContains(result["plan"].([]any), "file", "create") {
+		t.Fatalf("plan missing file create: %+v", result["plan"])
+	}
+}
+
+func TestServeToolCallAddInfraInvalidOutput(t *testing.T) {
+	root := seedMCPProject(t, manifest.KindHertz)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_add_infra", "arguments": map[string]any{"root": root, "kind": "otel", "output": "xml"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("invalid output unexpectedly succeeded: %+v", result)
+	}
+	if !strings.Contains(resultText(result), `add infra: unsupported output "xml"; want text or json`) {
+		t.Fatalf("content = %q", resultText(result))
+	}
+}
+
 func TestServeUnknownMethod(t *testing.T) {
 	input := EncodeMessage(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "missing"})
 	var out bytes.Buffer
@@ -490,6 +903,73 @@ func seedMCPProject(t *testing.T, kind string) string {
 		t.Fatalf("seed manifest: %v", err)
 	}
 	return root
+}
+
+func seedMCPProtoWorkspace(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := manifest.SaveWorkspace(root, &manifest.Workspace{
+		Ncgo:   manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test"},
+		Mode:   manifest.ModeMicro,
+		Name:   "commerce",
+		Module: "github.com/x/commerce",
+		Services: []manifest.WorkspaceService{
+			{Name: "user-rpc", Kind: manifest.KindKitex, Dir: "services/user-rpc"},
+			{Name: "order-rpc", Kind: manifest.KindKitex, Dir: "services/order-rpc"},
+		},
+		GeneratedAt: time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("save workspace: %v", err)
+	}
+	seedMCPProtoService(t, root, "services/user-rpc", "user-rpc", "idl/userrpc.proto", `syntax = "proto3";
+
+package user;
+
+message PingReq {}
+message PingResp {}
+
+service User {
+  rpc Ping(PingReq) returns (PingResp) {}
+}
+`)
+	seedMCPProtoService(t, root, "services/order-rpc", "order-rpc", "idl/orderrpc.proto", `syntax = "proto3";
+
+package order;
+
+message GetOrderReq {}
+message GetOrderResp {
+  int32 code = 1;
+  string msg = 2;
+  bool success = 3;
+  string order_id = 4;
+}
+
+service Order {
+  rpc GetOrder(GetOrderReq) returns (GetOrderResp) {}
+}
+`)
+	return root
+}
+
+func seedMCPProtoService(t *testing.T, workspaceRoot, serviceRel, name, idl, protoBody string) {
+	t.Helper()
+	serviceRoot := filepath.Join(workspaceRoot, serviceRel)
+	if err := manifest.Save(serviceRoot, &manifest.Manifest{
+		Ncgo:        manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test"},
+		Mode:        manifest.ModeMono,
+		Module:      "github.com/x/commerce/" + filepath.ToSlash(serviceRel),
+		Service:     manifest.Service{Name: name, Kind: manifest.KindKitex, IDL: idl},
+		GeneratedAt: time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("save service manifest: %v", err)
+	}
+	protoPath := filepath.Join(serviceRoot, filepath.FromSlash(idl))
+	if err := os.MkdirAll(filepath.Dir(protoPath), 0o755); err != nil {
+		t.Fatalf("mkdir proto dir: %v", err)
+	}
+	if err := os.WriteFile(protoPath, []byte(protoBody), 0o644); err != nil {
+		t.Fatalf("write proto: %v", err)
+	}
 }
 
 func seedMCPI18NProject(t *testing.T) string {
@@ -569,6 +1049,15 @@ func resultText(result map[string]any) string {
 	return result["content"].([]any)[0].(map[string]any)["text"].(string)
 }
 
+func resultJSONObject(t *testing.T, result map[string]any) map[string]any {
+	t.Helper()
+	var out map[string]any
+	if err := json.Unmarshal([]byte(resultText(result)), &out); err != nil {
+		t.Fatalf("json unmarshal: %v\n%s", err, resultText(result))
+	}
+	return out
+}
+
 func mcpPlanContains(plan []any, kind, action string) bool {
 	for _, raw := range plan {
 		item := raw.(map[string]any)
@@ -580,10 +1069,5 @@ func mcpPlanContains(plan []any, kind, action string) bool {
 }
 
 func contains(xs []string, want string) bool {
-	for _, x := range xs {
-		if x == want {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(xs, want)
 }

@@ -13,23 +13,28 @@ type Summary struct {
 	DiagnosticsCount int `json:"diagnosticsCount"`
 	ErrorCount       int `json:"errorCount"`
 	WarningCount     int `json:"warningCount"`
+	SuppressedCount  int `json:"suppressedCount,omitempty"`
 }
 
 // Result is the structured outcome of a lint run.
 type Result struct {
-	Root        string       `json:"root"`
-	Files       []string     `json:"files"`
-	RulesRun    []string     `json:"rulesRun"`
-	OK          bool         `json:"ok"`
-	Summary     Summary      `json:"summary"`
-	Diagnostics []Diagnostic `json:"diagnostics"`
+	Root         string       `json:"root"`
+	Files        []string     `json:"files"`
+	RulesRun     []string     `json:"rulesRun"`
+	IgnoredRules []string     `json:"ignoredRules,omitempty"`
+	IgnoredFiles []string     `json:"ignoredFiles,omitempty"`
+	OK           bool         `json:"ok"`
+	Summary      Summary      `json:"summary"`
+	Diagnostics  []Diagnostic `json:"diagnostics"`
 }
 
 // RunOptions configures a complete lint run.
 type RunOptions struct {
-	Root    string
-	Files   []string
-	RuleIDs []string
+	Root          string
+	Files         []string
+	RuleIDs       []string
+	IgnoreRuleIDs []string
+	IgnoreFiles   []string
 }
 
 // Run loads the target proto files, executes the selected rules, and returns
@@ -39,30 +44,83 @@ func Run(ctx context.Context, opts RunOptions) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	model, err := Load(ctx, LoadOptions{Root: opts.Root, Files: opts.Files})
+	files := append([]string(nil), opts.Files...)
+	var (
+		diags        []Diagnostic
+		filesScanned int
+		rpcsScanned  int
+	)
+	if len(files) > 0 {
+		diags, filesScanned, rpcsScanned, err = runSingleRoot(ctx, opts.Root, files, rules)
+		if err != nil {
+			return nil, err
+		}
+	} else if files, err = discoverServiceFiles(opts.Root); err == nil {
+		diags, filesScanned, rpcsScanned, err = runSingleRoot(ctx, opts.Root, files, rules)
+		if err != nil {
+			return nil, err
+		}
+	} else if targets, werr := discoverWorkspaceTargets(opts.Root); werr == nil {
+		files = files[:0]
+		for _, target := range targets {
+			serviceDiags, serviceFilesScanned, serviceRPCsScanned, runErr := runSingleRoot(ctx, target.Root, []string{target.File}, rules)
+			if runErr != nil {
+				return nil, runErr
+			}
+			for i := range serviceDiags {
+				serviceDiags[i].File = prefixWorkspacePath(target.Prefix, serviceDiags[i].File)
+			}
+			diags = append(diags, serviceDiags...)
+			files = append(files, target.Path)
+			filesScanned += serviceFilesScanned
+			rpcsScanned += serviceRPCsScanned
+		}
+		sortDiagnostics(diags)
+	} else {
+		switch {
+		case hasManifestMetadata(opts.Root):
+			return nil, err
+		case hasWorkspaceMetadata(opts.Root):
+			return nil, werr
+		default:
+			return nil, missingFilesDiscoveryError()
+		}
+	}
+	if diags == nil {
+		diags = []Diagnostic{}
+	}
+	filteredDiags, suppressedCount, ignoredRules, ignoredFiles := applyIgnores(opts.Root, diags, opts.IgnoreRuleIDs, opts.IgnoreFiles)
+	errorCount, warningCount := countDiagnostics(filteredDiags)
+	res := &Result{
+		Root:         opts.Root,
+		Files:        files,
+		RulesRun:     ruleIDs(rules),
+		IgnoredRules: ignoredRules,
+		IgnoredFiles: ignoredFiles,
+		OK:           errorCount == 0,
+		Diagnostics:  filteredDiags,
+		Summary: Summary{
+			FilesScanned:     filesScanned,
+			RPCsScanned:      rpcsScanned,
+			DiagnosticsCount: len(filteredDiags),
+			ErrorCount:       errorCount,
+			WarningCount:     warningCount,
+			SuppressedCount:  suppressedCount,
+		},
+	}
+	return res, nil
+}
+
+func runSingleRoot(ctx context.Context, root string, files []string, rules []Rule) ([]Diagnostic, int, int, error) {
+	model, err := Load(ctx, LoadOptions{Root: root, Files: files})
 	if err != nil {
-		return nil, err
+		return nil, 0, 0, err
 	}
 	diags := Check(model, CheckOptions{Rules: rules})
 	if diags == nil {
 		diags = []Diagnostic{}
 	}
-	errorCount, warningCount := countDiagnostics(diags)
-	res := &Result{
-		Root:        opts.Root,
-		Files:       append([]string(nil), opts.Files...),
-		RulesRun:    ruleIDs(rules),
-		OK:          errorCount == 0,
-		Diagnostics: diags,
-		Summary: Summary{
-			FilesScanned:     len(model.Files),
-			RPCsScanned:      len(model.RPCs()),
-			DiagnosticsCount: len(diags),
-			ErrorCount:       errorCount,
-			WarningCount:     warningCount,
-		},
-	}
-	return res, nil
+	return diags, len(model.Files), len(model.RPCs()), nil
 }
 
 func countDiagnostics(diags []Diagnostic) (int, int) {

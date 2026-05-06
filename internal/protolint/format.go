@@ -28,7 +28,11 @@ func WriteText(w io.Writer, res *Result) error {
 	if !res.OK {
 		status = "failed"
 	}
-	_, err := fmt.Fprintf(w, "protolint: %s (files=%d rpcs=%d diagnostics=%d errors=%d warnings=%d rules=%d)\n", status, res.Summary.FilesScanned, res.Summary.RPCsScanned, res.Summary.DiagnosticsCount, res.Summary.ErrorCount, res.Summary.WarningCount, len(res.RulesRun))
+	suppressed := ""
+	if res.Summary.SuppressedCount > 0 {
+		suppressed = fmt.Sprintf(" suppressed=%d", res.Summary.SuppressedCount)
+	}
+	_, err := fmt.Fprintf(w, "protolint: %s (files=%d rpcs=%d diagnostics=%d errors=%d warnings=%d rules=%d%s)\n", status, res.Summary.FilesScanned, res.Summary.RPCsScanned, res.Summary.DiagnosticsCount, res.Summary.ErrorCount, res.Summary.WarningCount, len(res.RulesRun), suppressed)
 	return err
 }
 

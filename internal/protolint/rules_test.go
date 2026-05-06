@@ -2,9 +2,13 @@ package protolint
 
 import (
 	"context"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
+
+	"github.com/byx-darwin/ncgo/internal/manifest"
 )
 
 func TestCheckReqRespRulesOnValidProto(t *testing.T) {
@@ -312,6 +316,86 @@ func TestRunWarningRulesDoNotFailResult(t *testing.T) {
 	}
 }
 
+func TestRunCanIgnoreRuleIDs(t *testing.T) {
+	root := filepath.Join("testdata", "kitexenvelope")
+	res, err := Run(context.Background(), RunOptions{
+		Root:          root,
+		Files:         []string{"invalid.proto"},
+		RuleIDs:       []string{"PIO301"},
+		IgnoreRuleIDs: []string{"PIO301"},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !res.OK {
+		t.Fatalf("run with ignored error should be OK: %+v", res)
+	}
+	if len(res.Diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v, want empty", res.Diagnostics)
+	}
+	if len(res.IgnoredRules) != 1 || res.IgnoredRules[0] != "PIO301" {
+		t.Fatalf("ignoredRules = %v, want [PIO301]", res.IgnoredRules)
+	}
+	if res.Summary.DiagnosticsCount != 0 || res.Summary.ErrorCount != 0 || res.Summary.WarningCount != 0 || res.Summary.SuppressedCount != 1 {
+		t.Fatalf("summary = %+v, want diagnostics=0 errors=0 warnings=0 suppressed=1", res.Summary)
+	}
+}
+
+func TestRunCanIgnoreFiles(t *testing.T) {
+	root := filepath.Join("testdata", "kitexenvelope")
+	absFile, err := filepath.Abs(filepath.Join(root, "invalid.proto"))
+	if err != nil {
+		t.Fatalf("Abs: %v", err)
+	}
+	res, err := Run(context.Background(), RunOptions{
+		Root:        root,
+		Files:       []string{"invalid.proto"},
+		RuleIDs:     []string{"PIO301"},
+		IgnoreFiles: []string{absFile},
+	})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if !res.OK {
+		t.Fatalf("run with ignored file should be OK: %+v", res)
+	}
+	if len(res.Diagnostics) != 0 {
+		t.Fatalf("diagnostics = %+v, want empty", res.Diagnostics)
+	}
+	if len(res.IgnoredFiles) != 1 || res.IgnoredFiles[0] != "invalid.proto" {
+		t.Fatalf("ignoredFiles = %v, want [invalid.proto]", res.IgnoredFiles)
+	}
+	if res.Summary.SuppressedCount != 1 {
+		t.Fatalf("suppressedCount = %d, want 1", res.Summary.SuppressedCount)
+	}
+}
+
+func TestRunAutoDiscoversWorkspaceServiceIDLs(t *testing.T) {
+	root := seedProtoLintWorkspace(t)
+	res, err := Run(context.Background(), RunOptions{Root: root, RuleIDs: []string{"PIO301"}})
+	if err != nil {
+		t.Fatalf("Run: %v", err)
+	}
+	if res.OK {
+		t.Fatalf("workspace run unexpectedly OK: %+v", res)
+	}
+	if res.Summary.FilesScanned != 2 || res.Summary.RPCsScanned != 2 || res.Summary.DiagnosticsCount != 1 {
+		t.Fatalf("summary = %+v, want files=2 rpcs=2 diagnostics=1", res.Summary)
+	}
+	if len(res.Files) != 2 {
+		t.Fatalf("files = %v, want 2 entries", res.Files)
+	}
+	if len(res.Diagnostics) != 1 || res.Diagnostics[0].RuleID != "PIO301" {
+		t.Fatalf("diagnostics = %+v, want one PIO301 hit", res.Diagnostics)
+	}
+	if res.Diagnostics[0].File != "services/order-rpc/idl/orderrpc.proto" {
+		t.Fatalf("diag file = %q, want services/order-rpc/idl/orderrpc.proto", res.Diagnostics[0].File)
+	}
+	if res.Diagnostics[0].Line <= 0 {
+		t.Fatalf("diag line = %d, want > 0", res.Diagnostics[0].Line)
+	}
+}
+
 func TestCheckPIO211OnUnboundHertzRequestFields(t *testing.T) {
 	root := filepath.Join("testdata", "unboundfields")
 	model, err := Load(context.Background(), LoadOptions{Root: root, Files: []string{"invalid.proto"}})
@@ -423,6 +507,131 @@ func TestCheckPIO303OnUniversalKitexRequest(t *testing.T) {
 	}
 	if !strings.Contains(diags[0].Summary, "filter") || !strings.Contains(diags[0].Summary, "pagination") {
 		t.Fatalf("summary = %q, want concern categories", diags[0].Summary)
+	}
+}
+
+func TestCheckPIO402OnStringFieldsMissingLenConstraint(t *testing.T) {
+	root := filepath.Join("testdata", "pgvconstraints")
+	model, err := Load(context.Background(), LoadOptions{Root: root, Files: []string{"invalid.proto"}})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	diags := Check(model, CheckOptions{RuleIDs: []string{"PIO402"}})
+	// SearchReq.keyword should trigger; CreateReq.name has a length constraint – no hit.
+	if len(diags) != 1 {
+		t.Fatalf("got %d diagnostics, want 1: %+v", len(diags), diags)
+	}
+	assertDiag(t, diags[0], "PIO402", LevelWarning, Phase2, "Demo", "Search")
+	if diags[0].Message != "SearchReq" || diags[0].Field != "keyword" {
+		t.Fatalf("diag[0] = %+v, want SearchReq.keyword", diags[0])
+	}
+}
+
+func TestCheckPIO403OnRepeatedAndMapFieldsMissingItemsConstraint(t *testing.T) {
+	root := filepath.Join("testdata", "pgvconstraints")
+	model, err := Load(context.Background(), LoadOptions{Root: root, Files: []string{"invalid.proto"}})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	diags := Check(model, CheckOptions{RuleIDs: []string{"PIO403"}})
+	// SearchReq.ids (repeated) and SearchReq.labels (map) should trigger.
+	// CreateReq.tags and CreateReq.meta have constraints – no hits.
+	if len(diags) != 2 {
+		t.Fatalf("got %d diagnostics, want 2: %+v", len(diags), diags)
+	}
+	assertDiag(t, diags[0], "PIO403", LevelWarning, Phase2, "Demo", "Search")
+	assertDiag(t, diags[1], "PIO403", LevelWarning, Phase2, "Demo", "Search")
+	fields := map[string]bool{diags[0].Field: true, diags[1].Field: true}
+	if !fields["ids"] || !fields["labels"] {
+		t.Fatalf("expected fields ids and labels, got %+v", diags)
+	}
+}
+
+func TestCheckPIO404OnEnumFieldsMissingDefinedOnly(t *testing.T) {
+	root := filepath.Join("testdata", "pgvconstraints")
+	model, err := Load(context.Background(), LoadOptions{Root: root, Files: []string{"invalid.proto"}})
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	diags := Check(model, CheckOptions{RuleIDs: []string{"PIO404"}})
+	// SearchReq.status should trigger; CreateReq.state has defined_only – no hit.
+	if len(diags) != 1 {
+		t.Fatalf("got %d diagnostics, want 1: %+v", len(diags), diags)
+	}
+	assertDiag(t, diags[0], "PIO404", LevelWarning, Phase2, "Demo", "Search")
+	if diags[0].Message != "SearchReq" || diags[0].Field != "status" {
+		t.Fatalf("diag[0] = %+v, want SearchReq.status", diags[0])
+	}
+}
+
+func seedProtoLintWorkspace(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := manifest.SaveWorkspace(root, &manifest.Workspace{
+		Ncgo:   manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test"},
+		Mode:   manifest.ModeMicro,
+		Name:   "commerce",
+		Module: "github.com/x/commerce",
+		Services: []manifest.WorkspaceService{
+			{Name: "user-rpc", Kind: manifest.KindKitex, Dir: "services/user-rpc"},
+			{Name: "order-rpc", Kind: manifest.KindKitex, Dir: "services/order-rpc"},
+		},
+		GeneratedAt: time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("SaveWorkspace: %v", err)
+	}
+	seedProtoLintService(t, root, "services/user-rpc", "user-rpc", "idl/userrpc.proto", `syntax = "proto3";
+
+package user;
+
+message PingReq {}
+message PingResp {}
+
+service User {
+  rpc Ping(PingReq) returns (PingResp) {}
+}
+`)
+	seedProtoLintService(t, root, "services/order-rpc", "order-rpc", "idl/orderrpc.proto", `syntax = "proto3";
+
+package order;
+
+message GetOrderReq {}
+message GetOrderResp {
+  int32 code = 1;
+  string msg = 2;
+  bool success = 3;
+  string order_id = 4;
+}
+
+service Order {
+  rpc GetOrder(GetOrderReq) returns (GetOrderResp) {}
+}
+`)
+	return root
+}
+
+func seedProtoLintService(t *testing.T, workspaceRoot, serviceRel, name, idl, body string) {
+	t.Helper()
+	serviceRoot := filepath.Join(workspaceRoot, serviceRel)
+	if err := manifest.Save(serviceRoot, &manifest.Manifest{
+		Ncgo:   manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test"},
+		Mode:   manifest.ModeMono,
+		Module: "github.com/x/commerce/" + filepath.ToSlash(serviceRel),
+		Service: manifest.Service{
+			Name: name,
+			Kind: manifest.KindKitex,
+			IDL:  idl,
+		},
+		GeneratedAt: time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("Save manifest: %v", err)
+	}
+	protoPath := filepath.Join(serviceRoot, filepath.FromSlash(idl))
+	if err := os.MkdirAll(filepath.Dir(protoPath), 0o755); err != nil {
+		t.Fatalf("MkdirAll: %v", err)
+	}
+	if err := os.WriteFile(protoPath, []byte(body), 0o644); err != nil {
+		t.Fatalf("WriteFile: %v", err)
 	}
 }
 

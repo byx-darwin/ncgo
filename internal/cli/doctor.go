@@ -1,9 +1,8 @@
 package cli
 
 import (
-	"encoding/json"
 	"fmt"
-	"io"
+	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -13,7 +12,10 @@ import (
 type doctorOptions struct {
 	root   string
 	asJSON bool
+	output string
 }
+
+var runDoctorReport = doctor.Run
 
 func newDoctorCmd() *cobra.Command {
 	opts := &doctorOptions{}
@@ -22,33 +24,58 @@ func newDoctorCmd() *cobra.Command {
 		Short: "Diagnose host tools and the current ncgo project",
 		Long: "Verify hz/kitex are on PATH at supported versions, then (if run inside a project) " +
 			"check that .ncgo/manifest.yaml loads, template/data.json agrees with it, and manifest.service.idl passes the default proto lint checks. " +
-			"Use --json to emit the structured report consumed by AI agents and CI.",
+			"Use --output json or --output sarif for structured results consumed by AI agents, CI, or code scanning tools. --json remains as a compatibility alias for --output json.",
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runDoctor(cmd, opts)
 		},
 	}
 	f := cmd.Flags()
 	f.StringVar(&opts.root, "root", ".", "Project root to inspect; pass '' to skip project checks")
-	f.BoolVar(&opts.asJSON, "json", false, "Emit machine-readable JSON instead of the human report")
+	f.BoolVar(&opts.asJSON, "json", false, "Emit machine-readable JSON (compatibility alias for --output json)")
+	f.StringVar(&opts.output, "output", "text", "Output format: text, json, or sarif")
 	return cmd
 }
 
 func runDoctor(cmd *cobra.Command, opts *doctorOptions) error {
-	rep := doctor.Run(cmd.Context(), doctor.Options{Root: opts.root})
-	out := cmd.OutOrStdout()
-	if opts.asJSON {
-		enc := json.NewEncoder(out)
-		enc.SetIndent("", "  ")
-		if err := enc.Encode(rep); err != nil {
-			return err
-		}
-	} else {
-		writeHumanReport(out, rep)
+	output, err := resolveDoctorOutput(opts)
+	if err != nil {
+		return err
+	}
+	rep := runDoctorReport(cmd.Context(), doctor.Options{Root: opts.root})
+	switch output {
+	case "json":
+		err = doctor.WriteJSON(cmd.OutOrStdout(), rep)
+	case "sarif":
+		err = doctor.WriteSARIF(cmd.OutOrStdout(), rep)
+	default:
+		err = doctor.WriteText(cmd.OutOrStdout(), rep)
+	}
+	if err != nil {
+		return err
 	}
 	if !rep.OK() {
 		return errSilentFailure
 	}
 	return nil
+}
+
+func resolveDoctorOutput(opts *doctorOptions) (string, error) {
+	output := strings.TrimSpace(opts.output)
+	if output == "" {
+		output = "text"
+	}
+	if opts.asJSON {
+		switch output {
+		case "", "text", "json":
+			output = "json"
+		default:
+			return "", fmt.Errorf("doctor: --json cannot be combined with --output %q", output)
+		}
+	}
+	if output != "text" && output != "json" && output != "sarif" {
+		return "", fmt.Errorf("doctor: unsupported --output %q; want text, json, or sarif", output)
+	}
+	return output, nil
 }
 
 // errSilentFailure signals a non-zero exit without re-printing the error to
@@ -58,25 +85,3 @@ var errSilentFailure = silentErr("doctor: one or more checks failed")
 type silentErr string
 
 func (e silentErr) Error() string { return string(e) }
-
-func writeHumanReport(w io.Writer, rep *doctor.Report) {
-	for _, c := range rep.Checks {
-		mark := "✓"
-		if !c.OK {
-			if c.Severity == doctor.SeverityWarn {
-				mark = "!"
-			} else {
-				mark = "✗"
-			}
-		}
-		fmt.Fprintf(w, "%s [%s] %s\n", mark, c.ID, c.Message)
-		if c.Hint != "" && !c.OK {
-			fmt.Fprintf(w, "    hint: %s\n", c.Hint)
-		}
-	}
-	if rep.OK() {
-		fmt.Fprintln(w, "\nall checks passed")
-	} else {
-		fmt.Fprintln(w, "\none or more checks failed")
-	}
-}

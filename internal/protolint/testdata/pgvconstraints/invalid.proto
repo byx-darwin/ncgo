@@ -1,0 +1,43 @@
+syntax = "proto3";
+
+package demo;
+
+import "validate/validate.proto";
+
+enum UserStatus {
+  USER_STATUS_UNSPECIFIED = 0;
+  USER_STATUS_ACTIVE = 1;
+  USER_STATUS_INACTIVE = 2;
+}
+
+// SearchReq triggers:
+//   PIO402 – keyword is a free-text string with no PGV length constraint
+//   PIO403 – ids (repeated) and labels (map) have no item/pair count constraints
+//   PIO404 – status (enum) has no defined_only constraint
+message SearchReq {
+  string keyword = 1;
+  repeated string ids = 2;
+  map<string, string> labels = 3;
+  UserStatus status = 4;
+}
+
+message SearchResp {
+  repeated string results = 1;
+}
+
+// CreateReq has all constraints properly declared – no PIO4xx warnings expected.
+message CreateReq {
+  string name = 1 [(validate.rules).string = {min_len: 1, max_len: 50}];
+  repeated string tags = 2 [(validate.rules).repeated = {max_items: 10}];
+  map<string, string> meta = 3 [(validate.rules).map = {max_pairs: 20}];
+  UserStatus state = 4 [(validate.rules).enum = {defined_only: true}];
+}
+
+message CreateResp {
+  string id = 1;
+}
+
+service Demo {
+  rpc Search(SearchReq) returns (SearchResp) {}
+  rpc Create(CreateReq) returns (CreateResp) {}
+}

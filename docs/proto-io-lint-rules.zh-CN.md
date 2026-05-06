@@ -176,6 +176,9 @@
 | `PIO302` | warning | rpc+message | Kitex `List* / Search*` 风格方法缺少分页或游标结构 |
 | `PIO303` | warning | message | Kitex request 结构过于“万能” |
 | `PIO401` | warning | field | 分页类 request 字段缺少明显 PGV 范围约束 |
+| `PIO402` | warning | field | 自由文本 string 字段缺少 PGV 长度约束 |
+| `PIO403` | warning | field | repeated / map 字段缺少 PGV 数量约束 |
+| `PIO404` | warning | field | enum 字段缺少 PGV `defined_only` 约束 |
 
 ### 5.1 `PIO111`：谨慎使用 `google.protobuf.Empty`
 
@@ -241,7 +244,31 @@
 - 说明：第一版可先从分页类字段开始，而不是试图穷举所有“应该有 PGV”的输入字段
 - 当前实现：检查 request 顶层字段名是否命中 `page`、`page_size`、`limit`、`offset`；若字段上未看到 `validate.rules` 中明显的 `gt/gte/lt/lte` 范围约束，则给出提示
 
-### 5.9 已知限制与误报说明
+### 5.9 `PIO402`：自由文本 string 字段缺少 PGV 长度约束
+
+- 级别：`warning`
+- 阶段：`phase2`
+- 检测条件：request 顶层字段为 `string` 类型，且字段名命中常见自由文本语义（如 `keyword`、`name`、`title`、`description`、`content`、`query`、`comment` 等），但未声明 `validate.rules` 中的 `min_len`、`max_len`、`len`、`len_bytes`、`min_bytes`、`max_bytes` 或 `pattern` 约束
+- 说明：无上界的字符串字段易遭滥用，建议即使设置宽松上限（如 `max_len: 1024`）也优于不设置
+- 当前实现：仅对特定语义字段名触发，不尝试检测所有 string 字段；命中集合为 `keyword/keywords/query/q/search/name/title/description/content/text/comment/remark/note/notes/message/reason/detail/details/label/tag`
+
+### 5.10 `PIO403`：repeated / map 字段缺少 PGV 数量约束
+
+- 级别：`warning`
+- 阶段：`phase2`
+- 检测条件：request 顶层字段为 `repeated` 或 `map` 类型，但未声明 `validate.rules` 中的 `min_items`/`max_items`（repeated）或 `min_pairs`/`max_pairs`（map）约束
+- 说明：无上限的列表或映射字段可被用于 payload 放大攻击；即使只设置 `max_items: 100` 也能有效限制风险
+- 当前实现：检查所有 request 顶层的 repeated 和 map 字段，不做名称过滤
+
+### 5.11 `PIO404`：enum 字段缺少 PGV `defined_only` 约束
+
+- 级别：`warning`
+- 阶段：`phase2`
+- 检测条件：request 顶层字段为 enum 类型，但未声明 `validate.rules` 中的 `defined_only: true`
+- 说明：proto3 在反序列化时允许 enum 字段携带超出已定义范围的任意整数值，不加约束会导致业务逻辑走到 switch 的 default 分支或被忽略，产生未预期行为
+- 当前实现：检查所有 request 顶层 enum 字段；若 `validate.rules` 中未出现 `defined_only` 字段（即使值为 false 也不算约束），则给出提示
+
+### 5.12 已知限制与误报说明
 
 以下为当前 phase2 启发式规则在保守实现下的已知误报场景，供维护者和 Agent 在消费 `diagnostics` 时参考。
 
@@ -267,6 +294,22 @@
 - 内部服务或有意不加防御性校验的场景，PGV 约束缺失不属于真实问题
 - 字段名匹配集合（`page`、`page_size`、`limit`、`offset`）硬编码固定，与分页语义相同但命名不同的字段不会被检测
 - 通过框架层（如 handler middleware）统一做边界校验而不在 proto 声明 PGV 的项目会持续触发该提示
+
+**PIO402**（自由文本 string 字段缺少 PGV 长度约束）
+
+- 字段名命中集合为硬编码，使用其他惯例命名（如 `input`、`body`、`payload`）的自由文本字段不会被检测
+- 内部服务或由中间件统一截断的场景会误报
+- 不检测嵌套 message 中的 string 字段，仅覆盖顶层 request 字段
+
+**PIO403**（repeated / map 字段缺少 PGV 数量约束）
+
+- 检查所有 repeated / map 字段，对仅服务于导出、批量写入等天然需要大容量的接口会产生误报
+- 仅检查顶层 request 字段，嵌套 repeated 字段不在范围内
+
+**PIO404**（enum 字段缺少 PGV `defined_only` 约束）
+
+- 未显式设置 `defined_only: false` 的字段不会被误判（检测逻辑依赖该字段在 Range 中的出现性，false 不会出现）
+- 内部服务若已在业务层做 enum 合法性校验，该 warning 可忽略
 
 ## 6. Phase 3：暂缓实现的规则方向
 

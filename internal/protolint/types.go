@@ -46,7 +46,26 @@ type Field struct {
 	Bindings              []Binding
 	HasOpenAPIProperty    bool
 	HasPGVRangeConstraint bool
-	Location              Location
+	// IsString is true when the field is a scalar string type (not bytes).
+	IsString bool
+	// IsRepeated is true when the field is a repeated non-map field.
+	IsRepeated bool
+	// IsMap is true when the field is a map field.
+	IsMap bool
+	// IsEnum is true when the field is an enum-typed field.
+	IsEnum bool
+	// HasPGVLenConstraint is true when the field's validate.rules contain an
+	// explicit string-length or bytes-length constraint
+	// (min_len / max_len / len / min_bytes / max_bytes / len_bytes / pattern).
+	HasPGVLenConstraint bool
+	// HasPGVItemsConstraint is true when the field's validate.rules contain an
+	// explicit item- or pair-count constraint
+	// (min_items / max_items / min_pairs / max_pairs).
+	HasPGVItemsConstraint bool
+	// HasPGVDefinedOnly is true when the field's validate.rules contain a
+	// defined_only enum constraint.
+	HasPGVDefinedOnly bool
+	Location          Location
 }
 
 // Message is the normalized view of a protobuf message.
