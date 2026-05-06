@@ -3,6 +3,7 @@
 [![CI](https://github.com/byx-darwin/ncgo/actions/workflows/ci.yml/badge.svg)](https://github.com/byx-darwin/ncgo/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/byx-darwin/ncgo)](https://github.com/byx-darwin/ncgo/releases)
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
+[![License](https://img.shields.io/github/license/byx-darwin/ncgo)](LICENSE)
 
 AI-friendly scaffold CLI for Go microservices. `ncgo` owns embedded Hertz and
 Kitex templates, writes a project manifest, invokes upstream generators, and
