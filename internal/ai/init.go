@@ -82,7 +82,14 @@ func InitClaude(opts InitOptions) (*Result, error) {
 		return nil, err
 	}
 	shape := detectProjectShape(opts.Root)
-	res := &Result{Notes: []string{fmt.Sprintf("detected project shape: %s", projectShapeLabel(shape))}}
+	res := &Result{
+		Written: []string{},
+		Skipped: []Skip{},
+		Notes:   []string{fmt.Sprintf("detected project shape: %s", projectShapeLabel(shape))},
+	}
+	if !opts.DryRun {
+		res.NextSteps = []string{fmt.Sprintf("run ncgo ai sync --root %s --lang en", opts.Root)}
+	}
 	for _, f := range files {
 		if err := writeStarterFile(opts, shape, f, res); err != nil {
 			return res, err

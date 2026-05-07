@@ -42,6 +42,8 @@ func TestEmbeddedFilesPresent(t *testing.T) {
 		"docs/hertz/design-doc.zh-CN.md",
 		"docs/kitex/design-doc.en.md",
 		"docs/kitex/design-doc.zh-CN.md",
+		"docs/micro/design-doc.en.md",
+		"docs/micro/design-doc.zh-CN.md",
 		"hertz/data.json",
 		"hertz/layout.yaml",
 		"hertz/package.yaml",
@@ -78,7 +80,7 @@ func TestEmbeddedFilesNonEmpty(t *testing.T) {
 		t.Fatalf("WalkDir: %v", err)
 	}
 	// Snapshot has VERSION + claude starters/presets + design docs + hertz + kitex + common optionals.
-	if count < 43 {
-		t.Fatalf("embedded file count = %d, expected >= 43", count)
+	if count < 45 {
+		t.Fatalf("embedded file count = %d, expected >= 45", count)
 	}
 }

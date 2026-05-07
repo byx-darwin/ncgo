@@ -28,10 +28,14 @@ ncgo mcp serve
 - `ncgo_doctor`
   - 输入：`root`（可选）、`output=text|json|sarif`
   - 稳定顶层字段：`root`、`scope`、`summary`、`checks`、`ok`
+- `ncgo_ai_init_claude`
+  - 输入：`root`，以及可选的 `preset=minimal|team`、`force`、`dryRun`、`output=text|json`
+  - 稳定顶层字段：`written`、`skipped`，以及可选的 `notes`、`nextSteps`
+  - `content[0].text` 在 `output=text` 时返回人类可读摘要，在 `output=json` 时返回 JSON
 - `ncgo_ai_sync`
-  - 输入：`root`、`lang=en|zh-CN`、`force`、`dryRun`
-  - output：text
-  - 当前结果形态：`content[0].text` 中返回由 `written` / `skipped` 组成的 pretty JSON 摘要
+  - 输入：`root`、`lang=en|zh-CN`、`force`、`dryRun`、`output=text|json`
+  - 稳定顶层字段：`written`、`skipped`，以及可选的 `notes`、`scope`、`sourceRef`、`workspace`
+  - `content[0].text` 在 `output=text` 时返回人类可读摘要，在 `output=json` 时返回 JSON
 - `ncgo_i18n_report`
   - 输入：`root`、`output=text|json`
   - 稳定顶层字段：`root`、`sourceLocale`、`localesDir`、`statusPath`、`glossaryPath`、`reportPathJSON`、`reportPathMarkdown`、`schema`、`report`、`nextSteps`
@@ -166,20 +170,50 @@ ncgo mcp serve
     "arguments": {
       "root": ".",
       "lang": "en",
-      "dryRun": true
+      "dryRun": true,
+      "output": "json"
     }
   }
 }
 ```
 
-text-only 返回形态：主要读取 `content[0].text` 中的 pretty-JSON 风格同步摘要；是否阻断则看 `isError`。
+推荐优先读取的顶层字段：`scope`、`sourceRef`、`workspace`、`written`、`skipped`，然后再看 `notes`。
+
+当 `output=text` 时，`content[0].text` 与 CLI 风格同步摘要一致（`info:` / `wrote` / `skipped`）。
+当 `output=json` 时，`content[0].text` 返回完整 sync 结果的 JSON。是否阻断则看 `isError`。
+
+当 `scope=service` 且 `workspace.role=member` 时，表示当前服务登记在上层 micro 工作区中。
+当 `scope=workspace` 且 `workspace.role=root` 时，表示工具运行在 micro 工作区根目录，
+此时 `workspace.serviceCount` 表示发现到的服务数量。
+
+`ncgo_ai_init_claude`
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "tools/call",
+  "params": {
+    "name": "ncgo_ai_init_claude",
+    "arguments": {
+      "root": ".",
+      "preset": "team",
+      "output": "json"
+    }
+  }
+}
+```
+
+推荐优先读取的顶层字段：先看 `written`、`skipped`、`notes`、`nextSteps`。
+当 `output=text` 时，`content[0].text` 与 CLI 风格 starter 摘要一致；
+当 `output=json` 时，返回同一份结构化结果的 JSON。
 
 `ncgo_add_method`
 
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 7,
+  "id": 8,
   "method": "tools/call",
   "params": {
     "name": "ncgo_add_method",
@@ -199,7 +233,7 @@ text-only 返回形态：主要读取 `content[0].text` 中的插入结果摘要
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 8,
+  "id": 9,
   "method": "tools/call",
   "params": {
     "name": "ncgo_version"
@@ -313,6 +347,17 @@ ncgo doctor --root .
 ncgo doctor --root . --output json
 ncgo doctor --root . --output sarif > doctor.sarif.json
 ```
+
+如果希望在 CLI 里直接拿到 machine-readable 的 AI helper 输出，可使用：
+
+```bash
+ncgo ai init claude --root . --output json
+ncgo ai sync --root . --output json
+```
+
+`ai init claude --output json` 会返回 starter files 的结构化结果以及 `nextSteps`。
+`ai sync --output json` 会返回与 MCP 对齐的结构化 sync payload，其中包含
+`scope`、`sourceRef` 以及可选的 `workspace` 元数据。
 
 现在 `ncgo doctor --root .` 会默认检查：
 

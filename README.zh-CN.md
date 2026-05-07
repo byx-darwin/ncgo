@@ -213,6 +213,8 @@ ncgo new user-api --module github.com/acme/user-api --kind kitex --no-generate
 ncgo ai init claude --root user-api
 ```
 
+如需在 init 阶段获取机器可读的 CLI 输出，可追加 `--output json`。
+
 如需包含 workflow starter 的 `team` preset，可运行：
 
 ```bash
@@ -227,6 +229,14 @@ ncgo ai init claude --root user-api --preset team
 ncgo ai sync --root user-api --lang zh-CN
 ```
 
+如需机器可读的 CLI 输出，可追加 `--output json`。
+
+如果是 micro 工作区根目录，也是在工作区根目录执行同样的命令：
+
+```bash
+ncgo ai sync --root commerce --lang zh-CN
+```
+
 会写入受管理文件：
 
 - `AGENTS.md`
@@ -235,6 +245,15 @@ ncgo ai sync --root user-api --lang zh-CN
 - `.cursor/rules/ncgo.mdc`
 
 这些文件带有 `<!-- ncgo:managed -->` 标记。没有该标记的已有文件默认不会覆盖，除非传 `--force`。项目私有说明放在 `AGENTS.local.md`，会附加到长版上下文文件；`.claude/generated/project-context.md` 保持 deterministic。
+
+当 `--root` 指向 micro 工作区根目录时，生成文件会基于 `ncgo.workspace`
+描述工作区级事实并列出已登记服务。如需服务级上下文，请进入对应服务目录执行
+`ncgo ai sync --root services/<name> --lang zh-CN`。
+
+当 `--root` 指向某个服务目录，且该服务同时登记在上层 micro 工作区里时，
+`ncgo ai sync` 仍会基于本地 `.ncgo/manifest.yaml` 生成服务级上下文，但会额外
+补充 workspace membership 信息，例如父工作区名称、module、相对根路径以及已登记的
+服务目录。CLI 摘要也会输出对应的 `info:` 提示，方便人和 Agent 判断该服务属于更大的工作区。
 
 `ncgo ai init claude` 创建的 starter files 属于 hand-authored 内容，不会被后续 `ncgo ai sync` 覆盖。
 
@@ -302,7 +321,7 @@ ncgo version
 
 `ncgo doctor` 现在除了检查 `hz` / `kitex`、manifest 与 `template/data.json` 之外，还会在 `manifest.service.idl` 存在时默认执行 proto lint，并把命中的 Proto I/O 规则映射到 doctor report 中。CLI 现在支持 `--output text|json|sarif`；其中 `--json` 仍保留为兼容别名，等价于 `--output json`。`sarif` 适合接入 code scanning、IDE 诊断面板或 CI 归档。
 
-`ncgo mcp serve` 会启动 stdio MCP server。当前暴露 `ncgo_version`、`ncgo_doctor`、`ncgo_ai_sync`、`ncgo_i18n_report`、`ncgo_i18n_check`、`ncgo_protolint`、`ncgo_add_infra`、`ncgo_add_method`。现在这套 MCP 接口已经按 contract-first 方式集中整理到 [docs/examples.zh-CN.md#0-mcp-contract-first-参考](docs/examples.zh-CN.md#0-mcp-contract-first-参考) 的 `0. MCP contract-first 参考` 一节：会先说明每个工具的输入、支持的 `output`，以及稳定的顶层结果字段，再进入具体 workflow 示例。简而言之，结构化 MCP 工具会把 `content[0].text` 作为展示/转存载荷，同时保留同级顶层字段供 Agent 直接消费；`output` 只影响文本载荷格式。
+`ncgo mcp serve` 会启动 stdio MCP server。当前暴露 `ncgo_version`、`ncgo_doctor`、`ncgo_ai_init_claude`、`ncgo_ai_sync`、`ncgo_i18n_report`、`ncgo_i18n_check`、`ncgo_protolint`、`ncgo_add_infra`、`ncgo_add_method`。现在这套 MCP 接口已经按 contract-first 方式集中整理到 [docs/examples.zh-CN.md#0-mcp-contract-first-参考](docs/examples.zh-CN.md#0-mcp-contract-first-参考) 的 `0. MCP contract-first 参考` 一节：会先说明每个工具的输入、支持的 `output`，以及稳定的顶层结果字段，再进入具体 workflow 示例。简而言之，结构化 MCP 工具会把 `content[0].text` 作为展示/转存载荷，同时保留同级顶层字段供 Agent 直接消费；`output` 只影响文本载荷格式。
 
 如果你在生成后的 Hertz 项目里使用内置 i18n 工作流，现在也可以用 `ncgo i18n report` / `ncgo i18n check`，或通过 MCP 的 `ncgo_i18n_report` / `ncgo_i18n_check` 消费结构化结果。可直接参考 [docs/examples.zh-CN.md#5-生成项目中的-i18n-补译工作流](docs/examples.zh-CN.md#5-生成项目中的-i18n-补译工作流) 中的“生成项目中的 i18n 补译工作流”。
 

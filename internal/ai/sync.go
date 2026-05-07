@@ -2,9 +2,10 @@
 // docs/prd.md §6, including long-form context files, generated `.claude`
 // facts, and hand-authored `.claude` starter files.
 //
-// The renderer is idempotent and reads only from the project manifest
-// and the ncgo-embedded design doc (`internal/assets/_data/docs/<kind>/
-// design-doc.<lang>.md`); it never reads back its own previous output.
+// The renderer is idempotent and reads only from project metadata
+// (`.ncgo/manifest.yaml` or `ncgo.workspace`) and the ncgo-embedded design
+// doc (`internal/assets/_data/docs/<profile>/design-doc.<lang>.md`); it
+// never reads back its own previous output.
 // Each managed file carries an `<!-- ncgo:managed -->` marker on the
 // first content line; existing files without the marker are refused
 // unless Force is set.
@@ -38,23 +39,72 @@ const (
 
 // Options controls a Sync invocation.
 type Options struct {
-	Root   string // project root containing .ncgo/manifest.yaml
+	Root   string // service root with .ncgo/manifest.yaml or micro workspace root with ncgo.workspace
 	Lang   string // "en" (default) or "zh-CN"
 	Force  bool   // overwrite non-managed files
 	DryRun bool   // do not write; only report intended actions
 }
 
+type syncScope string
+
+const (
+	syncScopeService   syncScope = "service"
+	syncScopeWorkspace syncScope = "workspace"
+)
+
+type workspaceServiceFacts struct {
+	Name         string
+	Kind         string
+	Dir          string
+	Module       string
+	IDL          string
+	WithDatabase bool
+	Infra        []string
+	Domains      []string
+}
+
+type serviceWorkspaceMembership struct {
+	RootRel    string
+	Name       string
+	Module     string
+	ServiceDir string
+}
+
+type syncSource struct {
+	Scope             syncScope
+	SourceRef         string
+	DesignDoc         string
+	Service           *manifest.Manifest
+	ServiceWorkspace  *serviceWorkspaceMembership
+	Workspace         *manifest.Workspace
+	WorkspaceServices []workspaceServiceFacts
+}
+
+// ResultWorkspace summarizes workspace facts attached to an ai sync result.
+type ResultWorkspace struct {
+	Role         string `json:"role"`
+	Name         string `json:"name"`
+	Module       string `json:"module"`
+	Root         string `json:"root,omitempty"`
+	ServiceDir   string `json:"serviceDir,omitempty"`
+	ServiceCount int    `json:"serviceCount,omitempty"`
+}
+
 // Result is the structured outcome of an AI file generation/bootstrap call.
 type Result struct {
-	Written []string // relative paths actually written
-	Skipped []Skip   // relative paths intentionally not written
-	Notes   []string // optional informational lines for CLI summaries
+	Written   []string         `json:"written"`             // relative paths actually written
+	Skipped   []Skip           `json:"skipped"`             // relative paths intentionally not written
+	Notes     []string         `json:"notes,omitempty"`     // optional informational lines for CLI summaries
+	NextSteps []string         `json:"nextSteps,omitempty"` // optional follow-up commands or actions
+	Scope     string           `json:"scope,omitempty"`     // service | workspace
+	SourceRef string           `json:"sourceRef,omitempty"` // .ncgo/manifest.yaml | ncgo.workspace
+	Workspace *ResultWorkspace `json:"workspace,omitempty"`
 }
 
 // Skip describes a file an AI helper chose not to write and why.
 type Skip struct {
-	Path   string
-	Reason string
+	Path   string `json:"path"`
+	Reason string `json:"reason"`
 }
 
 // Sync renders all managed AI artifacts under opts.Root.
@@ -68,15 +118,16 @@ func Sync(opts Options) (*Result, error) {
 	if opts.Lang != LangEN && opts.Lang != LangZhCN {
 		return nil, fmt.Errorf("ai sync: --lang %q is invalid (en|zh-CN)", opts.Lang)
 	}
-	m, err := manifest.Load(opts.Root)
+	source, err := resolveSyncSource(opts.Root, opts.Lang)
 	if err != nil {
 		return nil, err
 	}
-	inputs, err := buildInputs(m, opts)
+	local, err := readLocalNotes(opts.Root)
 	if err != nil {
 		return nil, err
 	}
-	res := &Result{}
+	inputs := buildInputs(source, local)
+	res := newSyncResult(source)
 	for _, t := range targets() {
 		if err := writeTarget(opts, t, inputs, res); err != nil {
 			return res, err
@@ -85,15 +136,212 @@ func Sync(opts Options) (*Result, error) {
 	return res, nil
 }
 
-// readDesignDoc fetches the embedded design doc that matches the
-// project's service kind and the requested language.
-func readDesignDoc(kind, lang string) (string, error) {
-	rel := filepath.ToSlash(filepath.Join("docs", kind, "design-doc."+lang+".md"))
+// readDesignDoc fetches the embedded design doc that matches the requested
+// profile (`hertz`, `kitex`, or `micro`) and language.
+func readDesignDoc(profile, lang string) (string, error) {
+	rel := filepath.ToSlash(filepath.Join("docs", profile, "design-doc."+lang+".md"))
 	b, err := fs.ReadFile(assets.FS(), rel)
 	if err != nil {
 		return "", fmt.Errorf("ai sync: read embedded %s: %w", rel, err)
 	}
 	return string(b), nil
+}
+
+func resolveSyncSource(root, lang string) (syncSource, error) {
+	manifestPath := manifest.Path(root)
+	workspacePath := manifest.WorkspacePath(root)
+	if pathExists(manifestPath) {
+		m, err := manifest.Load(root)
+		if err != nil {
+			return syncSource{}, err
+		}
+		membership, err := findServiceWorkspaceMembership(root)
+		if err != nil {
+			return syncSource{}, err
+		}
+		doc, err := readDesignDoc(m.Service.Kind, lang)
+		if err != nil {
+			return syncSource{}, err
+		}
+		return syncSource{
+			Scope:            syncScopeService,
+			SourceRef:        ".ncgo/manifest.yaml",
+			DesignDoc:        doc,
+			Service:          m,
+			ServiceWorkspace: membership,
+		}, nil
+	}
+	if pathExists(workspacePath) {
+		w, err := manifest.LoadWorkspace(root)
+		if err != nil {
+			return syncSource{}, err
+		}
+		services, err := loadWorkspaceServiceFacts(root, w)
+		if err != nil {
+			return syncSource{}, err
+		}
+		doc, err := readDesignDoc(manifest.ModeMicro, lang)
+		if err != nil {
+			return syncSource{}, err
+		}
+		return syncSource{
+			Scope:             syncScopeWorkspace,
+			SourceRef:         manifest.WorkspaceFileName,
+			DesignDoc:         doc,
+			Workspace:         w,
+			WorkspaceServices: services,
+		}, nil
+	}
+	_, err := manifest.Load(root)
+	return syncSource{}, err
+}
+
+func loadWorkspaceServiceFacts(root string, w *manifest.Workspace) ([]workspaceServiceFacts, error) {
+	out := make([]workspaceServiceFacts, 0, len(w.Services))
+	for _, svc := range w.Services {
+		serviceRoot := filepath.Join(root, filepath.FromSlash(svc.Dir))
+		m, err := manifest.Load(serviceRoot)
+		if err != nil {
+			return nil, fmt.Errorf("ai sync: load workspace service %s: %w", svc.Name, err)
+		}
+		out = append(out, workspaceServiceFacts{
+			Name:         svc.Name,
+			Kind:         svc.Kind,
+			Dir:          filepath.ToSlash(filepath.Clean(svc.Dir)),
+			Module:       m.Module,
+			IDL:          m.Service.IDL,
+			WithDatabase: m.Service.WithDatabase,
+			Infra:        append([]string(nil), m.Infra...),
+			Domains:      append([]string(nil), m.Domains...),
+		})
+	}
+	return out, nil
+}
+
+// ResultFields exposes the stable top-level fields that structured transports
+// such as MCP can surface directly without asking callers to parse text output.
+func ResultFields(res *Result) map[string]any {
+	if res == nil {
+		return nil
+	}
+	fields := map[string]any{
+		"written": res.Written,
+		"skipped": res.Skipped,
+	}
+	if len(res.Notes) > 0 {
+		fields["notes"] = res.Notes
+	}
+	if len(res.NextSteps) > 0 {
+		fields["nextSteps"] = res.NextSteps
+	}
+	if res.Scope != "" {
+		fields["scope"] = res.Scope
+	}
+	if res.SourceRef != "" {
+		fields["sourceRef"] = res.SourceRef
+	}
+	if res.Workspace != nil {
+		fields["workspace"] = res.Workspace
+	}
+	return fields
+}
+
+func syncNotes(source syncSource) []string {
+	switch source.Scope {
+	case syncScopeWorkspace:
+		return []string{
+			"detected micro workspace root; rendered workspace-level AI context from `ncgo.workspace`",
+			"for service-level context, run `ncgo ai sync --root services/<name>` inside a generated service directory",
+		}
+	case syncScopeService:
+		if source.ServiceWorkspace == nil {
+			return nil
+		}
+		return []string{
+			fmt.Sprintf("detected parent micro workspace `%s` for this service root", source.ServiceWorkspace.RootRel),
+			fmt.Sprintf("this service is registered in workspace `%s` as `%s`", source.ServiceWorkspace.Name, source.ServiceWorkspace.ServiceDir),
+		}
+	default:
+		return nil
+	}
+}
+
+func newSyncResult(source syncSource) *Result {
+	res := &Result{
+		Written:   []string{},
+		Skipped:   []Skip{},
+		Notes:     syncNotes(source),
+		Scope:     string(source.Scope),
+		SourceRef: source.SourceRef,
+	}
+	switch source.Scope {
+	case syncScopeWorkspace:
+		if source.Workspace != nil {
+			res.Workspace = &ResultWorkspace{
+				Role:         "root",
+				Name:         source.Workspace.Name,
+				Module:       source.Workspace.Module,
+				ServiceCount: len(source.WorkspaceServices),
+			}
+		}
+	case syncScopeService:
+		if source.ServiceWorkspace != nil {
+			res.Workspace = &ResultWorkspace{
+				Role:       "member",
+				Name:       source.ServiceWorkspace.Name,
+				Module:     source.ServiceWorkspace.Module,
+				Root:       source.ServiceWorkspace.RootRel,
+				ServiceDir: source.ServiceWorkspace.ServiceDir,
+			}
+		}
+	}
+	return res
+}
+
+func pathExists(path string) bool {
+	_, err := os.Stat(path)
+	return err == nil
+}
+
+func findServiceWorkspaceMembership(root string) (*serviceWorkspaceMembership, error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return nil, fmt.Errorf("ai sync: resolve root %s: %w", root, err)
+	}
+	for dir := filepath.Dir(absRoot); ; {
+		workspacePath := manifest.WorkspacePath(dir)
+		if pathExists(workspacePath) {
+			w, err := manifest.LoadWorkspace(dir)
+			if err != nil {
+				return nil, fmt.Errorf("ai sync: load parent workspace %s: %w", dir, err)
+			}
+			serviceRel, err := filepath.Rel(dir, absRoot)
+			if err != nil {
+				return nil, fmt.Errorf("ai sync: relate %s to %s: %w", dir, absRoot, err)
+			}
+			serviceRel = filepath.ToSlash(filepath.Clean(serviceRel))
+			for _, svc := range w.Services {
+				if filepath.ToSlash(filepath.Clean(svc.Dir)) != serviceRel {
+					continue
+				}
+				rootRel, err := filepath.Rel(absRoot, dir)
+				if err != nil {
+					return nil, fmt.Errorf("ai sync: relate %s to %s: %w", absRoot, dir, err)
+				}
+				return &serviceWorkspaceMembership{
+					RootRel:    filepath.ToSlash(filepath.Clean(rootRel)),
+					Name:       w.Name,
+					Module:     w.Module,
+					ServiceDir: serviceRel,
+				}, nil
+			}
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return nil, nil
+		}
+		dir = parent
+	}
 }
 
 // readLocalNotes returns the contents of <root>/AGENTS.local.md when it

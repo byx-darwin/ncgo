@@ -31,11 +31,17 @@ ncgo mcp serve
 - `ncgo_doctor`
   - inputs: `root` (optional), `output=text|json|sarif`
   - stable top-level fields: `root`, `scope`, `summary`, `checks`, `ok`
+- `ncgo_ai_init_claude`
+  - inputs: `root`, optional `preset=minimal|team`, `force`, `dryRun`,
+    `output=text|json`
+  - stable top-level fields: `written`, `skipped`, optional `notes`,
+    optional `nextSteps`
+  - `content[0].text` is a human-readable summary for `output=text`, or JSON for `output=json`
 - `ncgo_ai_sync`
-  - inputs: `root`, `lang=en|zh-CN`, `force`, `dryRun`
-  - output: text
-  - current result shape: pretty JSON summary in `content[0].text` from
-    `written` and `skipped`
+  - inputs: `root`, `lang=en|zh-CN`, `force`, `dryRun`, `output=text|json`
+  - stable top-level fields: `written`, `skipped`, optional `notes`, `scope`,
+    `sourceRef`, and optional `workspace`
+  - `content[0].text` is a human-readable summary for `output=text`, or JSON for `output=json`
 - `ncgo_i18n_report`
   - inputs: `root`, `output=text|json`
   - stable top-level fields: `root`, `sourceLocale`, `localesDir`,
@@ -186,21 +192,53 @@ change.
     "arguments": {
       "root": ".",
       "lang": "en",
-      "dryRun": true
+      "dryRun": true,
+      "output": "json"
     }
   }
 }
 ```
 
-Text-only result shape: read `content[0].text` for the pretty-JSON-style sync
-summary; use `isError` to detect blocking failures.
+Recommended top-level fields to read first: `scope`, `sourceRef`, `workspace`,
+`written`, `skipped`, then `notes`.
+
+For `output=text`, `content[0].text` matches the CLI-style sync summary (`info:` /
+`wrote` / `skipped`). For `output=json`, it renders the full sync result as JSON.
+Use `isError` to detect blocking failures.
+
+When `scope=service` and `workspace.role=member`, the service is registered in a
+parent micro workspace. When `scope=workspace` and `workspace.role=root`, the
+tool was run at the micro workspace root and `workspace.serviceCount` reports
+how many services were discovered.
+
+`ncgo_ai_init_claude`
+
+```json
+{
+  "jsonrpc": "2.0",
+  "id": 7,
+  "method": "tools/call",
+  "params": {
+    "name": "ncgo_ai_init_claude",
+    "arguments": {
+      "root": ".",
+      "preset": "team",
+      "output": "json"
+    }
+  }
+}
+```
+
+Recommended top-level reads: start with `written`, `skipped`, `notes`, and
+`nextSteps`. In `output=text`, `content[0].text` matches the CLI-style starter
+summary; in `output=json`, it returns the same structured result as JSON.
 
 `ncgo_add_method`
 
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 7,
+  "id": 8,
   "method": "tools/call",
   "params": {
     "name": "ncgo_add_method",
@@ -221,7 +259,7 @@ Text-only result shape: read `content[0].text` for the insertion summary; use
 ```json
 {
   "jsonrpc": "2.0",
-  "id": 8,
+  "id": 9,
   "method": "tools/call",
   "params": {
     "name": "ncgo_version"
@@ -342,6 +380,17 @@ ncgo doctor --root .
 ncgo doctor --root . --output json
 ncgo doctor --root . --output sarif > doctor.sarif.json
 ```
+
+If you want machine-readable AI helper output in the CLI, use:
+
+```bash
+ncgo ai init claude --root . --output json
+ncgo ai sync --root . --output json
+```
+
+`ai init claude --output json` returns the starter-file result plus `nextSteps`.
+`ai sync --output json` returns the same structured sync payload exposed through
+MCP, including `scope`, `sourceRef`, and optional `workspace` metadata.
 
 `ncgo doctor --root .` now checks:
 

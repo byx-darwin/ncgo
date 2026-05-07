@@ -36,6 +36,8 @@ func TestServeInitializeAndToolsList(t *testing.T) {
 	var names []string
 	var doctorTool map[string]any
 	var addInfra map[string]any
+	var aiInitTool map[string]any
+	var aiSyncTool map[string]any
 	var i18nReportTool map[string]any
 	var i18nCheckTool map[string]any
 	var protolintTool map[string]any
@@ -49,6 +51,12 @@ func TestServeInitializeAndToolsList(t *testing.T) {
 		if name == "ncgo_add_infra" {
 			addInfra = tool
 		}
+		if name == "ncgo_ai_init_claude" {
+			aiInitTool = tool
+		}
+		if name == "ncgo_ai_sync" {
+			aiSyncTool = tool
+		}
 		if name == "ncgo_i18n_report" {
 			i18nReportTool = tool
 		}
@@ -59,7 +67,7 @@ func TestServeInitializeAndToolsList(t *testing.T) {
 			protolintTool = tool
 		}
 	}
-	for _, want := range []string{"ncgo_version", "ncgo_doctor", "ncgo_ai_sync", "ncgo_i18n_report", "ncgo_i18n_check", "ncgo_protolint", "ncgo_add_infra", "ncgo_add_method"} {
+	for _, want := range []string{"ncgo_version", "ncgo_doctor", "ncgo_ai_init_claude", "ncgo_ai_sync", "ncgo_i18n_report", "ncgo_i18n_check", "ncgo_protolint", "ncgo_add_infra", "ncgo_add_method"} {
 		if !contains(names, want) {
 			t.Errorf("tools/list missing %s in %v", want, names)
 		}
@@ -73,6 +81,17 @@ func TestServeInitializeAndToolsList(t *testing.T) {
 	}
 	if _, ok := props["output"]; !ok {
 		t.Fatalf("ncgo_add_infra schema missing output property: %+v", props)
+	}
+	aiInitProps := aiInitTool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := aiInitProps["output"]; !ok {
+		t.Fatalf("ncgo_ai_init_claude schema missing output property: %+v", aiInitProps)
+	}
+	if _, ok := aiInitProps["preset"]; !ok {
+		t.Fatalf("ncgo_ai_init_claude schema missing preset property: %+v", aiInitProps)
+	}
+	aiSyncProps := aiSyncTool["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := aiSyncProps["output"]; !ok {
+		t.Fatalf("ncgo_ai_sync schema missing output property: %+v", aiSyncProps)
 	}
 	i18nReportProps := i18nReportTool["inputSchema"].(map[string]any)["properties"].(map[string]any)
 	if _, ok := i18nReportProps["output"]; !ok {
@@ -226,6 +245,179 @@ func TestServeToolCallDoctorInvalidOutput(t *testing.T) {
 		t.Fatalf("invalid output unexpectedly succeeded: %+v", result)
 	}
 	if !strings.Contains(resultText(result), `doctor: unsupported output "xml"; want text, json, or sarif`) {
+		t.Fatalf("content = %q", resultText(result))
+	}
+}
+
+func TestServeToolCallAIInitClaude(t *testing.T) {
+	root := t.TempDir()
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_ai_init_claude", "arguments": map[string]any{"root": root}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("ai init claude returned error: %s", resultText(result))
+	}
+	if len(result["written"].([]any)) == 0 {
+		t.Fatalf("written = %+v, want starter files", result["written"])
+	}
+	nextSteps := result["nextSteps"].([]any)
+	if len(nextSteps) != 1 || nextSteps[0].(string) != "run ncgo ai sync --root "+root+" --lang en" {
+		t.Fatalf("nextSteps = %+v, want ai sync hint", nextSteps)
+	}
+	text := resultText(result)
+	if !strings.Contains(text, "wrote .claude/README.md") || !strings.Contains(text, "next: run ncgo ai sync --root "+root+" --lang en") {
+		t.Fatalf("text = %q", text)
+	}
+}
+
+func TestServeToolCallAIInitClaudeJSON(t *testing.T) {
+	root := t.TempDir()
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_ai_init_claude", "arguments": map[string]any{"root": root, "preset": "team", "output": "json"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("ai init claude json returned error: %s", resultText(result))
+	}
+	textJSON := resultJSONObject(t, result)
+	if len(textJSON["written"].([]any)) == 0 {
+		t.Fatalf("text payload json = %+v, want written files", textJSON)
+	}
+	nextSteps := textJSON["nextSteps"].([]any)
+	if len(nextSteps) != 1 {
+		t.Fatalf("text payload json = %+v, want nextSteps", textJSON)
+	}
+}
+
+func TestServeToolCallAIInitClaudeInvalidOutput(t *testing.T) {
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_ai_init_claude", "arguments": map[string]any{"root": "/repo/demo", "output": "xml"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("invalid output unexpectedly succeeded: %+v", result)
+	}
+	if !strings.Contains(resultText(result), `ai init claude: unsupported output "xml"; want text or json`) {
+		t.Fatalf("content = %q", resultText(result))
+	}
+}
+
+func TestServeToolCallAISyncIncludesStructuredFields(t *testing.T) {
+	root := seedMCPProtoWorkspace(t)
+	serviceRoot := filepath.Join(root, "services", "user-rpc")
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_ai_sync", "arguments": map[string]any{"root": serviceRoot, "dryRun": true}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("ai sync returned error: %s", resultText(result))
+	}
+	if result["scope"] != "service" || result["sourceRef"] != ".ncgo/manifest.yaml" {
+		t.Fatalf("structured metadata = %+v, want scope=service sourceRef=.ncgo/manifest.yaml", result)
+	}
+	workspace := result["workspace"].(map[string]any)
+	if workspace["role"] != "member" || workspace["name"] != "commerce" || workspace["root"] != "../.." || workspace["serviceDir"] != "services/user-rpc" {
+		t.Fatalf("workspace = %+v, want member/commerce/../../services/user-rpc", workspace)
+	}
+	if len(result["written"].([]any)) != 0 {
+		t.Fatalf("dry-run should not write files: %+v", result["written"])
+	}
+	if len(result["skipped"].([]any)) != 4 {
+		t.Fatalf("dry-run skipped = %+v, want 4 targets", result["skipped"])
+	}
+	text := resultText(result)
+	if !strings.Contains(text, "info: detected parent micro workspace `../..` for this service root") {
+		t.Fatalf("text = %q", text)
+	}
+	if !strings.Contains(text, "skipped AGENTS.md (dry-run)") {
+		t.Fatalf("text = %q", text)
+	}
+}
+
+func TestServeToolCallAISyncJSON(t *testing.T) {
+	root := seedMCPProtoWorkspace(t)
+	serviceRoot := filepath.Join(root, "services", "user-rpc")
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_ai_sync", "arguments": map[string]any{"root": serviceRoot, "dryRun": true, "output": "json"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("ai sync json returned error: %s", resultText(result))
+	}
+	textJSON := resultJSONObject(t, result)
+	if textJSON["scope"] != "service" || textJSON["sourceRef"] != ".ncgo/manifest.yaml" {
+		t.Fatalf("text payload json = %+v, want lower-case structured keys", textJSON)
+	}
+	workspace := textJSON["workspace"].(map[string]any)
+	if workspace["role"] != "member" || workspace["name"] != "commerce" {
+		t.Fatalf("json workspace = %+v", workspace)
+	}
+}
+
+func TestServeToolCallAISyncInvalidOutput(t *testing.T) {
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_ai_sync", "arguments": map[string]any{"root": "/repo/demo", "output": "xml"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("invalid output unexpectedly succeeded: %+v", result)
+	}
+	if !strings.Contains(resultText(result), `ai sync: unsupported output "xml"; want text or json`) {
 		t.Fatalf("content = %q", resultText(result))
 	}
 }

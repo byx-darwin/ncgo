@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"encoding/json"
 	"fmt"
 
 	"github.com/spf13/cobra"
@@ -22,6 +23,7 @@ type aiSyncOptions struct {
 	lang   string
 	force  bool
 	dryRun bool
+	output string
 }
 
 func newAISyncCmd() *cobra.Command {
@@ -30,7 +32,7 @@ func newAISyncCmd() *cobra.Command {
 		Use:   "sync",
 		Short: "Render AGENTS.md, CLAUDE.md, .claude/generated/project-context.md, and Cursor rules",
 		Long: "Generate the AI collaboration artifacts described in docs/prd.md §6 from " +
-			".ncgo/manifest.yaml and the embedded ncgo design doc. Existing files without " +
+			"a service manifest (`.ncgo/manifest.yaml`) or micro workspace metadata (`ncgo.workspace`) and the embedded ncgo design doc. Existing files without " +
 			"the `<!-- ncgo:managed -->` marker are skipped unless --force is set.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -38,10 +40,11 @@ func newAISyncCmd() *cobra.Command {
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&opts.root, "root", ".", "Project root containing .ncgo/manifest.yaml")
+	f.StringVar(&opts.root, "root", ".", "Service root with .ncgo/manifest.yaml or micro workspace root with ncgo.workspace")
 	f.StringVar(&opts.lang, "lang", ai.LangEN, "Design-doc language: en | zh-CN")
 	f.BoolVar(&opts.force, "force", false, "Overwrite files that lack the ncgo:managed marker")
 	f.BoolVar(&opts.dryRun, "dry-run", false, "Report intended actions without writing files")
+	f.StringVar(&opts.output, "output", "text", "Output format: text or json")
 	return cmd
 }
 
@@ -50,6 +53,7 @@ type aiInitClaudeOptions struct {
 	preset string
 	force  bool
 	dryRun bool
+	output string
 }
 
 func newAIInitCmd() *cobra.Command {
@@ -79,10 +83,17 @@ func newAIInitClaudeCmd() *cobra.Command {
 	f.StringVar(&opts.preset, "preset", ai.InitPresetMinimal, "Starter preset: minimal | team")
 	f.BoolVar(&opts.force, "force", false, "Overwrite existing starter files")
 	f.BoolVar(&opts.dryRun, "dry-run", false, "Report intended actions without writing files")
+	f.StringVar(&opts.output, "output", "text", "Output format: text or json")
 	return cmd
 }
 
 func runAISync(cmd *cobra.Command, opts *aiSyncOptions) error {
+	if opts.output == "" {
+		opts.output = "text"
+	}
+	if opts.output != "text" && opts.output != "json" {
+		return fmt.Errorf("ai sync: unsupported --output %q; want text or json", opts.output)
+	}
 	res, err := ai.Sync(ai.Options{
 		Root:   opts.root,
 		Lang:   opts.lang,
@@ -92,11 +103,22 @@ func runAISync(cmd *cobra.Command, opts *aiSyncOptions) error {
 	if err != nil {
 		return err
 	}
+	if opts.output == "json" {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(res)
+	}
 	printAIResult(cmd, res)
 	return nil
 }
 
 func runAIInitClaude(cmd *cobra.Command, opts *aiInitClaudeOptions) error {
+	if opts.output == "" {
+		opts.output = "text"
+	}
+	if opts.output != "text" && opts.output != "json" {
+		return fmt.Errorf("ai init claude: unsupported --output %q; want text or json", opts.output)
+	}
 	res, err := ai.InitClaude(ai.InitOptions{
 		Root:   opts.root,
 		Preset: opts.preset,
@@ -106,14 +128,12 @@ func runAIInitClaude(cmd *cobra.Command, opts *aiInitClaudeOptions) error {
 	if err != nil {
 		return err
 	}
-	printAIResult(cmd, res)
-	if !opts.dryRun {
-		root := opts.root
-		if root == "" {
-			root = "."
-		}
-		fmt.Fprintf(cmd.OutOrStdout(), "next: run ncgo ai sync --root %s --lang en\n", root)
+	if opts.output == "json" {
+		enc := json.NewEncoder(cmd.OutOrStdout())
+		enc.SetIndent("", "  ")
+		return enc.Encode(res)
 	}
+	printAIResult(cmd, res)
 	return nil
 }
 
@@ -127,6 +147,9 @@ func printAIResult(cmd *cobra.Command, res *ai.Result) {
 	}
 	for _, s := range res.Skipped {
 		fmt.Fprintf(out, "skipped %s (%s)\n", s.Path, s.Reason)
+	}
+	for _, step := range res.NextSteps {
+		fmt.Fprintf(out, "next: %s\n", step)
 	}
 	if len(res.Written) == 0 && len(res.Skipped) == 0 {
 		fmt.Fprintln(out, "(nothing to do)")

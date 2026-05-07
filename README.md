@@ -244,6 +244,8 @@ Optionally bootstrap hand-authored `.claude` starter files once:
 ncgo ai init claude --root user-api
 ```
 
+For machine-readable CLI output during init, add `--output json`.
+
 For the workflow-oriented starter set, use:
 
 ```bash
@@ -260,6 +262,14 @@ After generating a project, sync AI-readable context:
 ncgo ai sync --root user-api --lang en
 ```
 
+For machine-readable CLI output, add `--output json`.
+
+For a micro workspace root, run the same command at the workspace root:
+
+```bash
+ncgo ai sync --root commerce --lang en
+```
+
 This writes managed files:
 
 - `AGENTS.md`
@@ -271,6 +281,18 @@ Files contain `<!-- ncgo:managed -->`; existing files without the marker are
 skipped unless `--force` is passed. Add project-specific notes in
 `AGENTS.local.md`; they are appended to the long-form generated context files,
 while `.claude/generated/project-context.md` stays deterministic.
+
+When `--root` is a micro workspace root, the generated files describe
+workspace-level facts from `ncgo.workspace` and list the registered services.
+For service-level context, run `ncgo ai sync --root services/<name> --lang en`
+inside the generated service directory.
+
+When `--root` is a service directory that is also registered in a parent micro
+workspace, `ncgo ai sync` keeps generating service-level context from the local
+`.ncgo/manifest.yaml`, but it also annotates the generated facts with workspace
+membership details such as the parent workspace name, module, relative root,
+and registered service directory. The CLI summary prints matching `info:` lines
+so agents and humans can tell that the service belongs to a larger workspace.
 
 Starter files created by `ncgo ai init claude` are hand-authored and are not
 overwritten by `ncgo ai sync`.
@@ -378,8 +400,9 @@ for `--output json`. SARIF output is suitable for code scanning, IDE problems,
 and CI artifact pipelines.
 
 `ncgo mcp serve` starts a stdio MCP server. It currently exposes
-`ncgo_version`, `ncgo_doctor`, `ncgo_ai_sync`, `ncgo_i18n_report`,
-`ncgo_i18n_check`, `ncgo_protolint`, `ncgo_add_infra`, and `ncgo_add_method` tools.
+`ncgo_version`, `ncgo_doctor`, `ncgo_ai_init_claude`, `ncgo_ai_sync`,
+`ncgo_i18n_report`, `ncgo_i18n_check`, `ncgo_protolint`, `ncgo_add_infra`, and
+`ncgo_add_method` tools.
 The MCP interface is now documented in a contract-first layout in
 [`docs/examples.md#0-mcp-contract-first-reference`](docs/examples.md#0-mcp-contract-first-reference): see `0. MCP contract-first reference`
 for each tool's inputs, supported `output` values, and stable top-level result
