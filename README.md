@@ -244,6 +244,10 @@ For the workflow-oriented starter set, use:
 ncgo ai init claude --root user-api --preset team
 ```
 
+The command reports whether the target root was detected as a service root, a micro workspace root, or still unknown.
+
+On a successful non-dry-run init, it also suggests the next sync command: `ncgo ai sync --root <root> --lang en`.
+
 After generating a project, sync AI-readable context:
 
 ```bash

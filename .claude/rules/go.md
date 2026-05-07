@@ -20,10 +20,13 @@ Execution flow, testing order, and risk control live in `.claude/rules/agent-eng
 ## 3. Repository Structure
 
 - `internal/cli`: CLI entrypoints and command wiring.
-- `internal/mcp`: MCP tool schemas, tool handlers, structured outputs, and server behavior.
-- `internal/scaffold`: scaffold/template logic and generated tree behavior.
+- `internal/mcp`: MCP tool schemas, tool handlers, structured outputs, and server behavior. Key file: `tools.go`.
+- `internal/scaffold`: scaffold/template logic and generated tree behavior. Contains golden fixtures.
 - `internal/doctor`, `internal/protolint`, `internal/ai`, `internal/upgrade`, `internal/extract`: domain-specific logic.
+- `internal/assets/_data/{hertz,kitex}/*`: embedded scaffold templates. Treat as contract-sensitive; changes affect generated projects.
 - `internal/assets/_data/docs/*`: embedded design docs used by generated projects and `ai sync`.
+- `schemas/`: JSON schemas for i18n payloads.
+- `scripts/smoke.sh`: final smoke validation entrypoint.
 
 Keep changes inside the smallest relevant package. Do not move code across packages unless the task truly requires it.
 
@@ -73,9 +76,12 @@ Repository-wide final validation still follows `CONTRIBUTING.md` and `.claude/ru
 ## 9. Repository-Specific Preferences
 
 - Prefer package-level helpers for shared MCP output/schema logic instead of duplicating per-tool code.
-- Prefer deterministic test fixtures and pinned metadata in golden tests.
+- Prefer deterministic test fixtures and pinned metadata in golden tests. Golden fixtures live alongside the package under `testdata/` or `*_test.go` files in `internal/scaffold/`.
 - Keep AI context generation (`ai sync`) idempotent and conservative about overwriting user-owned files.
-- Keep MCP behavior dual-use: readable text for display, stable structured fields for agents.
+- Keep MCP behavior dual-use: readable text in `content[0].text` for display, stable top-level structured fields for agents.
+- MCP tool changes: verify `InputSchema`, `content[0].text` shape, top-level JSON fields, and error response behavior together.
+- When a CLI command or flag changes: update the nearest doc (`README.md` or `docs/examples.md`), keep English and Chinese variants aligned, and run `./scripts/smoke.sh`.
+- When scaffold templates under `internal/assets/_data/` change: update or regenerate corresponding golden tests before merging.
 
 ## 10. Avoid
 

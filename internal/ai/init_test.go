@@ -5,6 +5,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/byx-darwin/ncgo/internal/manifest"
 )
@@ -42,9 +43,67 @@ func TestInitClaudeWritesStarterFiles(t *testing.T) {
 	if !strings.Contains(string(readme), "## Ownership") {
 		t.Errorf("starter .claude/README.md missing ownership guidance")
 	}
+	if !strings.Contains(string(readme), "## Using External Go Skills") {
+		t.Errorf("starter .claude/README.md missing external skills guidance")
+	}
+	if !strings.Contains(string(readme), "Repository shape could not be detected yet") {
+		t.Errorf("starter .claude/README.md should explain unknown project shape")
+	}
+	if len(res.Notes) == 0 || !strings.Contains(res.Notes[0], "detected project shape: unknown") {
+		t.Errorf("InitClaude notes = %v, want unknown project shape", res.Notes)
+	}
 	gitignore, _ := os.ReadFile(filepath.Join(root, ".claude/local/.gitignore"))
 	if !strings.Contains(string(gitignore), "!.gitignore") {
 		t.Errorf("starter local/.gitignore missing self-keep rule")
+	}
+}
+
+func TestInitClaudeReadmeDetectsMonoServiceRoot(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	res, err := InitClaude(InitOptions{Root: root})
+	if err != nil {
+		t.Fatalf("InitClaude mono: %v", err)
+	}
+	readme, err := os.ReadFile(filepath.Join(root, ".claude/README.md"))
+	if err != nil {
+		t.Fatalf("read starter README: %v", err)
+	}
+	body := string(readme)
+	if !strings.Contains(body, "Detected repository shape: **service root**") || !strings.Contains(body, ".ncgo/manifest.yaml") {
+		t.Fatalf("mono README missing service-root guidance:\n%s", body)
+	}
+	if len(res.Notes) == 0 || !strings.Contains(res.Notes[0], "service root") {
+		t.Fatalf("InitClaude mono notes = %v, want service root", res.Notes)
+	}
+}
+
+func TestInitClaudeReadmeDetectsMicroWorkspaceRoot(t *testing.T) {
+	root := t.TempDir()
+	if err := manifest.SaveWorkspace(root, &manifest.Workspace{
+		Ncgo:        manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test-assets"},
+		Mode:        manifest.ModeMicro,
+		Name:        "commerce",
+		Module:      "github.com/acme/commerce",
+		Services:    []manifest.WorkspaceService{{Name: "user-rpc", Kind: manifest.KindKitex, Dir: "services/user-rpc"}},
+		GeneratedAt: time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("SaveWorkspace: %v", err)
+	}
+	res, err := InitClaude(InitOptions{Root: root})
+	if err != nil {
+		t.Fatalf("InitClaude micro: %v", err)
+	}
+	readme, err := os.ReadFile(filepath.Join(root, ".claude/README.md"))
+	if err != nil {
+		t.Fatalf("read starter README: %v", err)
+	}
+	body := string(readme)
+	if !strings.Contains(body, "Detected repository shape: **micro workspace root**") || !strings.Contains(body, "ncgo.workspace") || !strings.Contains(body, "services/*") {
+		t.Fatalf("micro README missing workspace guidance:\n%s", body)
+	}
+	if len(res.Notes) == 0 || !strings.Contains(res.Notes[0], "micro workspace root") {
+		t.Fatalf("InitClaude micro notes = %v, want micro workspace root", res.Notes)
 	}
 }
 
@@ -151,9 +210,14 @@ func TestInitClaudeTeamPresetWritesAdditionalStarterFiles(t *testing.T) {
 		".claude/skills/plan-change.md",
 		".claude/skills/run-validation.md",
 		".claude/skills/doc-sync.md",
+		".claude/skills/write-tests.md",
+		".claude/agents/planner.md",
 		".claude/agents/implementer.md",
 		".claude/agents/reviewer.md",
+		".claude/agents/debugger.md",
+		".claude/agents/doc-writer.md",
 		".claude/commands/plan.md",
+		".claude/commands/implement-change.md",
 		".claude/commands/fix-failing-test.md",
 		".claude/commands/update-docs.md",
 		".claude/commands/review-diff.md",
@@ -170,6 +234,46 @@ func TestInitClaudeTeamPresetWritesAdditionalStarterFiles(t *testing.T) {
 	plan, _ := os.ReadFile(filepath.Join(root, ".claude/commands/plan.md"))
 	if !strings.Contains(string(plan), "Plan before editing") {
 		t.Fatalf("team preset command template missing expected content")
+	}
+	writeTests, _ := os.ReadFile(filepath.Join(root, ".claude/skills/write-tests.md"))
+	if !strings.Contains(string(writeTests), "Mono vs Micro Scope") || !strings.Contains(string(writeTests), "table-driven tests") || !strings.Contains(string(writeTests), "go test -race") {
+		t.Fatalf("team preset write-tests skill missing mono/micro guidance")
+	}
+	runValidation, _ := os.ReadFile(filepath.Join(root, ".claude/skills/run-validation.md"))
+	if !strings.Contains(string(runValidation), "go test -run") || !strings.Contains(string(runValidation), "go test -race") {
+		t.Fatalf("team preset run-validation skill missing targeted Go validation guidance")
+	}
+	planSkill, _ := os.ReadFile(filepath.Join(root, ".claude/skills/plan-change.md"))
+	if !strings.Contains(string(planSkill), "Affected Surfaces") || !strings.Contains(string(planSkill), "templates, manifests, or codegen inputs") {
+		t.Fatalf("team preset plan-change skill missing affected surface guidance")
+	}
+	docSync, _ := os.ReadFile(filepath.Join(root, ".claude/skills/doc-sync.md"))
+	if !strings.Contains(string(docSync), "worked examples") || !strings.Contains(string(docSync), "Swagger or OpenAPI") {
+		t.Fatalf("team preset doc-sync skill missing contract and API doc guidance")
+	}
+	implementChange, _ := os.ReadFile(filepath.Join(root, ".claude/commands/implement-change.md"))
+	if !strings.Contains(string(implementChange), "Use the `implementer` agent") || !strings.Contains(string(implementChange), "write-tests") {
+		t.Fatalf("team preset implement-change command missing implementer workflow")
+	}
+	implementer, _ := os.ReadFile(filepath.Join(root, ".claude/agents/implementer.md"))
+	if !strings.Contains(string(implementer), "name: implementer") || !strings.Contains(string(implementer), "tools: Read, Write, Edit, Bash") {
+		t.Fatalf("team preset implementer template missing Claude Code frontmatter")
+	}
+	planner, _ := os.ReadFile(filepath.Join(root, ".claude/agents/planner.md"))
+	if !strings.Contains(string(planner), "name: planner") || !strings.Contains(string(planner), "tools: Read, Bash") || !strings.Contains(string(planner), "ncgo.workspace") {
+		t.Fatalf("team preset planner template missing Claude Code frontmatter")
+	}
+	docWriter, _ := os.ReadFile(filepath.Join(root, ".claude/agents/doc-writer.md"))
+	if !strings.Contains(string(docWriter), "name: doc-writer") || !strings.Contains(string(docWriter), "services/<name>/README.md") {
+		t.Fatalf("team preset doc-writer template missing repository-aware doc guidance")
+	}
+	reviewer, _ := os.ReadFile(filepath.Join(root, ".claude/agents/reviewer.md"))
+	if !strings.Contains(string(reviewer), "name: reviewer") || !strings.Contains(string(reviewer), "tools: Read, Bash") || !strings.Contains(string(reviewer), "context.Background()") {
+		t.Fatalf("team preset reviewer template missing Claude Code frontmatter")
+	}
+	debugger, _ := os.ReadFile(filepath.Join(root, ".claude/agents/debugger.md"))
+	if !strings.Contains(string(debugger), "name: debugger") || !strings.Contains(string(debugger), "tools: Read, Write, Edit, Bash") || !strings.Contains(string(debugger), "snapshot") || !strings.Contains(string(debugger), "go test -race") {
+		t.Fatalf("team preset debugger template missing Claude Code frontmatter")
 	}
 }
 

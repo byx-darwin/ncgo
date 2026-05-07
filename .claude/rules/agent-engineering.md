@@ -61,6 +61,8 @@ Use smoke checks for non-destructive entrypoint verification, such as:
 
 Smoke tests should be fast and safe.
 
+For the concrete patterns, naming conventions, golden test workflow, and per-surface checklist, follow `.claude/skills/write-tests.md`.
+
 ## 6. Validation Order
 
 Run validation from smallest and fastest to broadest and slowest:

@@ -102,7 +102,29 @@ Use this precedence model when generated and hand-authored content overlap:
 Generated files provide facts and context. They MUST NOT redefine repository policy.
 Local files may add personal guidance, but they SHOULD NOT weaken shared repository safety rules.
 
-## 7. Relationship to Current `ai sync`
+## 7. Agent File Format and Dispatch
+
+Files under `.claude/agents/*.md` are hand-authored Claude Code custom subagents.
+To be discoverable and dispatchable, each file SHOULD start with YAML frontmatter
+that defines at least:
+
+- `name`: stable agent identifier
+- `description`: when the agent should be used, written in task language such as `Use when ...`
+- `tools`: the minimum tool surface the agent needs
+
+The `description` field is especially important because Claude Code uses it to
+decide when an agent matches a task. Agent files remain repo-owned workflow
+artifacts and MUST NOT be overwritten by `ncgo ai sync`.
+
+The current repository keeps role-specific subagents such as:
+
+- `planner`
+- `implementer`
+- `reviewer`
+- `debugger`
+- `doc-writer`
+
+## 8. Relationship to Current `ai sync`
 
 Today `ncgo ai sync` writes:
 

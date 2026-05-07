@@ -48,6 +48,7 @@ type Options struct {
 type Result struct {
 	Written []string // relative paths actually written
 	Skipped []Skip   // relative paths intentionally not written
+	Notes   []string // optional informational lines for CLI summaries
 }
 
 // Skip describes a file an AI helper chose not to write and why.

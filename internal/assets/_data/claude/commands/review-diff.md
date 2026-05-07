@@ -1,6 +1,6 @@
 # Review diff
 
-Use this prompt before merging or handing off a change.
+Use the `reviewer` agent after `implementer` has completed focused validation.
 
 ## Checklist
 
@@ -9,3 +9,10 @@ Use this prompt before merging or handing off a change.
 - confirm tests/checks that were run
 - note whether docs were updated
 - call out any remaining risk or follow-up items
+
+End with exactly one review outcome:
+
+- `PASS`: safe to hand off or merge
+- `NEEDS REVISION`: specific gap plus the smallest fix required
+
+If user-facing behavior changed but docs were not updated, explicitly request a handoff to `doc-writer`.

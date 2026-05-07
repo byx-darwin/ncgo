@@ -215,6 +215,10 @@ ncgo ai init claude --root user-api
 ncgo ai init claude --root user-api --preset team
 ```
 
+命令会提示当前 `--root` 被识别为服务根目录、micro 工作区根目录，或暂时还无法识别。
+
+在非 dry-run 且成功初始化后，还会追加下一步建议：`ncgo ai sync --root <root> --lang en`。
+
 ```bash
 ncgo ai sync --root user-api --lang zh-CN
 ```

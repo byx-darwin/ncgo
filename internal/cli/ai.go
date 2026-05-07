@@ -107,11 +107,21 @@ func runAIInitClaude(cmd *cobra.Command, opts *aiInitClaudeOptions) error {
 		return err
 	}
 	printAIResult(cmd, res)
+	if !opts.dryRun {
+		root := opts.root
+		if root == "" {
+			root = "."
+		}
+		fmt.Fprintf(cmd.OutOrStdout(), "next: run ncgo ai sync --root %s --lang en\n", root)
+	}
 	return nil
 }
 
 func printAIResult(cmd *cobra.Command, res *ai.Result) {
 	out := cmd.OutOrStdout()
+	for _, note := range res.Notes {
+		fmt.Fprintf(out, "info: %s\n", note)
+	}
 	for _, p := range res.Written {
 		fmt.Fprintf(out, "wrote %s\n", p)
 	}

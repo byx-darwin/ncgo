@@ -48,9 +48,45 @@ They should normally be gitignored.
 ## Recommended Workflow
 
 1. Run `ncgo ai init claude --root .` once to bootstrap the minimal starter files.
-2. Optionally use `ncgo ai init claude --root . --preset team` for workflow starter docs.
+2. Optionally use `ncgo ai init claude --root . --preset team` for workflow starter docs and subagents such as `planner`, `implementer`, `reviewer`, `debugger`, and `doc-writer`.
 3. Edit `.claude/rules/*` to match your repository policy.
-4. Run `ncgo ai sync --root . --lang en` to refresh generated project facts.
+4. Run `ncgo ai sync --root . --lang en` to refresh generated project facts, especially `.claude/generated/project-context.md`.
+
+## Using External Go Skills
+
+Starter files under `.claude/` should stay short and repository-specific.
+Use external Go skills for deeper, on-demand guidance rather than copying full
+skill docs into this repository.
+
+Typical examples:
+
+- use a testing skill when designing table-driven tests, race checks, or golden updates
+- use a troubleshooting skill when a failure is flaky, timing-sensitive, or hard to reproduce
+- use a database or security skill when a diff touches repository, data-access, or user-boundary code
+
+Treat `.claude/rules/*`, `.claude/skills/*`, and `.claude/agents/*` as the
+repository policy layer, and external skills as the deep reference layer.
+
+## Mono vs Micro Repositories
+
+Starter files under `.claude/` are intentionally project-generic.
+
+{{PROJECT_SHAPE_GUIDANCE}}
+
+## Agent Files
+
+Files under `.claude/agents/*.md` are hand-authored Claude Code custom
+subagents.
+
+To be dispatchable, each agent file should begin with YAML frontmatter that
+defines:
+
+- `name`
+- `description`
+- `tools`
+
+Write `description` in task language such as `Use when ...` so Claude Code can
+match the agent to a request.
 
 ## Precedence
 

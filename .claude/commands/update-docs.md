@@ -1,8 +1,12 @@
 # Update docs
 
-When behavior changes:
+Use the `doc-writer` agent together with the [doc-sync](../skills/doc-sync.md) skill.
 
-1. update the nearest source-of-truth documentation
-2. sync English and Chinese variants where needed
-3. update worked examples if users or agents may copy them
-4. run markdown diagnostics
+For user-facing behavior changes:
+
+1. update the nearest English source-of-truth doc first
+2. sync the Chinese pair where one exists
+3. update worked examples together with command/output changes
+4. run markdown diagnostics if available
+
+Confirm which docs were updated and include the diagnostics command and result in the summary.
