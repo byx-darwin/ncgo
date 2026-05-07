@@ -194,6 +194,24 @@ layouts:
       rate_limit:
         # 总开关
         enabled: false
+        # 规则来源：config 只读本地配置；grpc / database 优先查动态规则，未命中再回退本地配置
+        source:
+          type: config # config | grpc | database
+          # 动态规则在进程内缓存多久；到期后重新查询
+          cache_ttl_seconds: 60
+          # 当动态规则源报错时，是否回退到本地配置规则
+          fallback_on_error: true
+        # gRPC 动态规则源配置；source.type=grpc 时使用
+        grpc:
+          # 规则中心地址；未配置时会回退本地规则
+          target: ""
+          timeout_milliseconds: 200
+          auth_header: Authorization
+          auth_token: ""
+          service_name: {{.ServiceName}}
+        # database hook 配置；source.type=database 时使用
+        database:
+          query_timeout_milliseconds: 200
         # 存储后端：memory 适合单实例，redis 适合集群/多副本
         backend: memory # memory | redis
         # 当限流存储异常时是否放行；false 更安全，true 更可用
@@ -212,36 +230,35 @@ layouts:
           - /readyz
         # 鉴权前限流：适合挡住匿名流量、探测流量和恶意请求
         pre_auth:
-          # 是否启用这一阶段的限流规则
           enabled: true
-          # 限流维度，可按 app key、用户、IP 等组合
-          key_by:
-            # 按 app key 限流
-            - ak
-            # 按来源 IP 兜底限流
-            - ip
-          # 稳态 QPS
-          requests_per_second: 100
-          # 令牌桶突发容量
-          burst: 200
-          # 每个客户端限流状态在缓存中的保留时长
-          client_ttl_seconds: 300
+          default_rule:
+            enabled: true
+            # 建议按 app key + path 做接口级限流，拿不到 app key 时回退到 IP
+            key_by:
+              - ak_path
+              - ip
+            # 默认采用固定窗口，便于与运营平台规则保持一致
+            strategy: fixed_window # fixed_window | token_bucket
+            window_seconds: 60
+            max_requests: 100
+            # 限流状态在本地/Redis 中的保留时长
+            client_ttl_seconds: 300
+          # 本地细粒度兜底规则；按 app_key / method / path / path_prefix 匹配
+          rules: []
         # 鉴权后限流：适合按登录用户或租户做精细控制
         post_auth:
           enabled: false
-          key_by:
-            # 同时按 app key + user uuid 维度限流
-            - ak_user_uuid
-            # 仅按 user uuid 限流
-            - user_uuid
-            # 按 app key 限流
-            - ak
-          # 稳态 QPS
-          requests_per_second: 50
-          # 令牌桶突发容量
-          burst: 100
-          # 每个客户端限流状态在缓存中的保留时长
-          client_ttl_seconds: 300
+          default_rule:
+            enabled: true
+            key_by:
+              - ak_user_uuid
+              - user_uuid
+              - ak
+            strategy: fixed_window
+            window_seconds: 60
+            max_requests: 50
+            client_ttl_seconds: 300
+          rules: []
         # redis 后端高级配置；仅 backend=redis 时生效
         redis:
           # Redis 节点地址列表；单机、主从、哨兵都复用这一字段
@@ -490,21 +507,59 @@ layouts:
       }
 
       type RateLimitConfig struct {
-          Enabled      bool                `json:"enabled" yaml:"enabled"`
-          Backend      string              `json:"backend" yaml:"backend"`
-          FailOpen     bool                `json:"fail_open" yaml:"fail_open"`
-          KeyPrefix    string              `json:"key_prefix" yaml:"key_prefix"`
-          AppKeyHeader string              `json:"app_key_header" yaml:"app_key_header"`
-          SkipPaths    []string            `json:"skip_paths" yaml:"skip_paths"`
-          PreAuth      RateLimitRuleConfig `json:"pre_auth" yaml:"pre_auth"`
-          PostAuth     RateLimitRuleConfig `json:"post_auth" yaml:"post_auth"`
-          Memory       MemoryCacheConfig   `json:"memory" yaml:"memory"`
+          Enabled      bool                 `json:"enabled" yaml:"enabled"`
+          Source       RateLimitSourceConfig `json:"source" yaml:"source"`
+          GRPC         RateLimitGRPCConfig  `json:"grpc" yaml:"grpc"`
+          Database     RateLimitDatabaseConfig `json:"database" yaml:"database"`
+          Backend      string               `json:"backend" yaml:"backend"`
+          FailOpen     bool                 `json:"fail_open" yaml:"fail_open"`
+          KeyPrefix    string               `json:"key_prefix" yaml:"key_prefix"`
+          AppKeyHeader string               `json:"app_key_header" yaml:"app_key_header"`
+          SkipPaths    []string             `json:"skip_paths" yaml:"skip_paths"`
+          PreAuth      RateLimitPhaseConfig `json:"pre_auth" yaml:"pre_auth"`
+          PostAuth     RateLimitPhaseConfig `json:"post_auth" yaml:"post_auth"`
+          Memory       MemoryCacheConfig    `json:"memory" yaml:"memory"`
           Redis        RateLimitRedisConfig `json:"redis" yaml:"redis"`
+      }
+
+      type RateLimitSourceConfig struct {
+          Type            string `json:"type" yaml:"type"`
+          CacheTTLSeconds int    `json:"cache_ttl_seconds" yaml:"cache_ttl_seconds"`
+          FallbackOnError bool   `json:"fallback_on_error" yaml:"fallback_on_error"`
+      }
+
+      type RateLimitGRPCConfig struct {
+          Target              string `json:"target" yaml:"target"`
+          TimeoutMilliseconds int    `json:"timeout_milliseconds" yaml:"timeout_milliseconds"`
+          AuthHeader          string `json:"auth_header" yaml:"auth_header"`
+          AuthToken           string `json:"auth_token" yaml:"auth_token"`
+          ServiceName         string `json:"service_name" yaml:"service_name"`
+      }
+
+      type RateLimitDatabaseConfig struct {
+          QueryTimeoutMilliseconds int `json:"query_timeout_milliseconds" yaml:"query_timeout_milliseconds"`
+      }
+
+      type RateLimitPhaseConfig struct {
+          Enabled     bool                   `json:"enabled" yaml:"enabled"`
+          DefaultRule RateLimitRuleConfig    `json:"default_rule" yaml:"default_rule"`
+          Rules       []RateLimitMatchConfig `json:"rules" yaml:"rules"`
+      }
+
+      type RateLimitMatchConfig struct {
+          AppKey     string              `json:"app_key" yaml:"app_key"`
+          Method     string              `json:"method" yaml:"method"`
+          Path       string              `json:"path" yaml:"path"`
+          PathPrefix string              `json:"path_prefix" yaml:"path_prefix"`
+          Rule       RateLimitRuleConfig `json:"rule" yaml:"rule"`
       }
 
       type RateLimitRuleConfig struct {
           Enabled           bool     `json:"enabled" yaml:"enabled"`
           KeyBy             []string `json:"key_by" yaml:"key_by"`
+          Strategy          string   `json:"strategy" yaml:"strategy"`
+          WindowSeconds     int      `json:"window_seconds" yaml:"window_seconds"`
+          MaxRequests       int      `json:"max_requests" yaml:"max_requests"`
           RequestsPerSecond float64  `json:"requests_per_second" yaml:"requests_per_second"`
           Burst             int      `json:"burst" yaml:"burst"`
           ClientTTLSeconds  int      `json:"client_ttl_seconds" yaml:"client_ttl_seconds"`
@@ -674,45 +729,65 @@ layouts:
                   MaxAgeSeconds: 600,
               },
               RateLimit: RateLimitConfig{
+                  Source: RateLimitSourceConfig{
+                      Type:            "config",
+                      CacheTTLSeconds: 60,
+                      FallbackOnError: true,
+                  },
+                  GRPC: RateLimitGRPCConfig{
+                      TimeoutMilliseconds: 200,
+                      AuthHeader:          "Authorization",
+                  },
+                  Database: RateLimitDatabaseConfig{
+                      QueryTimeoutMilliseconds: 200,
+                  },
                   Backend:      "memory",
                   KeyPrefix:    "rate_limit",
                   AppKeyHeader: "X-App-Key",
-                      Memory:       MemoryCacheConfig{MaxEntries: 100000},
+                  Memory:       MemoryCacheConfig{MaxEntries: 100000},
                   SkipPaths:    []string{"/healthz", "/readyz"},
-                  PreAuth: RateLimitRuleConfig{
-                      Enabled:           true,
-                      KeyBy:             []string{"ak", "ip"},
-                      RequestsPerSecond: 100,
-                      Burst:             200,
-                      ClientTTLSeconds:  300,
+                  PreAuth: RateLimitPhaseConfig{
+                      Enabled: true,
+                      DefaultRule: RateLimitRuleConfig{
+                          Enabled:          true,
+                          KeyBy:            []string{"ak_path", "ip"},
+                          Strategy:         "fixed_window",
+                          WindowSeconds:    60,
+                          MaxRequests:      100,
+                          ClientTTLSeconds: 300,
+                      },
                   },
-                  PostAuth: RateLimitRuleConfig{
-                      KeyBy:             []string{"ak_user_uuid", "user_uuid", "ak"},
-                      RequestsPerSecond: 50,
-                      Burst:             100,
-                      ClientTTLSeconds:  300,
+                  PostAuth: RateLimitPhaseConfig{
+                      DefaultRule: RateLimitRuleConfig{
+                          Enabled:          true,
+                          KeyBy:            []string{"ak_user_uuid", "user_uuid", "ak"},
+                          Strategy:         "fixed_window",
+                          WindowSeconds:    60,
+                          MaxRequests:      50,
+                          ClientTTLSeconds: 300,
+                      },
                   },
                   Redis: RateLimitRedisConfig{
-                      Addrs:                       []string{"127.0.0.1:6379"},
-                      Protocol:                    3,
-                      MaxRetries:                  3,
-                      MinRetryBackoffMilliseconds: 8,
-                      MaxRetryBackoffMilliseconds: 512,
-                      DialTimeoutSeconds:          5,
-                      DialerRetries:               5,
+                      Addrs:                          []string{"127.0.0.1:6379"},
+                      Protocol:                       3,
+                      MaxRetries:                     3,
+                      MinRetryBackoffMilliseconds:    8,
+                      MaxRetryBackoffMilliseconds:    512,
+                      DialTimeoutSeconds:             5,
+                      DialerRetries:                  5,
                       DialerRetryTimeoutMilliseconds: 100,
-                      ReadTimeoutSeconds:          3,
-                      WriteTimeoutSeconds:         3,
-                      ContextTimeoutEnabled:       true,
-                      ReadBufferSize:              32768,
-                      WriteBufferSize:             32768,
-                      PoolSize:                    10,
-                      MinIdleConns:                2,
-                      PoolTimeoutSeconds:          4,
-                      ConnMaxIdleTimeSeconds:      300,
-                      ConnMaxLifetimeSeconds:      1800,
-                      MaxRedirects:                3,
-                      FailingTimeoutSeconds:       15,
+                      ReadTimeoutSeconds:             3,
+                      WriteTimeoutSeconds:            3,
+                      ContextTimeoutEnabled:          true,
+                      ReadBufferSize:                 32768,
+                      WriteBufferSize:                32768,
+                      PoolSize:                       10,
+                      MinIdleConns:                   2,
+                      PoolTimeoutSeconds:             4,
+                      ConnMaxIdleTimeSeconds:         300,
+                      ConnMaxLifetimeSeconds:         1800,
+                      MaxRedirects:                   3,
+                      FailingTimeoutSeconds:          15,
                   },
               },
               Idempotency: IdempotencyConfig{
@@ -800,6 +875,17 @@ layouts:
               return oops.In("config").Code(10308).Public("config_invalid").New("cors.allow_credentials cannot be true when allow_origins contains *")
           }
           if c.RateLimit.Enabled {
+              switch c.RateLimit.Source.Type {
+              case "", "config", "grpc", "database":
+              default:
+                  return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.source.type must be config, grpc, or database")
+              }
+              if c.RateLimit.Source.Type == "grpc" && c.RateLimit.GRPC.TimeoutMilliseconds <= 0 {
+                  return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.grpc.timeout_milliseconds must be positive")
+              }
+              if c.RateLimit.Source.Type == "database" && c.RateLimit.Database.QueryTimeoutMilliseconds <= 0 {
+                  return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.database.query_timeout_milliseconds must be positive")
+              }
               switch c.RateLimit.Backend {
               case "", "memory", "redis":
               default:
@@ -812,12 +898,12 @@ layouts:
                   return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.memory.max_entries must not be negative")
               }
               if !c.RateLimit.PreAuth.Enabled && !c.RateLimit.PostAuth.Enabled {
-                  return oops.In("config").Code(10308).Public("config_invalid").New("at least one rate_limit rule must be enabled")
+                  return oops.In("config").Code(10308).Public("config_invalid").New("at least one rate_limit phase must be enabled")
               }
-              if err := validateRateLimitRule("rate_limit.pre_auth", c.RateLimit.PreAuth); err != nil {
+              if err := validateRateLimitPhase("rate_limit.pre_auth", c.RateLimit.PreAuth); err != nil {
                   return err
               }
-              if err := validateRateLimitRule("rate_limit.post_auth", c.RateLimit.PostAuth); err != nil {
+              if err := validateRateLimitPhase("rate_limit.post_auth", c.RateLimit.PostAuth); err != nil {
                   return err
               }
           }
@@ -843,15 +929,71 @@ layouts:
           return nil
       }
 
+      func validateRateLimitPhase(name string, phase RateLimitPhaseConfig) error {
+          if !phase.Enabled {
+              return nil
+          }
+          if err := validateRateLimitRule(name+".default_rule", phase.DefaultRule); err != nil {
+              return err
+          }
+          for i, rule := range phase.Rules {
+              if err := validateRateLimitMatch(name, i, rule); err != nil {
+                  return err
+              }
+          }
+          return nil
+      }
+
+      func validateRateLimitMatch(name string, index int, match RateLimitMatchConfig) error {
+          if strings.TrimSpace(match.AppKey) == "" && strings.TrimSpace(match.Method) == "" && strings.TrimSpace(match.Path) == "" && strings.TrimSpace(match.PathPrefix) == "" {
+              return oops.In("config").Code(10308).Public("config_invalid").New(name + ".rules entry must specify at least one matcher")
+          }
+          if method := strings.TrimSpace(match.Method); method != "" {
+              switch strings.ToUpper(method) {
+              case "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD":
+              default:
+                  _ = index
+                  return oops.In("config").Code(10308).Public("config_invalid").New(name + ".rules.method is invalid")
+              }
+          }
+          if path := strings.TrimSpace(match.Path); path != "" && !strings.HasPrefix(path, "/") {
+              return oops.In("config").Code(10308).Public("config_invalid").New(name + ".rules.path must start with /")
+          }
+          if prefix := strings.TrimSpace(match.PathPrefix); prefix != "" && !strings.HasPrefix(prefix, "/") {
+              return oops.In("config").Code(10308).Public("config_invalid").New(name + ".rules.path_prefix must start with /")
+          }
+          return validateRateLimitRule(name+".rules.rule", match.Rule)
+      }
+
       func validateRateLimitRule(name string, rule RateLimitRuleConfig) error {
           if !rule.Enabled {
               return nil
           }
-          if rule.RequestsPerSecond <= 0 {
-              return oops.In("config").Code(10308).Public("config_invalid").New(name + ".requests_per_second must be positive")
+          strategy := strings.TrimSpace(rule.Strategy)
+          if strategy == "" {
+              if rule.RequestsPerSecond > 0 || rule.Burst > 0 {
+                  strategy = "token_bucket"
+              } else {
+                  strategy = "fixed_window"
+              }
           }
-          if rule.Burst <= 0 {
-              return oops.In("config").Code(10308).Public("config_invalid").New(name + ".burst must be positive")
+          switch strategy {
+          case "token_bucket":
+              if rule.RequestsPerSecond <= 0 {
+                  return oops.In("config").Code(10308).Public("config_invalid").New(name + ".requests_per_second must be positive")
+              }
+              if rule.Burst <= 0 {
+                  return oops.In("config").Code(10308).Public("config_invalid").New(name + ".burst must be positive")
+              }
+          case "fixed_window":
+              if rule.WindowSeconds <= 0 {
+                  return oops.In("config").Code(10308).Public("config_invalid").New(name + ".window_seconds must be positive")
+              }
+              if rule.MaxRequests <= 0 {
+                  return oops.In("config").Code(10308).Public("config_invalid").New(name + ".max_requests must be positive")
+              }
+          default:
+              return oops.In("config").Code(10308).Public("config_invalid").New(name + ".strategy must be token_bucket or fixed_window")
           }
           return nil
       }
@@ -3806,6 +3948,526 @@ layouts:
           }
       }
 
+  # ── pkg/ratelimit: rule resolution ─────────────────────────────────────────
+  - path: internal/pkg/ratelimit/resolver.go
+    delims: ["{{", "}}"]
+    body: |-
+      package ratelimit
+
+      import (
+          "context"
+          "strings"
+          "sync"
+          "time"
+
+          "{{.GoModule}}/internal/base/conf"
+      )
+
+      type Lookup struct {
+          Phase    string
+          AppKey   string
+          Method   string
+          Path     string
+          UserUUID string
+          ClientIP string
+      }
+
+      type ResolvedRule struct {
+          Rule   conf.RateLimitRuleConfig
+          Source string
+      }
+
+      // GRPCClient is implemented by the generated project when a real dynamic
+      // rule-center gRPC client is available.
+      //
+      // Return values must follow this contract:
+      //   - (rule, true, nil): matched a remote rule
+      //   - (nil, false, nil): remote source answered "not found"
+      //   - (nil, false, err): remote query failed
+      type GRPCClient interface {
+          ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error)
+      }
+
+      // DatabaseHook is implemented by the generated project when rate-limit
+      // rules are stored in a business-owned database.
+      // Return contract is the same as GRPCClient.
+      type DatabaseHook interface {
+          ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error)
+      }
+
+      // ResolveFunc adapts a plain function to both GRPCClient and DatabaseHook.
+      // It is the lightest-weight way to wire a project-specific gRPC client or
+      // repository query into ratelimit.Options without defining extra wrapper structs.
+      type ResolveFunc func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error)
+
+      func (f ResolveFunc) ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+          if f == nil {
+              return nil, false, nil
+          }
+          return f(ctx, lookup)
+      }
+
+      type Options struct {
+          GRPC     GRPCClient
+          Database DatabaseHook
+      }
+
+      type source interface {
+          ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error)
+      }
+
+      type Resolver struct {
+          cfg     conf.RateLimitConfig
+          dynamic source
+      }
+
+      func NewResolver(cfg conf.RateLimitConfig, opts Options) *Resolver {
+          cfg = NormalizeConfig(cfg)
+          var dynamic source
+          switch cfg.Source.Type {
+          case "grpc":
+              dynamic = &grpcSource{client: opts.GRPC, timeout: durationMilliseconds(cfg.GRPC.TimeoutMilliseconds)}
+          case "database":
+              dynamic = &databaseSource{hook: opts.Database, timeout: durationMilliseconds(cfg.Database.QueryTimeoutMilliseconds)}
+          }
+          if dynamic != nil {
+              dynamic = newCachedSource(cfg.Source.CacheTTLSeconds, dynamic)
+          }
+          return &Resolver{cfg: cfg, dynamic: dynamic}
+      }
+
+      func (r *Resolver) Resolve(ctx context.Context, lookup Lookup) (ResolvedRule, error) {
+          lookup = normalizeLookup(lookup)
+          if r != nil && r.dynamic != nil {
+              rule, found, err := r.dynamic.ResolveRateLimitRule(ctx, lookup)
+              switch {
+              case err == nil && found && rule != nil:
+                  return ResolvedRule{Rule: NormalizeRule(*rule), Source: r.cfg.Source.Type}, nil
+              case err != nil && !r.cfg.Source.FallbackOnError:
+                  return ResolvedRule{}, err
+              }
+          }
+          phase := conf.RateLimitPhaseConfig{}
+          if r != nil {
+              phase = r.phaseConfig(lookup.Phase)
+          }
+          if rule, ok := matchLocalRule(phase, lookup); ok {
+              return ResolvedRule{Rule: NormalizeRule(rule), Source: "config"}, nil
+          }
+          return ResolvedRule{Rule: NormalizeRule(phase.DefaultRule), Source: "config"}, nil
+      }
+
+      func (r *Resolver) phaseConfig(phase string) conf.RateLimitPhaseConfig {
+          if strings.EqualFold(strings.TrimSpace(phase), "post_auth") {
+              return r.cfg.PostAuth
+          }
+          return r.cfg.PreAuth
+      }
+
+      func NormalizeConfig(cfg conf.RateLimitConfig) conf.RateLimitConfig {
+          if cfg.Source.Type == "" {
+              cfg.Source.Type = "config"
+          }
+          if cfg.Backend == "" {
+              cfg.Backend = "memory"
+          }
+          if cfg.KeyPrefix == "" {
+              cfg.KeyPrefix = "rate_limit"
+          }
+          if cfg.AppKeyHeader == "" {
+              cfg.AppKeyHeader = "X-App-Key"
+          }
+          if cfg.Memory.MaxEntries <= 0 {
+              cfg.Memory.MaxEntries = 100000
+          }
+          if cfg.Source.CacheTTLSeconds <= 0 {
+              cfg.Source.CacheTTLSeconds = 60
+          }
+          if cfg.GRPC.TimeoutMilliseconds <= 0 {
+              cfg.GRPC.TimeoutMilliseconds = 200
+          }
+          if cfg.Database.QueryTimeoutMilliseconds <= 0 {
+              cfg.Database.QueryTimeoutMilliseconds = 200
+          }
+          return cfg
+      }
+
+      func NormalizeRule(rule conf.RateLimitRuleConfig) conf.RateLimitRuleConfig {
+          if len(rule.KeyBy) == 0 {
+              rule.KeyBy = []string{"ip"}
+          }
+          if rule.ClientTTLSeconds <= 0 {
+              rule.ClientTTLSeconds = 300
+          }
+          if rule.Strategy == "" {
+              if rule.RequestsPerSecond > 0 || rule.Burst > 0 {
+                  rule.Strategy = "token_bucket"
+              } else {
+                  rule.Strategy = "fixed_window"
+              }
+          }
+          switch strings.ToLower(strings.TrimSpace(rule.Strategy)) {
+          case "token_bucket":
+              rule.Strategy = "token_bucket"
+              if rule.RequestsPerSecond <= 0 {
+                  rule.RequestsPerSecond = 100
+              }
+              if rule.Burst <= 0 {
+                  rule.Burst = 200
+              }
+          default:
+              rule.Strategy = "fixed_window"
+              if rule.WindowSeconds <= 0 {
+                  rule.WindowSeconds = 60
+              }
+              if rule.MaxRequests <= 0 {
+                  rule.MaxRequests = 100
+              }
+          }
+          return rule
+      }
+
+      func matchLocalRule(phase conf.RateLimitPhaseConfig, lookup Lookup) (conf.RateLimitRuleConfig, bool) {
+          bestScore := -1
+          bestRule := conf.RateLimitRuleConfig{}
+          for _, candidate := range phase.Rules {
+              if !candidate.Rule.Enabled {
+                  continue
+              }
+              score, ok := matchScore(candidate, lookup)
+              if !ok {
+                  continue
+              }
+              if score <= bestScore {
+                  continue
+              }
+              bestScore = score
+              bestRule = candidate.Rule
+          }
+          if bestScore >= 0 {
+              return bestRule, true
+          }
+          return conf.RateLimitRuleConfig{}, false
+      }
+
+      func matchScore(candidate conf.RateLimitMatchConfig, lookup Lookup) (int, bool) {
+          if !matchRule(candidate, lookup) {
+              return 0, false
+          }
+          score := 0
+          if path := strings.TrimSpace(candidate.Path); path != "" {
+              score += 1000 + len(path)
+          }
+          if prefix := strings.TrimSpace(candidate.PathPrefix); prefix != "" {
+              score += 100 + len(prefix)
+          }
+          if strings.TrimSpace(candidate.AppKey) != "" {
+              score += 10
+          }
+          if strings.TrimSpace(candidate.Method) != "" {
+              score += 1
+          }
+          return score, true
+      }
+
+      func matchRule(candidate conf.RateLimitMatchConfig, lookup Lookup) bool {
+          if strings.TrimSpace(candidate.AppKey) != "" && !strings.EqualFold(strings.TrimSpace(candidate.AppKey), lookup.AppKey) {
+              return false
+          }
+          if strings.TrimSpace(candidate.Method) != "" && strings.ToUpper(strings.TrimSpace(candidate.Method)) != lookup.Method {
+              return false
+          }
+          if strings.TrimSpace(candidate.Path) != "" && strings.TrimSpace(candidate.Path) != lookup.Path {
+              return false
+          }
+          if strings.TrimSpace(candidate.PathPrefix) != "" && !strings.HasPrefix(lookup.Path, strings.TrimSpace(candidate.PathPrefix)) {
+              return false
+          }
+          return strings.TrimSpace(candidate.AppKey) != "" || strings.TrimSpace(candidate.Method) != "" || strings.TrimSpace(candidate.Path) != "" || strings.TrimSpace(candidate.PathPrefix) != ""
+      }
+
+      func normalizeLookup(lookup Lookup) Lookup {
+          lookup.Phase = strings.ToLower(strings.TrimSpace(lookup.Phase))
+          lookup.AppKey = strings.TrimSpace(lookup.AppKey)
+          lookup.Method = strings.ToUpper(strings.TrimSpace(lookup.Method))
+          lookup.Path = strings.TrimSpace(lookup.Path)
+          lookup.UserUUID = strings.TrimSpace(lookup.UserUUID)
+          lookup.ClientIP = strings.TrimSpace(lookup.ClientIP)
+          return lookup
+      }
+
+      type grpcSource struct {
+          client  GRPCClient
+          timeout time.Duration
+      }
+
+      func (s *grpcSource) ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+          if s == nil || s.client == nil {
+              return nil, false, nil
+          }
+          if s.timeout > 0 {
+              var cancel context.CancelFunc
+              ctx, cancel = context.WithTimeout(ctx, s.timeout)
+              defer cancel()
+          }
+          return s.client.ResolveRateLimitRule(ctx, lookup)
+      }
+
+      type databaseSource struct {
+          hook    DatabaseHook
+          timeout time.Duration
+      }
+
+      func (s *databaseSource) ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+          if s == nil || s.hook == nil {
+              return nil, false, nil
+          }
+          if s.timeout > 0 {
+              var cancel context.CancelFunc
+              ctx, cancel = context.WithTimeout(ctx, s.timeout)
+              defer cancel()
+          }
+          return s.hook.ResolveRateLimitRule(ctx, lookup)
+      }
+
+      type cachedSource struct {
+          next   source
+          ttl    time.Duration
+          mu     sync.Mutex
+          values map[string]cacheEntry
+      }
+
+      type cacheEntry struct {
+          rule      conf.RateLimitRuleConfig
+          found     bool
+          expiresAt time.Time
+      }
+
+      func newCachedSource(ttlSeconds int, next source) source {
+          if next == nil {
+              return nil
+          }
+          ttl := time.Duration(ttlSeconds) * time.Second
+          if ttl <= 0 {
+              ttl = 60 * time.Second
+          }
+          return &cachedSource{next: next, ttl: ttl, values: map[string]cacheEntry{}}
+      }
+
+      func (s *cachedSource) ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+          key := cacheKey(lookup)
+          now := time.Now()
+          s.mu.Lock()
+          if entry, ok := s.values[key]; ok && now.Before(entry.expiresAt) {
+              s.mu.Unlock()
+              if !entry.found {
+                  return nil, false, nil
+              }
+              rule := entry.rule
+              return &rule, true, nil
+          }
+          s.mu.Unlock()
+
+          rule, found, err := s.next.ResolveRateLimitRule(ctx, lookup)
+          if err != nil {
+              return nil, false, err
+          }
+          entry := cacheEntry{found: found, expiresAt: now.Add(s.ttl)}
+          if found && rule != nil {
+              entry.rule = *rule
+          }
+          s.mu.Lock()
+          s.values[key] = entry
+          s.mu.Unlock()
+          if !found || rule == nil {
+              return nil, false, nil
+          }
+          return rule, true, nil
+      }
+
+      func cacheKey(lookup Lookup) string {
+          return strings.Join([]string{lookup.Phase, lookup.AppKey, lookup.Method, lookup.Path}, "|")
+      }
+
+      func durationMilliseconds(value int) time.Duration {
+          if value <= 0 {
+              return 0
+          }
+          return time.Duration(value) * time.Millisecond
+      }
+
+  - path: internal/pkg/ratelimit/resolver_test.go
+    delims: ["{{", "}}"]
+    body: |-
+      package ratelimit
+
+      import (
+          "context"
+          "errors"
+          "testing"
+          "time"
+
+          "{{.GoModule}}/internal/base/conf"
+      )
+
+      func TestResolverMatchesLocalRuleByAppKeyAndPath(t *testing.T) {
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {AppKey: "app-1", Path: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 2}} } }}, Options{})
+          got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
+          if err != nil {
+              t.Fatalf("Resolve: %v", err)
+          }
+          if got.Rule.MaxRequests != 2 || got.Source != "config" {
+              t.Fatalf("got %+v, want matched local rule", got)
+          }
+      }
+
+      func TestResolverPrefersMoreSpecificLocalRule(t *testing.T) {
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {PathPrefix: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 8}}, {Path: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 6}}, {AppKey: "app-1", Path: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 4}}, {AppKey: "app-1", Method: "GET", Path: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 2}} } }}, Options{})
+          got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
+          if err != nil {
+              t.Fatalf("Resolve: %v", err)
+          }
+          if got.Rule.MaxRequests != 2 || got.Source != "config" {
+              t.Fatalf("got %+v, want most specific local rule", got)
+          }
+      }
+
+      func TestResolverFallsBackToDefaultRule(t *testing.T) {
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 9}}}, Options{})
+          got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "missing", Path: "/unknown"})
+          if err != nil {
+              t.Fatalf("Resolve: %v", err)
+          }
+          if got.Rule.MaxRequests != 9 {
+              t.Fatalf("max_requests = %d, want 9", got.Rule.MaxRequests)
+          }
+      }
+
+      func TestResolverUsesDynamicRuleWhenPresent(t *testing.T) {
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}}, Options{GRPC: fakeGRPCClient{rule: &conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 3}, found: true}})
+          got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
+          if err != nil {
+              t.Fatalf("Resolve: %v", err)
+          }
+          if got.Source != "grpc" || got.Rule.MaxRequests != 3 {
+              t.Fatalf("got %+v, want grpc rule", got)
+          }
+      }
+
+      func TestResolverFallsBackWhenDynamicSourceErrors(t *testing.T) {
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}, PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 8}}}, Options{GRPC: fakeGRPCClient{err: errors.New("boom")}})
+          got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
+          if err != nil {
+              t.Fatalf("Resolve: %v", err)
+          }
+          if got.Rule.MaxRequests != 8 || got.Source != "config" {
+              t.Fatalf("got %+v, want default config rule", got)
+          }
+      }
+
+      func TestResolverReturnsErrorWhenDynamicSourceErrorsAndFallbackDisabled(t *testing.T) {
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: false}}, Options{GRPC: fakeGRPCClient{err: errors.New("boom")}})
+          if _, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"}); err == nil {
+              t.Fatalf("Resolve error = nil, want propagated dynamic source error")
+          }
+      }
+
+      func TestResolverCachesNegativeLookup(t *testing.T) {
+          client := &countingGRPCClient{}
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}}, Options{GRPC: client})
+          _, _ = resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
+          _, _ = resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
+          if client.calls != 1 {
+              t.Fatalf("calls = %d, want 1", client.calls)
+          }
+      }
+
+      func TestResolverCachesPositiveLookupUntilTTLExpires(t *testing.T) {
+          calls := 0
+          maxRequests := 3
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 1, FallbackOnError: true}}, Options{GRPC: ResolveFunc(func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+              _ = ctx
+              _ = lookup
+              calls++
+              return &conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: maxRequests}, true, nil
+          })})
+
+          first, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
+          if err != nil {
+              t.Fatalf("Resolve first: %v", err)
+          }
+          if first.Rule.MaxRequests != 3 {
+              t.Fatalf("first max_requests = %d, want 3", first.Rule.MaxRequests)
+          }
+
+          maxRequests = 7
+          second, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
+          if err != nil {
+              t.Fatalf("Resolve second: %v", err)
+          }
+          if second.Rule.MaxRequests != 3 {
+              t.Fatalf("second max_requests = %d, want cached 3", second.Rule.MaxRequests)
+          }
+          if calls != 1 {
+              t.Fatalf("calls = %d, want 1 before ttl expiry", calls)
+          }
+
+          time.Sleep(1100 * time.Millisecond)
+
+          third, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
+          if err != nil {
+              t.Fatalf("Resolve third: %v", err)
+          }
+          if third.Rule.MaxRequests != 7 {
+              t.Fatalf("third max_requests = %d, want refreshed 7", third.Rule.MaxRequests)
+          }
+          if calls != 2 {
+              t.Fatalf("calls = %d, want 2 after ttl expiry", calls)
+          }
+      }
+
+      func TestResolverCacheKeySeparatesPhaseAndMethod(t *testing.T) {
+          calls := 0
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}}, Options{GRPC: ResolveFunc(func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+              _ = ctx
+              calls++
+              return &conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: len(lookup.Phase) + len(lookup.Method)}, true, nil
+          })})
+
+          _, _ = resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
+          _, _ = resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
+          _, _ = resolver.Resolve(context.Background(), Lookup{Phase: "post_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
+          _, _ = resolver.Resolve(context.Background(), Lookup{Phase: "post_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
+          _, _ = resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Method: "POST", Path: "/orders"})
+
+          if calls != 3 {
+              t.Fatalf("calls = %d, want 3 distinct cache keys", calls)
+          }
+      }
+
+      type fakeGRPCClient struct {
+          rule  *conf.RateLimitRuleConfig
+          found bool
+          err   error
+      }
+
+      func (c fakeGRPCClient) ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+          _ = ctx
+          _ = lookup
+          return c.rule, c.found, c.err
+      }
+
+      type countingGRPCClient struct {
+          calls int
+      }
+
+      func (c *countingGRPCClient) ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+          _ = ctx
+          _ = lookup
+          c.calls++
+          return nil, false, nil
+      }
+
   # ── pkg/middleware: rate limit ─────────────────────────────────────────────
   - path: internal/pkg/middleware/rate_limit.go
     delims: ["{{", "}}"]
@@ -3815,20 +4477,21 @@ layouts:
       import (
           "context"
           "net"
+          "strings"
           "sync"
           "time"
-          "strings"
 
           "github.com/cloudwego/hertz/pkg/app"
           "github.com/redis/go-redis/v9"
-              "github.com/samber/hot"
+          "github.com/samber/hot"
 
           "{{.GoModule}}/internal/base/conf"
+          "{{.GoModule}}/internal/pkg/ratelimit"
           "{{.GoModule}}/internal/pkg/response"
       )
 
       type rateLimitStore interface {
-          Allow(ctx context.Context, key string, rate float64, burst int, ttl time.Duration) (bool, error)
+          Allow(ctx context.Context, key string, rule conf.RateLimitRuleConfig) (bool, error)
       }
 
       type rateBucket struct {
@@ -3836,24 +4499,59 @@ layouts:
           last   time.Time
       }
 
-      type memoryRateLimitStore struct {
-              mu      sync.Mutex
-              buckets *hot.HotCache[string, *rateBucket]
+      type fixedWindowCounter struct {
+          count int
+          start time.Time
       }
 
-      func RateLimit(cfg conf.RateLimitConfig, rule conf.RateLimitRuleConfig) app.HandlerFunc {
-          cfg = normalizeRateLimitConfig(cfg)
-          rule = normalizeRateLimitRule(rule)
+      type memoryRateLimitStore struct {
+          mu      sync.Mutex
+          buckets *hot.HotCache[string, *rateBucket]
+          windows *hot.HotCache[string, *fixedWindowCounter]
+      }
+
+      func RateLimit(phase string, cfg conf.RateLimitConfig, phaseCfg conf.RateLimitPhaseConfig, resolver *ratelimit.Resolver) app.HandlerFunc {
+          return rateLimitWithStore(phase, cfg, phaseCfg, resolver, nil)
+      }
+
+      func rateLimitWithStore(phase string, cfg conf.RateLimitConfig, phaseCfg conf.RateLimitPhaseConfig, resolver *ratelimit.Resolver, store rateLimitStore) app.HandlerFunc {
+          cfg = ratelimit.NormalizeConfig(cfg)
           skipper := PathSkipper(cfg.SkipPaths...)
-          store := newRateLimitStore(cfg)
-          ttl := time.Duration(rule.ClientTTLSeconds) * time.Second
+          if store == nil {
+              store = newRateLimitStore(cfg)
+          }
+          if resolver == nil {
+              resolver = ratelimit.NewResolver(cfg, ratelimit.Options{})
+          }
           return func(ctx context.Context, c *app.RequestContext) {
-              if !cfg.Enabled || !rule.Enabled || skipper(ctx, c) {
+              if !cfg.Enabled || !phaseCfg.Enabled || skipper(ctx, c) {
+                  c.Next(ctx)
+                  return
+              }
+              resolved, err := resolver.Resolve(ctx, ratelimit.Lookup{
+                  Phase:    phase,
+                  AppKey:   rateLimitAppKey(c, cfg),
+                  Method:   string(c.Method()),
+                  Path:     rateLimitPath(c),
+                  UserUUID: rateLimitUserUUID(c),
+                  ClientIP: requestIP(c),
+              })
+              if err != nil {
+                  if cfg.FailOpen {
+                      c.Next(ctx)
+                      return
+                  }
+                  response.ErrorCode(c, response.CodeCacheUnavailable)
+                  c.Abort()
+                  return
+              }
+              rule := ratelimit.NormalizeRule(resolved.Rule)
+              if !rule.Enabled {
                   c.Next(ctx)
                   return
               }
               key := rateLimitKey(c, cfg, rule.KeyBy)
-              ok, err := store.Allow(ctx, key, rule.RequestsPerSecond, rule.Burst, ttl)
+              ok, err := store.Allow(ctx, key, rule)
               if err != nil {
                   if cfg.FailOpen {
                       c.Next(ctx)
@@ -3876,12 +4574,16 @@ layouts:
           if cfg.Backend == "redis" {
               return &redisRateLimitStore{client: redis.NewUniversalClient(redisUniversalOptions(cfg.Redis))}
           }
-              return newMemoryRateLimitStore(cfg.Memory.MaxEntries)
+          return newMemoryRateLimitStore(cfg.Memory.MaxEntries)
       }
 
-          func newMemoryRateLimitStore(maxEntries int) *memoryRateLimitStore {
-              return &memoryRateLimitStore{buckets: hot.NewHotCache[string, *rateBucket](hot.LRU, memoryCacheMaxEntries(maxEntries)).Build()}
+      func newMemoryRateLimitStore(maxEntries int) *memoryRateLimitStore {
+          size := memoryCacheMaxEntries(maxEntries)
+          return &memoryRateLimitStore{
+              buckets: hot.NewHotCache[string, *rateBucket](hot.LRU, size).Build(),
+              windows: hot.NewHotCache[string, *fixedWindowCounter](hot.LRU, size).Build(),
           }
+      }
 
       func redisUniversalOptions(cfg conf.RateLimitRedisConfig) *redis.UniversalOptions {
           return &redis.UniversalOptions{
@@ -3940,20 +4642,29 @@ layouts:
           return time.Duration(value) * time.Millisecond
       }
 
-      func (s *memoryRateLimitStore) Allow(ctx context.Context, key string, rate float64, burst int, ttl time.Duration) (bool, error) {
+      func (s *memoryRateLimitStore) Allow(ctx context.Context, key string, rule conf.RateLimitRuleConfig) (bool, error) {
+          switch strings.ToLower(strings.TrimSpace(rule.Strategy)) {
+          case "token_bucket":
+              return s.allowTokenBucket(ctx, key, rule.RequestsPerSecond, rule.Burst, ruleTTL(rule))
+          default:
+              return s.allowFixedWindow(ctx, key, time.Duration(rule.WindowSeconds)*time.Second, rule.MaxRequests, ruleTTL(rule))
+          }
+      }
+
+      func (s *memoryRateLimitStore) allowTokenBucket(ctx context.Context, key string, rate float64, burst int, ttl time.Duration) (bool, error) {
           _ = ctx
-              if ttl <= 0 {
-                  ttl = 300 * time.Second
-              }
+          if ttl <= 0 {
+              ttl = 300 * time.Second
+          }
           now := time.Now()
           burstFloat := float64(burst)
           s.mu.Lock()
           defer s.mu.Unlock()
-              bucket, found, err := s.buckets.Get(key)
-              if err != nil {
-                  return false, err
-              }
-              if !found || bucket == nil {
+          bucket, found, err := s.buckets.Get(key)
+          if err != nil {
+              return false, err
+          }
+          if !found || bucket == nil {
               bucket = &rateBucket{tokens: burstFloat, last: now}
           }
           elapsed := now.Sub(bucket.last).Seconds()
@@ -3963,11 +4674,38 @@ layouts:
           }
           bucket.last = now
           if bucket.tokens < 1 {
-                  s.buckets.SetWithTTL(key, bucket, ttl)
+              s.buckets.SetWithTTL(key, bucket, ttl)
               return false, nil
           }
           bucket.tokens--
-              s.buckets.SetWithTTL(key, bucket, ttl)
+          s.buckets.SetWithTTL(key, bucket, ttl)
+          return true, nil
+      }
+
+      func (s *memoryRateLimitStore) allowFixedWindow(ctx context.Context, key string, window time.Duration, maxRequests int, ttl time.Duration) (bool, error) {
+          _ = ctx
+          if window <= 0 {
+              window = 60 * time.Second
+          }
+          if ttl <= 0 {
+              ttl = window
+          }
+          now := time.Now()
+          s.mu.Lock()
+          defer s.mu.Unlock()
+          counter, found, err := s.windows.Get(key)
+          if err != nil {
+              return false, err
+          }
+          if !found || counter == nil || now.Sub(counter.start) >= window {
+              counter = &fixedWindowCounter{start: now}
+          }
+          if counter.count >= maxRequests {
+              s.windows.SetWithTTL(key, counter, ttl)
+              return false, nil
+          }
+          counter.count++
+          s.windows.SetWithTTL(key, counter, ttl)
           return true, nil
       }
 
@@ -3996,36 +4734,76 @@ layouts:
       return allowed
       `)
 
-      func (s *redisRateLimitStore) Allow(ctx context.Context, key string, rate float64, burst int, ttl time.Duration) (bool, error) {
-          ttlSeconds := int(ttl.Seconds())
-          if ttlSeconds <= 0 {
-              ttlSeconds = 300
+      var redisFixedWindowScript = redis.NewScript(`
+      local key = KEYS[1]
+      local limit = tonumber(ARGV[1])
+      local ttl = tonumber(ARGV[2])
+      local current = tonumber(redis.call("GET", key) or "0")
+      if current == 0 then
+          redis.call("SET", key, 1, "EX", ttl)
+          return 1
+      end
+      if current >= limit then
+          return 0
+      end
+      redis.call("INCR", key)
+      return 1
+      `)
+
+      func (s *redisRateLimitStore) Allow(ctx context.Context, key string, rule conf.RateLimitRuleConfig) (bool, error) {
+          switch strings.ToLower(strings.TrimSpace(rule.Strategy)) {
+          case "token_bucket":
+              ttlSeconds := int(ruleTTL(rule).Seconds())
+              if ttlSeconds <= 0 {
+                  ttlSeconds = 300
+              }
+              allowed, err := redisRateLimitScript.Run(ctx, s.client, []string{key}, time.Now().UnixMilli(), rule.RequestsPerSecond, rule.Burst, ttlSeconds).Int()
+              if err != nil {
+                  return false, err
+              }
+              return allowed == 1, nil
+          default:
+              ttlSeconds := int(ruleTTL(rule).Seconds())
+              if ttlSeconds <= 0 {
+                  ttlSeconds = rule.WindowSeconds
+              }
+              if ttlSeconds <= 0 {
+                  ttlSeconds = 60
+              }
+              allowed, err := redisFixedWindowScript.Run(ctx, s.client, []string{key}, rule.MaxRequests, ttlSeconds).Int()
+              if err != nil {
+                  return false, err
+              }
+              return allowed == 1, nil
           }
-          allowed, err := redisRateLimitScript.Run(ctx, s.client, []string{key}, time.Now().UnixMilli(), rate, burst, ttlSeconds).Int()
-          if err != nil {
-              return false, err
-          }
-          return allowed == 1, nil
       }
 
       func rateLimitKey(c *app.RequestContext, cfg conf.RateLimitConfig, keyBy []string) string {
-          claims, hasClaims := GetClaims(c)
           for _, part := range keyBy {
               switch strings.TrimSpace(part) {
               case "ak_user_uuid":
-                  if hasClaims && claims.AK != "" && claims.UUID != "" {
-                      return joinRateLimitKey(cfg.KeyPrefix, "ak_user_uuid", claims.AK, claims.UUID)
+                  if ak, uuid := rateLimitAKAndUserUUID(c, cfg); ak != "" && uuid != "" {
+                      return joinRateLimitKey(cfg.KeyPrefix, "ak_user_uuid", ak, uuid)
                   }
               case "user_uuid":
-                  if hasClaims && claims.UUID != "" {
-                      return joinRateLimitKey(cfg.KeyPrefix, "user_uuid", claims.UUID)
+                  if uuid := rateLimitUserUUID(c); uuid != "" {
+                      return joinRateLimitKey(cfg.KeyPrefix, "user_uuid", uuid)
                   }
               case "ak":
-                  if hasClaims && claims.AK != "" {
-                      return joinRateLimitKey(cfg.KeyPrefix, "ak", claims.AK)
-                  }
-                  if ak := strings.TrimSpace(c.Request.Header.Get(cfg.AppKeyHeader)); ak != "" {
+                  if ak := rateLimitAppKey(c, cfg); ak != "" {
                       return joinRateLimitKey(cfg.KeyPrefix, "ak", ak)
+                  }
+              case "path":
+                  return joinRateLimitKey(cfg.KeyPrefix, "path", rateLimitPath(c))
+              case "method_path":
+                  return joinRateLimitKey(cfg.KeyPrefix, "method_path", string(c.Method()), rateLimitPath(c))
+              case "ak_path":
+                  if ak := rateLimitAppKey(c, cfg); ak != "" {
+                      return joinRateLimitKey(cfg.KeyPrefix, "ak_path", ak, rateLimitPath(c))
+                  }
+              case "ak_method_path":
+                  if ak := rateLimitAppKey(c, cfg); ak != "" {
+                      return joinRateLimitKey(cfg.KeyPrefix, "ak_method_path", ak, string(c.Method()), rateLimitPath(c))
                   }
               case "ip":
                   if ip := requestIP(c); ip != "" {
@@ -4034,6 +4812,34 @@ layouts:
               }
           }
           return joinRateLimitKey(cfg.KeyPrefix, "ip", requestIP(c))
+      }
+
+      func rateLimitAKAndUserUUID(c *app.RequestContext, cfg conf.RateLimitConfig) (string, string) {
+          claims, hasClaims := GetClaims(c)
+          if hasClaims && claims.AK != "" && claims.UUID != "" {
+              return claims.AK, claims.UUID
+          }
+          return rateLimitAppKey(c, cfg), rateLimitUserUUID(c)
+      }
+
+      func rateLimitAppKey(c *app.RequestContext, cfg conf.RateLimitConfig) string {
+          claims, hasClaims := GetClaims(c)
+          if hasClaims && claims.AK != "" {
+              return strings.TrimSpace(claims.AK)
+          }
+          return strings.TrimSpace(c.Request.Header.Get(cfg.AppKeyHeader))
+      }
+
+      func rateLimitUserUUID(c *app.RequestContext) string {
+          claims, hasClaims := GetClaims(c)
+          if hasClaims {
+              return strings.TrimSpace(claims.UUID)
+          }
+          return ""
+      }
+
+      func rateLimitPath(c *app.RequestContext) string {
+          return string(c.Path())
       }
 
       func requestIP(c *app.RequestContext) string {
@@ -4058,36 +4864,14 @@ layouts:
           return strings.Join(safe, ":")
       }
 
-      func normalizeRateLimitConfig(cfg conf.RateLimitConfig) conf.RateLimitConfig {
-          if cfg.Backend == "" {
-              cfg.Backend = "memory"
+      func ruleTTL(rule conf.RateLimitRuleConfig) time.Duration {
+          if rule.ClientTTLSeconds > 0 {
+              return time.Duration(rule.ClientTTLSeconds) * time.Second
           }
-          if cfg.KeyPrefix == "" {
-              cfg.KeyPrefix = "rate_limit"
+          if strings.EqualFold(strings.TrimSpace(rule.Strategy), "fixed_window") && rule.WindowSeconds > 0 {
+              return time.Duration(rule.WindowSeconds) * time.Second
           }
-          if cfg.AppKeyHeader == "" {
-              cfg.AppKeyHeader = "X-App-Key"
-          }
-              if cfg.Memory.MaxEntries <= 0 {
-                  cfg.Memory.MaxEntries = defaultMemoryCacheMaxEntries
-              }
-          return cfg
-      }
-
-      func normalizeRateLimitRule(rule conf.RateLimitRuleConfig) conf.RateLimitRuleConfig {
-          if len(rule.KeyBy) == 0 {
-              rule.KeyBy = []string{"ip"}
-          }
-          if rule.RequestsPerSecond <= 0 {
-              rule.RequestsPerSecond = 100
-          }
-          if rule.Burst <= 0 {
-              rule.Burst = 200
-          }
-          if rule.ClientTTLSeconds <= 0 {
-              rule.ClientTTLSeconds = 300
-          }
-          return rule
+          return 300 * time.Second
       }
 
   - path: internal/pkg/middleware/rate_limit_test.go
@@ -4097,6 +4881,7 @@ layouts:
 
       import (
           "context"
+          "errors"
           "testing"
           "time"
 
@@ -4105,12 +4890,13 @@ layouts:
           "github.com/cloudwego/hertz/pkg/protocol/consts"
 
           "{{.GoModule}}/internal/base/conf"
+          "{{.GoModule}}/internal/pkg/ratelimit"
       )
 
       func TestRateLimitRejectsAfterBurst(t *testing.T) {
-          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key"}
-          rule := conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, RequestsPerSecond: 1, Burst: 1, ClientTTLSeconds: 300}
-          mw := RateLimit(cfg, rule)
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "token_bucket", RequestsPerSecond: 1, Burst: 1, ClientTTLSeconds: 300}}
+          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", PreAuth: phase}
+          mw := RateLimit("pre_auth", cfg, phase, nil)
 
           first := newRateLimitContext("/ping")
           mw(context.Background(), first)
@@ -4128,10 +4914,28 @@ layouts:
           }
       }
 
+      func TestRateLimitRejectsAfterFixedWindowLimit(t *testing.T) {
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1, ClientTTLSeconds: 300}}
+          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", PreAuth: phase}
+          mw := RateLimit("pre_auth", cfg, phase, nil)
+
+          first := newRateLimitContext("/orders")
+          mw(context.Background(), first)
+          if first.Response.StatusCode() == consts.StatusTooManyRequests {
+              t.Fatalf("first request was rate limited")
+          }
+
+          second := newRateLimitContext("/orders")
+          mw(context.Background(), second)
+          if second.Response.StatusCode() != consts.StatusTooManyRequests {
+              t.Fatalf("status = %d, want %d", second.Response.StatusCode(), consts.StatusTooManyRequests)
+          }
+      }
+
       func TestRateLimitSkipPath(t *testing.T) {
-          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", SkipPaths: []string{"/healthz"}}
-          rule := conf.RateLimitRuleConfig{Enabled: true, RequestsPerSecond: 1, Burst: 1}
-          mw := RateLimit(cfg, rule)
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}}
+          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", SkipPaths: []string{"/healthz"}, PreAuth: phase}
+          mw := RateLimit("pre_auth", cfg, phase, nil)
           for i := 0; i < 3; i++ {
               c := newRateLimitContext("/healthz")
               mw(context.Background(), c)
@@ -4141,11 +4945,171 @@ layouts:
           }
       }
 
+      func TestRateLimitUsesMostSpecificLocalRule(t *testing.T) {
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {PathPrefix: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}, {AppKey: "app-1", Path: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}} }}
+          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", PreAuth: phase}
+          mw := RateLimit("pre_auth", cfg, phase, nil)
+
+          first := newRateLimitContext("/orders")
+          first.Request.Header.Set("X-App-Key", "app-1")
+          mw(context.Background(), first)
+          if first.Response.StatusCode() == consts.StatusTooManyRequests {
+              t.Fatalf("first request was rate limited")
+          }
+
+          second := newRateLimitContext("/orders")
+          second.Request.Header.Set("X-App-Key", "app-1")
+          mw(context.Background(), second)
+          if second.Response.StatusCode() != consts.StatusTooManyRequests {
+              t.Fatalf("status = %d, want %d; expected more specific app+path rule to win", second.Response.StatusCode(), consts.StatusTooManyRequests)
+          }
+      }
+
+      func TestRateLimitUsesPostAuthPhaseConfig(t *testing.T) {
+          pre := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}}
+          post := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"user_uuid"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}}
+          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", PreAuth: pre, PostAuth: post}
+          mw := RateLimit("post_auth", cfg, post, nil)
+
+          first := newRateLimitContext("/orders")
+          first.Set(ContextKeyTokenClaims, &Claims{UUID: "user-1"})
+          mw(context.Background(), first)
+          if first.Response.StatusCode() == consts.StatusTooManyRequests {
+              t.Fatalf("first post_auth request was rate limited")
+          }
+
+          second := newRateLimitContext("/orders")
+          second.Set(ContextKeyTokenClaims, &Claims{UUID: "user-1"})
+          mw(context.Background(), second)
+          if second.Response.StatusCode() != consts.StatusTooManyRequests {
+              t.Fatalf("status = %d, want %d; expected post_auth phase rule to apply", second.Response.StatusCode(), consts.StatusTooManyRequests)
+          }
+      }
+
+      func TestRateLimitUsesDynamicResolverRule(t *testing.T) {
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}
+          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}, PreAuth: phase}
+          resolver := ratelimit.NewResolver(cfg, ratelimit.Options{GRPC: fakeMiddlewareGRPCClient{rule: &conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}, found: true}})
+          mw := RateLimit("pre_auth", cfg, phase, resolver)
+
+          first := newRateLimitContext("/orders")
+          first.Request.Header.Set("X-App-Key", "app-1")
+          mw(context.Background(), first)
+          if first.Response.StatusCode() == consts.StatusTooManyRequests {
+              t.Fatalf("first dynamic-rule request was rate limited")
+          }
+
+          second := newRateLimitContext("/orders")
+          second.Request.Header.Set("X-App-Key", "app-1")
+          mw(context.Background(), second)
+          if second.Response.StatusCode() != consts.StatusTooManyRequests {
+              t.Fatalf("status = %d, want %d; expected dynamic rule to override local fallback", second.Response.StatusCode(), consts.StatusTooManyRequests)
+          }
+      }
+
+      func TestRateLimitUsesDatabaseResolverRule(t *testing.T) {
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}
+          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", Source: conf.RateLimitSourceConfig{Type: "database", CacheTTLSeconds: 60, FallbackOnError: true}, Database: conf.RateLimitDatabaseConfig{QueryTimeoutMilliseconds: 200}, PreAuth: phase}
+          resolver := ratelimit.NewResolver(cfg, ratelimit.Options{Database: ratelimit.ResolveFunc(func(ctx context.Context, lookup ratelimit.Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+              _ = ctx
+              _ = lookup
+              return &conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}, true, nil
+          })})
+          mw := RateLimit("pre_auth", cfg, phase, resolver)
+
+          first := newRateLimitContext("/orders")
+          first.Request.Header.Set("X-App-Key", "app-1")
+          mw(context.Background(), first)
+          if first.Response.StatusCode() == consts.StatusTooManyRequests {
+              t.Fatalf("first database-rule request was rate limited")
+          }
+
+          second := newRateLimitContext("/orders")
+          second.Request.Header.Set("X-App-Key", "app-1")
+          mw(context.Background(), second)
+          if second.Response.StatusCode() != consts.StatusTooManyRequests {
+              t.Fatalf("status = %d, want %d; expected database rule to override local fallback", second.Response.StatusCode(), consts.StatusTooManyRequests)
+          }
+      }
+
+      func TestRateLimitResolverErrorRespectsFailOpen(t *testing.T) {
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}
+          base := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: false}, PreAuth: phase}
+
+          closedResolver := ratelimit.NewResolver(base, ratelimit.Options{GRPC: fakeMiddlewareGRPCClient{err: errors.New("boom")}})
+          closed := RateLimit("pre_auth", base, phase, closedResolver)
+          closedCtx := newRateLimitContext("/orders")
+          closed(context.Background(), closedCtx)
+          if closedCtx.Response.StatusCode() != consts.StatusServiceUnavailable {
+              t.Fatalf("status = %d, want %d", closedCtx.Response.StatusCode(), consts.StatusServiceUnavailable)
+          }
+          if got, want := string(closedCtx.Response.Body()), `{"code":10304,"msg":"cache_unavailable"}`; got != want {
+              t.Fatalf("body = %s, want %s", got, want)
+          }
+
+          openCfg := base
+          openCfg.FailOpen = true
+          openResolver := ratelimit.NewResolver(openCfg, ratelimit.Options{GRPC: fakeMiddlewareGRPCClient{err: errors.New("boom")}})
+          opened := RateLimit("pre_auth", openCfg, phase, openResolver)
+          openCtx := newRateLimitContext("/orders")
+          opened(context.Background(), openCtx)
+          if openCtx.Response.StatusCode() == consts.StatusServiceUnavailable {
+              t.Fatalf("fail_open request returned service unavailable")
+          }
+          if got := string(openCtx.Response.Body()); got != "" {
+              t.Fatalf("body = %q, want empty body when fail_open lets request pass", got)
+          }
+      }
+
+      func TestRateLimitStoreErrorRespectsFailOpen(t *testing.T) {
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}
+          base := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", PreAuth: phase}
+
+          closedStore := &fakeRateLimitStore{err: errors.New("store boom")}
+          closed := rateLimitWithStore("pre_auth", base, phase, nil, closedStore)
+          closedCtx := newRateLimitContext("/orders")
+          closed(context.Background(), closedCtx)
+          if closedCtx.Response.StatusCode() != consts.StatusServiceUnavailable {
+              t.Fatalf("status = %d, want %d", closedCtx.Response.StatusCode(), consts.StatusServiceUnavailable)
+          }
+          if got, want := string(closedCtx.Response.Body()), `{"code":10304,"msg":"cache_unavailable"}`; got != want {
+              t.Fatalf("body = %s, want %s", got, want)
+          }
+          if closedStore.calls != 1 {
+              t.Fatalf("calls = %d, want 1", closedStore.calls)
+          }
+
+          openCfg := base
+          openCfg.FailOpen = true
+          openStore := &fakeRateLimitStore{err: errors.New("store boom")}
+          opened := rateLimitWithStore("pre_auth", openCfg, phase, nil, openStore)
+          openCtx := newRateLimitContext("/orders")
+          opened(context.Background(), openCtx)
+          if openCtx.Response.StatusCode() == consts.StatusServiceUnavailable {
+              t.Fatalf("fail_open request returned service unavailable")
+          }
+          if got := string(openCtx.Response.Body()); got != "" {
+              t.Fatalf("body = %q, want empty body when fail_open lets request pass", got)
+          }
+          if openStore.calls != 1 {
+              t.Fatalf("calls = %d, want 1", openStore.calls)
+          }
+      }
+
       func TestRateLimitKeyByAppKey(t *testing.T) {
           c := newRateLimitContext("/ping")
           c.Request.Header.Set("X-App-Key", "app-1")
           cfg := conf.RateLimitConfig{KeyPrefix: "test", AppKeyHeader: "X-App-Key"}
           if got, want := rateLimitKey(c, cfg, []string{"ak", "ip"}), "test:ak:app-1"; got != want {
+              t.Fatalf("key = %q, want %q", got, want)
+          }
+      }
+
+      func TestRateLimitKeyByAppKeyPath(t *testing.T) {
+          c := newRateLimitContext("/ping")
+          c.Request.Header.Set("X-App-Key", "app-1")
+          cfg := conf.RateLimitConfig{KeyPrefix: "test", AppKeyHeader: "X-App-Key"}
+          if got, want := rateLimitKey(c, cfg, []string{"ak_path", "ip"}), "test:ak_path:app-1:/ping"; got != want {
               t.Fatalf("key = %q, want %q", got, want)
           }
       }
@@ -4161,13 +5125,14 @@ layouts:
 
       func TestMemoryRateLimitStoreEvictsLRU(t *testing.T) {
           store := newMemoryRateLimitStore(1)
-          if ok, err := store.Allow(context.Background(), "k1", 0, 1, time.Minute); err != nil || !ok {
+          rule := conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1, ClientTTLSeconds: 60}
+          if ok, err := store.Allow(context.Background(), "k1", rule); err != nil || !ok {
               t.Fatalf("allow k1 = %v, %v", ok, err)
           }
-          if ok, err := store.Allow(context.Background(), "k2", 0, 1, time.Minute); err != nil || !ok {
+          if ok, err := store.Allow(context.Background(), "k2", rule); err != nil || !ok {
               t.Fatalf("allow k2 = %v, %v", ok, err)
           }
-          if ok, err := store.Allow(context.Background(), "k1", 0, 1, time.Minute); err != nil || !ok {
+          if ok, err := store.Allow(context.Background(), "k1", rule); err != nil || !ok {
               t.Fatalf("allow evicted k1 = %v, %v; want fresh bucket after LRU eviction", ok, err)
           }
       }
@@ -4213,6 +5178,32 @@ layouts:
           req := protocol.NewRequest("GET", path, nil)
           req.CopyTo(&c.Request)
           return c
+      }
+
+      type fakeMiddlewareGRPCClient struct {
+          rule  *conf.RateLimitRuleConfig
+          found bool
+          err   error
+      }
+
+      func (c fakeMiddlewareGRPCClient) ResolveRateLimitRule(ctx context.Context, lookup ratelimit.Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+          _ = ctx
+          _ = lookup
+          return c.rule, c.found, c.err
+      }
+
+      type fakeRateLimitStore struct {
+          calls int
+          ok    bool
+          err   error
+      }
+
+      func (s *fakeRateLimitStore) Allow(ctx context.Context, key string, rule conf.RateLimitRuleConfig) (bool, error) {
+          _ = ctx
+          _ = key
+          _ = rule
+          s.calls++
+          return s.ok, s.err
       }
 
   # ── pkg/middleware: idempotency ─────────────────────────────────────────────
@@ -4953,6 +5944,12 @@ layouts:
       {{ end}}
 
   # ── sqlc ──────────────────────────────────────────────────────────────────
+  - path: internal/db/schema/000001_placeholder.sql
+    delims: ["", ""]
+    body: |-
+      -- Placeholder schema file so `make sqlc` works before real DDL exists.
+      -- Replace this file with real CREATE TABLE statements once your schema is ready.
+
   - path: internal/db/query/health.sql
     delims: ["", ""]
     body: |-
@@ -5037,6 +6034,7 @@ layouts:
           "{{.GoModule}}/internal/docs"
           "{{.GoModule}}/internal/handler/health"
           "{{.GoModule}}/internal/pkg/middleware"
+          "{{.GoModule}}/internal/pkg/ratelimit"
           "{{.GoModule}}/internal/router"
       )
 
@@ -5094,8 +6092,27 @@ layouts:
           if cfg.CORS.Enabled {
               h.Use(middleware.CORS(cfg.CORS))
           }
+      // Optional dynamic rate-limit rule source wiring:
+      //  1. source.type=config   -> leave Options empty; resolver only uses local config fallback rules.
+      //  2. source.type=grpc     -> inject a ratelimit.GRPCClient or ratelimit.ResolveFunc.
+      //  3. source.type=database -> inject a ratelimit.DatabaseHook or ratelimit.ResolveFunc.
+      //
+      // Example:
+      // var rlOpts ratelimit.Options
+      // if cfg.RateLimit.Source.Type == "grpc" {
+      //     rlOpts.GRPC = ratelimit.ResolveFunc(func(ctx context.Context, lookup ratelimit.Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+      //         return yourDynamicRuleGRPCClient.ResolveRateLimitRule(ctx, lookup)
+      //     })
+      // }
+      // if cfg.RateLimit.Source.Type == "database" {
+      //     rlOpts.Database = ratelimit.ResolveFunc(func(ctx context.Context, lookup ratelimit.Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+      //         return yourDynamicRuleRepository.ResolveRateLimitRule(ctx, lookup)
+      //     })
+      // }
+      // resolver := ratelimit.NewResolver(cfg.RateLimit, rlOpts)
+          resolver := ratelimit.NewResolver(cfg.RateLimit, ratelimit.Options{})
           if cfg.RateLimit.Enabled && cfg.RateLimit.PreAuth.Enabled {
-              h.Use(middleware.RateLimit(cfg.RateLimit, cfg.RateLimit.PreAuth))
+              h.Use(middleware.RateLimit("pre_auth", cfg.RateLimit, cfg.RateLimit.PreAuth, resolver))
           }
           h.NoRoute(middleware.NoRoute)
           h.NoMethod(middleware.NoMethod)
@@ -5112,7 +6129,7 @@ layouts:
               h.Use(middleware.Unless(middleware.JWTAuth(cfg.Auth.Token), authSkipper))
           }
           if cfg.RateLimit.Enabled && cfg.RateLimit.PostAuth.Enabled {
-              h.Use(middleware.RateLimit(cfg.RateLimit, cfg.RateLimit.PostAuth))
+              h.Use(middleware.RateLimit("post_auth", cfg.RateLimit, cfg.RateLimit.PostAuth, resolver))
           }
           if cfg.Idempotency.Enabled {
               h.Use(middleware.Idempotency(cfg.Idempotency))

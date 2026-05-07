@@ -9,12 +9,14 @@ body: |-
 
   package {{.ServiceInfo.ServiceName | ToLower}}
 
+  {{if .ServiceInfo.Methods}}
   import (
       "context"
 
       "github.com/samber/oops"
       {{.ServiceInfo.PkgRefName}} "{{.ServiceInfo.ImportPath}}"
   )
+  {{end}}
 
   // {{.ServiceInfo.ServiceName}}Repo defines the data-access port for this usecase.
   // Implement it in internal/repository/{{.ServiceInfo.ServiceName | ToLower}}/.
@@ -34,6 +36,9 @@ body: |-
       return &UseCase{repo: repo}
   }
 
+  {{if not .ServiceInfo.Methods}}
+  // Add RPC methods to idl/{{ToLower .ServiceInfo.ServiceName}}.proto, then rerun `make update`.
+  {{end}}
   {{range .ServiceInfo.Methods}}
   // {{.Name}} implements the {{.Name}} business rule.
   func (uc *UseCase) {{.Name}}(ctx context.Context{{range .Args}}, {{LowerFirst .Name}} {{.Type}}{{end}}) (resp {{.Resp.Type}}, err error) {

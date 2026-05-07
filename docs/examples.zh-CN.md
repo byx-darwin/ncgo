@@ -298,9 +298,14 @@ cd user-rpc
 ```bash
 go mod init github.com/acme/user-rpc
 kitex -module github.com/acme/user-rpc -template-dir template/kitex-template -type protobuf idl/userrpc.proto
+make sqlc
 go mod tidy
 make dev
 ```
+
+之所以要在第一次 `go mod tidy` 前先执行 `make sqlc`，是因为生成出来的 Kitex
+starter 已经接入了 `internal/base/data` / repository 占位代码，它们会 import
+`internal/db/gen`。
 
 适合：以 RPC 为主，并希望把 Kitex 模板树纳入版本控制的服务。
 

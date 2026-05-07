@@ -7,20 +7,24 @@
 Hertz 对应文档见
 [`docs/hertz/design-doc.zh-CN.md`](../hertz/design-doc.zh-CN.md)。
 
+动态限流专题位于
+[`docs/hertz/rate-limit-dynamic-design.zh-CN.md`](../hertz/rate-limit-dynamic-design.zh-CN.md),
+但该专题针对 Hertz HTTP 模板,不直接适用于 Kitex RPC 模板。
+
 ## 1. 总览
 
 Kitex 模板族支撑 `ncgo new --mode mono --kind kitex`(RPC 服务),由
 `internal/scaffold/mono`(kitex 分支)消费,复制到生成项目的
-`template/kitex-template/`,再经 `kitex` ≥ v0.16.1 通过
+`template/kitex-template/`,再经 `kitex` 通过
 `--template-extension` 机制渲染。
+最小支持的 `kitex` 版本定义在 `internal/exec/exec.go` 中。
 
 模板通过 `//go:embed all:_data` 嵌入 ncgo 二进制(见
 `internal/assets/assets.go`)。目录名带前导下划线 (`_data/`) 是为了让
 `go build ./...` 忽略 `optional/*.go` —— 这些文件是模板素材,不是参与
 ncgo 二进制编译的 Go 源码。
 
-资产版本:`_data/VERSION`(`ncgo_assets_version: 0.1.1`),由
-`assets.Version()` 暴露。
+资产版本见 `_data/VERSION`;当前嵌入资产版本由 `assets.Version()` 暴露。
 
 ## 2. 生成项目架构
 
@@ -206,6 +210,9 @@ RPC 请求(TTHeader)
   `sqlc`、`generate`(= `update` + `sqlc`)、
   `migrate-{up,down,status,create}`、`lint`、`test`、`check`、`tidy`、
   `install-tools`、`clean`。
+- 即使是默认 starter 场景,`internal/base/data` 与 repository 接线也会
+  import `internal/db/gen`,因此首次 `go mod tidy` 或 build 前要先执行
+  `make sqlc`;如果直接跑 `make generate`,其中已包含这一步。
 - 入口 `main.go` 只做 `conf.Init()` → `server.Run()`;Agent 增加接线一律
   落到 `internal/base/server/server.go`。
 - 不内置 health / readiness 探针(kitex 服务通常依赖 sidecar 或 TTHeader
@@ -300,7 +307,7 @@ RPC 请求(TTHeader)
 | `kitex/kitex-template/rpcerror.yaml`(含 `_test`) | RPC 错误映射(对应 hertz `pkg/response`) |
 | `kitex/kitex-template/client.yaml`(含 `_test`) | 生成的 client 包装 |
 | `kitex/kitex-template/migration_init.yaml` / `migration_keep.yaml` | sqlc/atlas 迁移占位 |
-| `kitex/kitex-template/makefile.yaml` | Makefile 目标(`make dev`、`make sqlc-gen` 等) |
+| `kitex/kitex-template/makefile.yaml` | Makefile 目标(`make dev`、`make sqlc` 等) |
 | `kitex/sqlc.yaml` | sqlc 配置,结构与 Hertz 版相同 |
 | `kitex/optional/{redis,kafka,es,clickhouse,registry_etcd}.go`、`optional/observability_otel.go` | kitex 族的 `add infra` 素材 |
 

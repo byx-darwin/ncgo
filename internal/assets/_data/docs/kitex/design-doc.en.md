@@ -8,20 +8,26 @@ scaffolder, and how to evolve it without breaking generated projects.
 For the Hertz counterpart see
 [`docs/hertz/design-doc.en.md`](../hertz/design-doc.en.md).
 
+The dedicated dynamic rate-limit topic lives in
+[`docs/hertz/rate-limit-dynamic-design.en.md`](../hertz/rate-limit-dynamic-design.en.md),
+but it is specific to the Hertz HTTP template and does not directly apply to the
+Kitex RPC template.
+
 ## 1. Overview
 
 The Kitex template family backs `ncgo new --mode mono --kind kitex` (RPC
 services). It is consumed by `internal/scaffold/mono` (kitex branch),
 copied into generated projects under `template/kitex-template/`, and
-rendered by `kitex` ≥ v0.16.1 via the `--template-extension` mechanism.
+rendered by `kitex` via the `--template-extension` mechanism.
+The minimum supported `kitex` version is defined in `internal/exec/exec.go`.
 
 Files ship inside the ncgo binary via `//go:embed all:_data` (see
 `internal/assets/assets.go`). The directory name `_data/` (leading
 underscore) makes `go build ./...` ignore the `optional/*.go` files —
 they are template snippets, not Go source compiled into ncgo itself.
 
-Asset version: `_data/VERSION` (`ncgo_assets_version: 0.1.1`), surfaced
-via `assets.Version()`.
+Asset version: see `_data/VERSION`; the current embedded asset version is
+surfaced via `assets.Version()`.
 
 ## 2. Generated Project Architecture
 
@@ -217,6 +223,9 @@ gateways to call this RPC:
   `update` (re-runs `kitex -template-dir template/kitex-template`),
   `sqlc`, `generate` (= `update` + `sqlc`), `migrate-{up,down,status,create}`,
   `lint`, `test`, `check`, `tidy`, `install-tools`, `clean`.
+- Even in the default starter path, `internal/base/data` and repository wiring
+  import `internal/db/gen`, so run `make sqlc` before the first `go mod tidy`
+  or build; `make generate` already includes that step.
 - `cmd` entry is `main.go`: `conf.Init()` → `server.Run()`. Any wiring
   the agent adds belongs in `internal/base/server/server.go`.
 - Health / readiness probes are not built in (kitex services typically
@@ -314,7 +323,7 @@ numeric errcode registry.
 | `kitex/kitex-template/rpcerror.yaml` (+ `_test`) | RPC error mapping (analogous to hertz `pkg/response`) |
 | `kitex/kitex-template/client.yaml` (+ `_test`) | Generated client wrapper |
 | `kitex/kitex-template/migration_init.yaml` / `migration_keep.yaml` | sqlc/atlas migration placeholders |
-| `kitex/kitex-template/makefile.yaml` | Makefile targets (`make dev`, `make sqlc-gen`, ...) |
+| `kitex/kitex-template/makefile.yaml` | Makefile targets (`make dev`, `make sqlc`, ...) |
 | `kitex/sqlc.yaml` | sqlc config, structurally identical to the Hertz version |
 | `kitex/optional/{redis,kafka,es,clickhouse,registry_etcd}.go`, `optional/observability_otel.go` | `add infra` snippets for the kitex family |
 

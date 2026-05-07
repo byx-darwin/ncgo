@@ -8,18 +8,22 @@ scaffolder, and how to evolve it without breaking generated projects.
 For the Kitex counterpart see
 [`docs/kitex/design-doc.en.md`](../kitex/design-doc.en.md).
 
+For the dedicated dynamic rate-limit design, see
+[`rate-limit-dynamic-design.en.md`](./rate-limit-dynamic-design.en.md).
+
 ## 1. Overview
 
 The Hertz template family backs `ncgo new --mode mono` (HTTP services).
-It is consumed by `internal/scaffold/mono` and rendered by `hz` ≥ v0.9.7.
+It is consumed by `internal/scaffold/mono` and rendered by `hz`.
+The minimum supported `hz` version is defined in `internal/exec/exec.go`.
 
 Files ship inside the ncgo binary via `//go:embed all:_data` (see
 `internal/assets/assets.go`). The directory name `_data/` (leading
 underscore) makes `go build ./...` ignore the `optional/*.go` files —
 they are template snippets, not Go source compiled into ncgo itself.
 
-Asset version: `_data/VERSION` (`ncgo_assets_version: 0.1.1`), surfaced
-via `assets.Version()`.
+Asset version: see `_data/VERSION`; the current embedded asset version is
+surfaced via `assets.Version()`.
 
 ## 2. Generated Project Architecture
 
@@ -143,8 +147,8 @@ not by adding imports.
 - `Init()` is called once from `main.go` (`sync.Once`); `Get()` returns the
   cached `*Config`.
 - `Validate()` enforces non-negative timeouts, signature/token secrets,
-  CORS wildcard vs `allow_credentials`, `rate_limit` backend + at-least-one
-  rule, and `idempotency` backend.
+  CORS wildcard vs `allow_credentials`, `rate_limit` source/backend/phase /
+  strategy validity, and `idempotency` backend.
 
 ### 3.2 Response & Error Codes (`internal/pkg/response`)
 
@@ -184,7 +188,7 @@ not by adding imports.
 |---|---|---|---|
 | `SignatureAuth` | `cfg.Auth.Signature.Enabled` | HMAC-SHA256 over `method\npath\nquery\nts\nnonce\nbody`; nonce store `memory` (LRU) or `redis` | `10101 signature_missing` / `10102 signature_expired` / `10103 signature_invalid` / `10202 replay_request` |
 | `JWTAuth` | `cfg.Auth.Token.Enabled` | `golang-jwt/jwt/v5` HS256; reads `cfg.Auth.Token.Header`; claims pinned to context key `tokenClaims` | `10104 token_missing` / `10105 token_invalid` / `10106 token_expired` / `10107 claims_invalid` |
-| `RateLimit` | `cfg.RateLimit.Enabled` + per-rule flag | Token-bucket; `memory` (samber/hot LRU) or `redis` | `10200 rate_limited` (or `10304 cache_unavailable` when `fail_open=false` and store errors) |
+| `RateLimit` | `cfg.RateLimit.Enabled` + per-phase flag | Dynamic rule resolution (`config` / `grpc` / `database`) with `fixed_window` or `token_bucket`; enforcement state in `memory` (samber/hot LRU) or `redis` | `10200 rate_limited` (or `10304 cache_unavailable` when `fail_open=false` and store errors) |
 | `Idempotency` | `cfg.Idempotency.Enabled` | Replay cache keyed by `header + method + path + body-hash`; `memory` or `redis` | `10203 idempotency_key_missing` / `10204 idempotency_conflict` |
 | `InternalOnly` | always | CIDR + path allowlist | `10108 permission_denied` |
 | `CORS` | `cfg.CORS.Enabled` | Static config; rejects wildcard origin + credentials | n/a |
@@ -192,6 +196,20 @@ not by adding imports.
 `Unless(mw, skipper)` and `PathSkipper(paths...)` wrap auth middleware so
 that public paths (default `/healthz`, `/readyz` plus
 `cfg.Auth.PublicPaths`) bypass signature / JWT.
+
+For detailed rule resolution order, cache behavior, invalidation strategy, and
+integration examples, see
+[`rate-limit-dynamic-design.en.md`](./rate-limit-dynamic-design.en.md).
+
+Short summary of the current Hertz dynamic rate-limit model:
+
+- enforcement is split into `pre_auth` and `post_auth` phases
+- rules may come from `config`, `grpc`, or `database`
+- local config always acts as the final fallback rule source
+- each phase supports `default_rule` plus fine-grained local `rules`
+- commonly used dimensions include `ak_path`, `ak_method_path`, `user_uuid`, and `ip`
+- dynamic rule lookup results are cached in local process memory with TTL
+- `fallback_on_error` governs rule fallback, while `fail_open` governs request handling when the enforcement store fails
 
 `fail_open` (rate-limit / signature nonce / idempotency) flips dependency
 errors from "reject the request" to "let it through". Use only when the
@@ -224,6 +242,9 @@ When the scaffolder is invoked with `--db postgres`:
   `update` (re-runs `hz update` with the embedded `package.yaml`),
   `sqlc`, `migrate-{create,up,down,status}`, `lint`, `test`, `tidy`,
   `install-tools`. `generate` chains `i18n update swagger sqlc`.
+- For `WithDatabase=true` scaffolds, generated `internal/base/data` /
+  repository code imports `internal/db/gen`, so run `make sqlc` before the
+  first `go mod tidy` or build; `make generate` already includes that step.
 - `cmd/server/main.go` simply calls `conf.Init()` then `server.Run()`;
   any wiring the agent adds belongs in `internal/base/server/server.go`.
 
@@ -324,7 +345,7 @@ or prints the following command for the user / agent (see
 `mono/files.go`):
 
 ```
-hz new --mod=<module> --idl=<idl> \
+hz new --mod=<module> --idl=<idl> -I idl \
        --handler_dir=internal/handler \
        --model_dir=internal/pb \
        --router_dir=internal/router \
@@ -379,6 +400,7 @@ review-mode rules stay in nc-skills-golang.
 ## 9. References
 
 - `docs/prd.md` §3 (Decisions), §5 (Manifest), §9 (Repository Layout)
+- `docs/hertz/rate-limit-dynamic-design.en.md` — dedicated dynamic rate-limit design
 - `internal/assets/assets.go` — embed wiring
 - `internal/scaffold/mono/files.go` — hertz consumer
 - `internal/scaffold/infra/infra.go` — optional consumer

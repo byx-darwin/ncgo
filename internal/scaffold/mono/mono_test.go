@@ -139,6 +139,241 @@ func TestGenerateHertzNextStepsIncludeIDLImportPath(t *testing.T) {
 	}
 }
 
+func TestNextStepsMakeTargetsMatchTemplates(t *testing.T) {
+	cases := []struct {
+		name       string
+		kind       string
+		withDB     bool
+		expectSQLC bool
+		steps      func(Options) []string
+	}{
+		{
+			name:       "prepare-hertz-db",
+			kind:       manifest.KindHertz,
+			withDB:     true,
+			expectSQLC: true,
+			steps: func(opts Options) []string {
+				return nextSteps(opts, defaultIDL(opts))
+			},
+		},
+		{
+			name:       "prepare-kitex-default",
+			kind:       manifest.KindKitex,
+			expectSQLC: true,
+			steps: func(opts Options) []string {
+				return nextSteps(opts, defaultIDL(opts))
+			},
+		},
+		{
+			name:       "prepare-kitex-db",
+			kind:       manifest.KindKitex,
+			withDB:     true,
+			expectSQLC: true,
+			steps: func(opts Options) []string {
+				return nextSteps(opts, defaultIDL(opts))
+			},
+		},
+		{
+			name:       "post-generate-hertz-db",
+			kind:       manifest.KindHertz,
+			withDB:     true,
+			expectSQLC: true,
+			steps: func(opts Options) []string {
+				return postGenerateNextSteps(opts)
+			},
+		},
+		{
+			name:       "post-generate-kitex-default",
+			kind:       manifest.KindKitex,
+			expectSQLC: true,
+			steps: func(opts Options) []string {
+				return postGenerateNextSteps(opts)
+			},
+		},
+		{
+			name:       "post-generate-kitex-db",
+			kind:       manifest.KindKitex,
+			withDB:     true,
+			expectSQLC: true,
+			steps: func(opts Options) []string {
+				return postGenerateNextSteps(opts)
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := baseOpts(t)
+			opts.Kind = tc.kind
+			opts.WithDatabase = tc.withDB
+			steps := tc.steps(opts)
+			joined := strings.Join(steps, "\n")
+			if strings.Contains(joined, "make sqlc-gen") {
+				t.Fatalf("next steps must not reference removed target sqlc-gen:\n%s", joined)
+			}
+			if tc.expectSQLC && !strings.Contains(joined, "make sqlc") {
+				t.Fatalf("next steps missing make sqlc:\n%s", joined)
+			}
+			if tc.expectSQLC && strings.Index(joined, "make sqlc") > strings.Index(joined, "go mod tidy") {
+				t.Fatalf("database next steps must run make sqlc before go mod tidy:\n%s", joined)
+			}
+
+			makefileBody := scaffoldMakeTemplate(t, opts)
+			assertStepMakeTargetsExist(t, steps, makefileBody)
+		})
+	}
+}
+
+// TestResultNextStepsSafePrefixExecutes replays the user-facing NextSteps from
+// the prepare-only path (NoGenerate=true) and executes every safe step against a
+// fresh scaffold. We intentionally skip long-running/runtime-only steps:
+//   - make migrate-up: requires an external DATABASE_URL-backed Postgres instance
+//   - make dev: starts a persistent development server / watcher
+func TestResultNextStepsSafePrefixExecutes(t *testing.T) {
+	for _, tc := range nextStepsSmokeCases(false) {
+		t.Run(tc.name, func(t *testing.T) {
+			requireTools(t, tc.reqTools...)
+			opts := baseOpts(t)
+			opts.Kind = tc.kind
+			opts.WithDatabase = tc.withDB
+
+			res, err := Generate(context.Background(), opts)
+			if err != nil {
+				t.Fatalf("Generate: %v", err)
+			}
+			if res.RanGenerate {
+				t.Fatalf("RanGenerate = true, want false for next-steps smoke test")
+			}
+
+			executeSafeNextSteps(t, res.Dir, res.NextSteps)
+		})
+	}
+}
+
+// TestPostGenerateResultNextStepsSafePrefixExecutes replays the post-generate
+// handoff after hz/kitex already ran. It uses the same skip policy as the
+// prepare-path smoke test so we verify the actionable prefix without turning
+// unit tests into database-dependent or long-running integration jobs.
+func TestPostGenerateResultNextStepsSafePrefixExecutes(t *testing.T) {
+	for _, tc := range nextStepsSmokeCases(true) {
+		t.Run(tc.name, func(t *testing.T) {
+			requireTools(t, tc.reqTools...)
+			opts := baseOpts(t)
+			opts.Kind = tc.kind
+			opts.WithDatabase = tc.withDB
+			opts.NoGenerate = tc.noGenerate
+
+			res, err := Generate(context.Background(), opts)
+			if err != nil {
+				t.Fatalf("Generate: %v", err)
+			}
+			if !res.RanGenerate {
+				t.Fatalf("RanGenerate = false, want true for post-generate next-steps smoke test")
+			}
+
+			executeSafeNextSteps(t, res.Dir, res.NextSteps)
+		})
+	}
+}
+
+func TestShouldSkipNextStep(t *testing.T) {
+	for _, tc := range []struct {
+		step string
+		want bool
+	}{
+		{step: "make migrate-up", want: true},
+		{step: "make dev", want: true},
+		{step: "go mod tidy", want: false},
+		{step: "make sqlc", want: false},
+	} {
+		if got := shouldSkipNextStep(tc.step); got != tc.want {
+			t.Fatalf("shouldSkipNextStep(%q) = %v, want %v", tc.step, got, tc.want)
+		}
+	}
+}
+
+func TestNextStepsSmokeCases(t *testing.T) {
+	for _, tc := range []struct {
+		name           string
+		postGenerate   bool
+		wantNoGenerate bool
+	}{
+		{name: "prepare", postGenerate: false, wantNoGenerate: true},
+		{name: "post-generate", postGenerate: true, wantNoGenerate: false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cases := nextStepsSmokeCases(tc.postGenerate)
+			if len(cases) != 4 {
+				t.Fatalf("len(nextStepsSmokeCases(%v)) = %d, want 4", tc.postGenerate, len(cases))
+			}
+			for _, c := range cases {
+				if c.noGenerate != tc.wantNoGenerate {
+					t.Fatalf("case %q noGenerate = %v, want %v", c.name, c.noGenerate, tc.wantNoGenerate)
+				}
+				if c.kind == manifest.KindKitex && !slices.Contains(c.reqTools, "sqlc") {
+					t.Fatalf("kitex case %q missing sqlc tool requirement: %v", c.name, c.reqTools)
+				}
+			}
+		})
+	}
+}
+
+func TestRequiresSQLCBeforeTidy(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		kind   string
+		withDB bool
+		want   bool
+	}{
+		{name: "hertz-default", kind: manifest.KindHertz, want: false},
+		{name: "hertz-with-db", kind: manifest.KindHertz, withDB: true, want: true},
+		{name: "kitex-default", kind: manifest.KindKitex, want: true},
+		{name: "kitex-with-db", kind: manifest.KindKitex, withDB: true, want: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := baseOpts(t)
+			opts.Kind = tc.kind
+			opts.WithDatabase = tc.withDB
+			if got := requiresSQLCBeforeTidy(opts); got != tc.want {
+				t.Fatalf("requiresSQLCBeforeTidy(%s, withDB=%v) = %v, want %v", tc.kind, tc.withDB, got, tc.want)
+			}
+		})
+	}
+}
+
+func TestNextStepsSequenceShapes(t *testing.T) {
+	for _, tc := range []struct {
+		name         string
+		kind         string
+		withDB       bool
+		postGenerate bool
+		want         []string
+	}{
+		{name: "prepare-hertz-default", kind: manifest.KindHertz, want: []string{"cd", "go mod init", "<generate>", "go mod tidy", "make dev"}},
+		{name: "prepare-hertz-with-db", kind: manifest.KindHertz, withDB: true, want: []string{"cd", "go mod init", "<generate>", "make sqlc", "go mod tidy", "make migrate-up", "make dev"}},
+		{name: "prepare-kitex-default", kind: manifest.KindKitex, want: []string{"cd", "go mod init", "<generate>", "make sqlc", "go mod tidy", "make dev"}},
+		{name: "post-hertz-default", kind: manifest.KindHertz, postGenerate: true, want: []string{"cd", "go mod tidy", "make dev"}},
+		{name: "post-hertz-with-db", kind: manifest.KindHertz, withDB: true, postGenerate: true, want: []string{"cd", "make sqlc", "go mod tidy", "make migrate-up", "make dev"}},
+		{name: "post-kitex-default", kind: manifest.KindKitex, postGenerate: true, want: []string{"cd", "make sqlc", "go mod tidy", "make dev"}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			opts := baseOpts(t)
+			opts.Kind = tc.kind
+			opts.WithDatabase = tc.withDB
+
+			var got []string
+			if tc.postGenerate {
+				got = stepSequenceShape(postGenerateNextSteps(opts))
+			} else {
+				got = stepSequenceShape(nextSteps(opts, defaultIDL(opts)))
+			}
+			if !equal(got, tc.want) {
+				t.Fatalf("step sequence mismatch\n got: %v\nwant: %v", got, tc.want)
+			}
+		})
+	}
+}
+
 func TestGenerateHertzTemplateIncludesSafeOptionalWiringAnchors(t *testing.T) {
 	opts := baseOpts(t)
 	res, err := Generate(context.Background(), opts)
@@ -432,8 +667,9 @@ func TestGenerateInvokesHZViaRunner(t *testing.T) {
 }
 
 // TestGenerateHertzCompiles invokes hz with the real runner, tidies the module,
-// builds the generated project, and runs the i18n tests to verify the built-in
-// language catalog compiles and behaves correctly.
+// builds the generated project, and runs the generated project's core package
+// tests (including i18n and dynamic rate-limit packages) to verify template
+// code compiles and behaves correctly after generation.
 func TestGenerateHertzCompiles(t *testing.T) {
 	if _, err := exec.LookPath("hz"); err != nil {
 		t.Skip("hz not found on PATH")
@@ -550,11 +786,41 @@ func TestGenerateHertzCompiles(t *testing.T) {
 		t.Fatalf("go test ./internal/pkg/i18n/... in %s: %v\n%s", res.Dir, err, out)
 	}
 
+	// Run the generated project's own rate-limit packages to verify the shipped
+	// dynamic resolver, middleware, and their smoke tests work in a fresh project.
+	cmd = osexec.CommandContext(context.Background(), "go", "test", "-race", "-count=1", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
+	cmd.Dir = res.Dir
+	if out, err := cmd.CombinedOutput(); err != nil {
+		t.Fatalf("go test rate-limit packages in %s: %v\n%s", res.Dir, err, out)
+	}
+
 	cmd = osexec.CommandContext(context.Background(), "go", "test", "-race", "-count=1", "./tools/...")
 	cmd.Dir = res.Dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go test ./tools/... in %s: %v\n%s", res.Dir, err, out)
 	}
+}
+
+func TestGenerateHertzWithDatabaseCompiles(t *testing.T) {
+	requireTools(t, "hz", "make", "sqlc")
+
+	opts := baseOpts(t)
+	opts.NoGenerate = false
+	opts.WithDatabase = true
+
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !res.RanGenerate {
+		t.Fatal("expected RanGenerate = true")
+	}
+
+	runInDir(t, res.Dir, "make", "sqlc")
+	runInDir(t, res.Dir, "go", "mod", "tidy")
+	runInDir(t, res.Dir, "make", "i18n")
+	runInDir(t, res.Dir, "go", "build", ".")
+	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/base/data/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
 }
 
 func TestGenerateRejectsNonEmptyDir(t *testing.T) {
@@ -582,6 +848,9 @@ func TestGenerateKitexNoGenerateProducesTree(t *testing.T) {
 		".pre-commit-config.yaml",
 		".ncgo/manifest.yaml",
 		"idl/demo.proto",
+		"internal/db/query/health.sql",
+		"internal/db/schema/000001_placeholder.sql",
+		"internal/db/sqlc.yaml",
 		"scripts/run-go-module-checks.sh",
 		"template/kitex-template/main.yaml",
 		"template/kitex-template/server.yaml",
@@ -737,6 +1006,27 @@ func TestGenerateKitexInvokesKitexViaRunner(t *testing.T) {
 	}
 }
 
+func TestGenerateKitexCompiles(t *testing.T) {
+	requireTools(t, "kitex", "make", "sqlc")
+
+	opts := baseOpts(t)
+	opts.Kind = manifest.KindKitex
+	opts.NoGenerate = false
+
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !res.RanGenerate {
+		t.Fatal("expected RanGenerate = true")
+	}
+
+	runInDir(t, res.Dir, "make", "sqlc")
+	runInDir(t, res.Dir, "go", "mod", "tidy")
+	runInDir(t, res.Dir, "go", "build", ".")
+	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/pkg/interceptor/...", "./internal/pkg/rpcerror/...", "./pkg/client/...")
+}
+
 func TestGenerateKitexNormalizesHyphenatedServiceName(t *testing.T) {
 	opts := baseOpts(t)
 	opts.Name = "user-api"
@@ -815,4 +1105,130 @@ func equal(a, b []string) bool {
 
 func contains(xs []string, want string) bool {
 	return slices.Contains(xs, want)
+}
+
+func scaffoldMakeTemplate(t *testing.T, opts Options) string {
+	t.Helper()
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	path := filepath.Join(res.Dir, "template", "layout.yaml")
+	if defaultKind(opts.Kind) == manifest.KindKitex {
+		path = filepath.Join(res.Dir, "template", "kitex-template", "makefile.yaml")
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read makefile template %s: %v", path, err)
+	}
+	return string(body)
+}
+
+func assertStepMakeTargetsExist(t *testing.T, steps []string, makefileBody string) {
+	t.Helper()
+	for _, step := range steps {
+		if !strings.HasPrefix(step, "make ") {
+			continue
+		}
+		target := strings.Fields(strings.TrimPrefix(step, "make "))[0]
+		if !strings.Contains(makefileBody, target+":") {
+			t.Fatalf("make target %q from next steps missing in template:\n%s", target, makefileBody)
+		}
+	}
+}
+
+var skippedNextStepReasons = map[string]string{
+	"make migrate-up": "requires external database configuration/state",
+	"make dev":        "starts a long-running development process",
+}
+
+type nextStepsSmokeCase struct {
+	name       string
+	kind       string
+	withDB     bool
+	noGenerate bool
+	reqTools   []string
+}
+
+func nextStepsSmokeCases(postGenerate bool) []nextStepsSmokeCase {
+	cases := []nextStepsSmokeCase{
+		{name: "hertz-default", kind: manifest.KindHertz, noGenerate: !postGenerate, reqTools: []string{"hz"}},
+		{name: "hertz-with-db", kind: manifest.KindHertz, withDB: true, noGenerate: !postGenerate, reqTools: []string{"hz", "make", "sqlc"}},
+		{name: "kitex-default", kind: manifest.KindKitex, noGenerate: !postGenerate, reqTools: []string{"kitex", "make", "sqlc"}},
+		{name: "kitex-with-db", kind: manifest.KindKitex, withDB: true, noGenerate: !postGenerate, reqTools: []string{"kitex", "make", "sqlc"}},
+	}
+	return cases
+}
+
+// executeSafeNextSteps runs the command prefix from Result.NextSteps that is
+// safe and deterministic inside unit tests. The explicit skip list documents
+// which handoff steps are intentionally left for higher-level/manual validation.
+func executeSafeNextSteps(t *testing.T, projectDir string, steps []string) {
+	t.Helper()
+	cwd := mustCwd()
+	for _, step := range steps {
+		switch {
+		case strings.HasPrefix(step, "cd "):
+			cwd = filepath.Clean(filepath.Join(cwd, strings.TrimSpace(strings.TrimPrefix(step, "cd "))))
+		case shouldSkipNextStep(step):
+			t.Logf("skipping next step %q: %s", step, skippedNextStepReasons[step])
+			continue
+		default:
+			runStep(t, cwd, step)
+		}
+	}
+	if got, want := filepath.Clean(cwd), filepath.Clean(projectDir); got != want {
+		t.Fatalf("next steps cd resolved to %q, want %q", got, want)
+	}
+}
+
+func shouldSkipNextStep(step string) bool {
+	_, ok := skippedNextStepReasons[step]
+	return ok
+}
+
+func runStep(t *testing.T, dir, step string) {
+	t.Helper()
+	parts := strings.Fields(step)
+	if len(parts) == 0 {
+		return
+	}
+	runInDir(t, dir, parts[0], parts[1:]...)
+}
+
+func stepSequenceShape(steps []string) []string {
+	shape := make([]string, 0, len(steps))
+	for _, step := range steps {
+		switch {
+		case strings.HasPrefix(step, "cd "):
+			shape = append(shape, "cd")
+		case strings.HasPrefix(step, "go mod init "):
+			shape = append(shape, "go mod init")
+		case strings.HasPrefix(step, "hz new "), strings.HasPrefix(step, "kitex "):
+			shape = append(shape, "<generate>")
+		default:
+			shape = append(shape, step)
+		}
+	}
+	return shape
+}
+
+func requireTools(t *testing.T, names ...string) {
+	t.Helper()
+	for _, name := range names {
+		if _, err := exec.LookPath(name); err != nil {
+			t.Skipf("%s not found on PATH", name)
+		}
+	}
+}
+
+func runInDir(t *testing.T, dir, name string, args ...string) []byte {
+	t.Helper()
+	cmd := osexec.CommandContext(context.Background(), name, args...)
+	cmd.Dir = dir
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		t.Fatalf("%s %s in %s: %v\n%s", name, strings.Join(args, " "), dir, err, out)
+	}
+	return out
 }

@@ -40,6 +40,8 @@ func TestEmbeddedFilesPresent(t *testing.T) {
 		"claude/rules/go.md",
 		"docs/hertz/design-doc.en.md",
 		"docs/hertz/design-doc.zh-CN.md",
+		"docs/hertz/rate-limit-dynamic-design.en.md",
+		"docs/hertz/rate-limit-dynamic-design.zh-CN.md",
 		"docs/kitex/design-doc.en.md",
 		"docs/kitex/design-doc.zh-CN.md",
 		"docs/micro/design-doc.en.md",
@@ -53,6 +55,8 @@ func TestEmbeddedFilesPresent(t *testing.T) {
 		"hertz/optional/es.go",
 		"hertz/optional/clickhouse.go",
 		"kitex/sqlc.yaml",
+		"kitex/query/health.sql",
+		"kitex/schema/000001_placeholder.sql",
 		"kitex/kitex-template/server.yaml",
 		"kitex/kitex-template/handler.yaml",
 		"kitex/kitex-template/usecase.yaml",
@@ -80,7 +84,7 @@ func TestEmbeddedFilesNonEmpty(t *testing.T) {
 		t.Fatalf("WalkDir: %v", err)
 	}
 	// Snapshot has VERSION + claude starters/presets + design docs + hertz + kitex + common optionals.
-	if count < 45 {
-		t.Fatalf("embedded file count = %d, expected >= 45", count)
+	if count < 47 {
+		t.Fatalf("embedded file count = %d, expected >= 47", count)
 	}
 }

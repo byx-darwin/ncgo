@@ -7,18 +7,21 @@
 Kitex 对应文档见
 [`docs/kitex/design-doc.zh-CN.md`](../kitex/design-doc.zh-CN.md)。
 
+动态限流专题见
+[`rate-limit-dynamic-design.zh-CN.md`](./rate-limit-dynamic-design.zh-CN.md)。
+
 ## 1. 总览
 
 Hertz 模板族支撑 `ncgo new --mode mono`(HTTP 服务),由
-`internal/scaffold/mono` 消费,经 `hz` ≥ v0.9.7 渲染。
+`internal/scaffold/mono` 消费,经 `hz` 渲染。
+最小支持的 `hz` 版本定义在 `internal/exec/exec.go` 中。
 
 模板通过 `//go:embed all:_data` 嵌入 ncgo 二进制(见
 `internal/assets/assets.go`)。目录名带前导下划线 (`_data/`) 是为了让
 `go build ./...` 忽略 `optional/*.go` —— 这些文件是模板素材,不是参与
 ncgo 二进制编译的 Go 源码。
 
-资产版本:`_data/VERSION`(`ncgo_assets_version: 0.1.1`),由
-`assets.Version()` 暴露。
+资产版本见 `_data/VERSION`;当前嵌入资产版本由 `assets.Version()` 暴露。
 
 ## 2. 生成项目架构
 
@@ -138,8 +141,8 @@ HTTP 请求
 - `Init()` 由 `main.go` 调用一次(`sync.Once`),`Get()` 返回缓存的
   `*Config`。
 - `Validate()` 校验:超时非负、签名 / 令牌密钥、CORS 通配 +
-  `allow_credentials` 互斥、`rate_limit` 后端与至少一条规则、
-  `idempotency` 后端。
+  `allow_credentials` 互斥、`rate_limit` 的 source/backend/phase/strategy
+  合法性、`idempotency` 后端。
 
 ### 3.2 响应与错误码(`internal/pkg/response`)
 
@@ -173,7 +176,7 @@ HTTP 请求
 |---|---|---|---|
 | `SignatureAuth` | `cfg.Auth.Signature.Enabled` | HMAC-SHA256(`method\npath\nquery\nts\nnonce\nbody`);nonce 存储 `memory`(LRU)或 `redis` | `10101 signature_missing` / `10102 signature_expired` / `10103 signature_invalid` / `10202 replay_request` |
 | `JWTAuth` | `cfg.Auth.Token.Enabled` | `golang-jwt/jwt/v5` HS256;读 `cfg.Auth.Token.Header`;claims 写入 context key `tokenClaims` | `10104 token_missing` / `10105 token_invalid` / `10106 token_expired` / `10107 claims_invalid` |
-| `RateLimit` | `cfg.RateLimit.Enabled` + 单条规则开关 | 令牌桶;`memory`(samber/hot LRU)或 `redis` | `10200 rate_limited`(`fail_open=false` 且后端故障时报 `10304 cache_unavailable`) |
+| `RateLimit` | `cfg.RateLimit.Enabled` + 分阶段开关 | 动态规则解析(`config` / `grpc` / `database`) + `fixed_window` / `token_bucket`;执行状态落 `memory`(samber/hot LRU)或 `redis` | `10200 rate_limited`(`fail_open=false` 且后端故障时报 `10304 cache_unavailable`) |
 | `Idempotency` | `cfg.Idempotency.Enabled` | 重放缓存,key = `header + method + path + body-hash`;`memory` 或 `redis` | `10203 idempotency_key_missing` / `10204 idempotency_conflict` |
 | `InternalOnly` | 始终启用 | CIDR + 路径白名单 | `10108 permission_denied` |
 | `CORS` | `cfg.CORS.Enabled` | 静态配置;通配 origin 与 credentials 互斥 | n/a |
@@ -181,6 +184,19 @@ HTTP 请求
 `Unless(mw, skipper)` 与 `PathSkipper(paths...)` 包住认证中间件,使
 public 路径(默认 `/healthz`、`/readyz`,加上 `cfg.Auth.PublicPaths`)
 绕过签名 / JWT。
+
+动态规则解析顺序、缓存/失效策略与接入示例,见
+[`rate-limit-dynamic-design.zh-CN.md`](./rate-limit-dynamic-design.zh-CN.md)。
+
+当前 Hertz 动态限流模型可简要概括为:
+
+- 执行链路分为 `pre_auth` 与 `post_auth` 两个阶段
+- 规则来源支持 `config`、`grpc`、`database`
+- 本地配置始终作为最终兜底规则源
+- 每个阶段同时支持 `default_rule` 与细粒度本地 `rules`
+- 常用维度包括 `ak_path`、`ak_method_path`、`user_uuid`、`ip`
+- 动态规则查询结果使用进程内 TTL 缓存
+- `fallback_on_error` 决定规则回退,`fail_open` 决定限流存储故障时是否放行请求
 
 `fail_open`(rate-limit / signature nonce / idempotency)把"依赖故障 →
 拒绝请求"改为"依赖故障 → 放行"。仅当后端 Redis 不是关键路径时才用。
@@ -212,6 +228,9 @@ public 路径(默认 `/healthz`、`/readyz`,加上 `cfg.Auth.PublicPaths`)
   `update`(用内置 `package.yaml` 重跑 `hz update`)、`sqlc`、
   `migrate-{create,up,down,status}`、`lint`、`test`、`tidy`、
   `install-tools`。`generate` 会串联 `i18n update swagger sqlc`。
+- 对 `WithDatabase=true` 的脚手架,生成的 `internal/base/data` / repository
+  代码会 import `internal/db/gen`,因此首次 `go mod tidy` 或 build 前要先
+  执行 `make sqlc`;如果直接跑 `make generate`,其中已包含这一步。
 - `cmd/server/main.go` 只做 `conf.Init()` + `server.Run()`;Agent 增加
   接线一律落到 `internal/base/server/server.go`。
 
@@ -308,7 +327,7 @@ public 路径(默认 `/healthz`、`/readyz`,加上 `cfg.Auth.PublicPaths`)
 /Agent(见 `mono/files.go`):
 
 ```
-hz new --mod=<module> --idl=<idl> \
+hz new --mod=<module> --idl=<idl> -I idl \
        --handler_dir=internal/handler \
        --model_dir=internal/pb \
        --router_dir=internal/router \
@@ -361,6 +380,7 @@ nc-skills-golang。
 ## 9. 引用
 
 - `docs/prd.md` §3(决策)、§5(Manifest)、§9(仓库布局)
+- `docs/hertz/rate-limit-dynamic-design.zh-CN.md` —— 动态限流专题
 - `internal/assets/assets.go` —— embed 接线
 - `internal/scaffold/mono/files.go` —— hertz 消费方
 - `internal/scaffold/infra/infra.go` —— optional 消费方

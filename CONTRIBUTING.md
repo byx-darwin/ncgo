@@ -57,6 +57,21 @@ take longer than the pre-commit stage.
   behavior changes.
 - If a change is docs-only, call that out clearly in the PR.
 
+## Template handoff ordering / 模板 handoff 顺序
+
+When changing `internal/scaffold/mono` or embedded Hertz / Kitex assets, keep the
+generated-project handoff steps aligned with the real codegen dependencies:
+
+- `nextSteps()` / `postGenerateNextSteps()` are expected to mirror what a user
+  can safely run in a fresh scaffold.
+- Kitex scaffolds must run `make sqlc` before the first `go mod tidy`, even in
+  the default starter path, because generated `internal/base/data` /
+  repository wiring imports `internal/db/gen`.
+- Hertz scaffolds need the same `make sqlc`-before-`go mod tidy` ordering only
+  when `WithDatabase=true`.
+- If you change that sequencing, update the corresponding mono tests and any
+  affected docs/examples in the same PR.
+
 ## Pull requests / 提交 PR
 
 - Use `.github/PULL_REQUEST_TEMPLATE.md`.

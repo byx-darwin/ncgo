@@ -4,6 +4,10 @@
 
 服务级架构细节请分别参考内置的 `docs/hertz/` 与 `docs/kitex/` 设计文档。
 
+动态限流行为属于具体服务模板而非 micro 工作区 profile 本身。当前独立专题仅适用于
+Hertz HTTP 服务:
+[`docs/hertz/rate-limit-dynamic-design.zh-CN.md`](../hertz/rate-limit-dynamic-design.zh-CN.md)。
+
 ## 1. 总览
 
 micro 工作区 profile 对应 `ncgo new --mode micro` 创建的仓库根目录。根目录围绕

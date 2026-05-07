@@ -35,7 +35,7 @@ body: |-
       if cfg == nil {
           cfg = conf.Default()
       }
-	      // ncgo:wire:logging:init
+      // ncgo:wire:logging:init
 
       injector := do.New()
       defer func() { _ = injector.Shutdown() }()
@@ -68,12 +68,12 @@ body: |-
               // logging.KitexRequestID(),
               // logging.KitexAccessLog(),
               // logging.KitexRecovery(),
-	              // ncgo:wire:logging:server-middleware
+              // ncgo:wire:logging:server-middleware
               interceptor.RequestID(),
               // Optional release canary wiring (after `ncgo add infra canary`):
               // import "{{.Module}}/internal/base/release"
               // release.KitexTraffic(), // reads and propagates traffic.* metadata
-	              // ncgo:wire:canary:server-traffic
+              // ncgo:wire:canary:server-traffic
               interceptor.AccessLog(),
               interceptor.Recovery(),
               interceptor.CallerAllowlist(

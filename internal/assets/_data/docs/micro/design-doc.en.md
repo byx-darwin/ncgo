@@ -6,6 +6,11 @@ repository root created by `ncgo new --mode micro`.
 For service-level architecture details see the embedded Hertz and Kitex design
 docs under `docs/hertz/` and `docs/kitex/`.
 
+Dynamic rate-limit behavior is defined by each service template rather than by
+the micro workspace profile itself. The current dedicated topic exists only for
+Hertz HTTP services:
+[`docs/hertz/rate-limit-dynamic-design.en.md`](../hertz/rate-limit-dynamic-design.en.md).
+
 ## 1. Overview
 
 The micro workspace profile backs repository roots created by `ncgo new --mode micro`.

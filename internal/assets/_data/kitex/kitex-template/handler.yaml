@@ -13,11 +13,13 @@ body: |-
   package {{.ServiceInfo.ServiceName | ToLower}}handler
 
   import (
+  {{if .ServiceInfo.Methods}}
       "context"
 
-    "{{.Module}}/internal/pkg/rpcerror"
-      usecase "{{.Module}}/internal/usecase/{{ToLower .ServiceInfo.ServiceName}}"
+      "{{.Module}}/internal/pkg/rpcerror"
       {{.ServiceInfo.PkgRefName}} "{{.ServiceInfo.ImportPath}}"
+  {{end}}
+      usecase "{{.Module}}/internal/usecase/{{ToLower .ServiceInfo.ServiceName}}"
   )
 
   // {{.ServiceInfo.ServiceName}}Impl implements the Kitex-generated server interface.
@@ -31,6 +33,9 @@ body: |-
       return &{{.ServiceInfo.ServiceName}}Impl{uc: uc}
   }
 
+  {{if not .ServiceInfo.Methods}}
+  // Add RPC methods to idl/{{ToLower .ServiceInfo.ServiceName}}.proto, then rerun `make update`.
+  {{end}}
   {{range .ServiceInfo.Methods}}
   // {{.Name}} implements the {{$.ServiceInfo.ServiceName}} RPC method.
   func (s *{{$.ServiceInfo.ServiceName}}Impl) {{.Name}}(ctx context.Context{{range .Args}}, {{LowerFirst .Name}} {{.Type}}{{end}}) (resp {{.Resp.Type}}, err error) {

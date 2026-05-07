@@ -330,9 +330,14 @@ Typical next steps:
 ```bash
 go mod init github.com/acme/user-rpc
 kitex -module github.com/acme/user-rpc -template-dir template/kitex-template -type protobuf idl/userrpc.proto
+make sqlc
 go mod tidy
 make dev
 ```
+
+`make sqlc` comes before the first `go mod tidy` because the generated Kitex
+starter already wires `internal/base/data` / repository placeholders that import
+`internal/db/gen`.
 
 Best for: RPC-first services that want a versioned Kitex template tree.
 

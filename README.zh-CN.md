@@ -165,6 +165,7 @@ Hertz 模板默认提供 `zh-CN`、`zh-TW`、`ja-JP`、`ko-KR`、`fr-FR`、`de-D
 ```bash
 ncgo new user-api --module github.com/acme/user-api --kind kitex
 cd user-api
+make sqlc
 go mod tidy
 make dev
 ```
@@ -199,7 +200,7 @@ ncgo add bff web-bff --root .
 ncgo new user-api --module github.com/acme/user-api --kind kitex --no-generate
 ```
 
-此时 ncgo 会打印之后可手动执行的生成器命令。生成器成功后会创建 `go.mod`，后续步骤从 `go mod tidy` 开始。
+此时 ncgo 会打印之后可手动执行的生成器命令。生成器成功后会创建 `go.mod`；如果生成出的脚手架已经 import `internal/db/gen`（所有 Kitex 服务，以及 `WithDatabase=true` 的 Hertz 服务），后续步骤应先从 `make sqlc` 开始，否则从 `go mod tidy` 开始。
 
 生成后的单体服务和 micro 工作区还会包含根目录 `.pre-commit-config.yaml`
 以及 `scripts/run-go-module-checks.sh`，方便协作者启用 `pre-commit` /

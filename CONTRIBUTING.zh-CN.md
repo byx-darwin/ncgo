@@ -58,6 +58,21 @@ hook 分层如下：
 - 如果命令、安装方式、发布流程或生成结果发生变化，记得同步更新文档 / 示例
 - 如果只是文档改动，请在 PR 中明确说明
 
+## 模板 handoff 顺序
+
+如果你修改 `internal/scaffold/mono` 或内置的 Hertz / Kitex 模板资产，
+要保证生成项目交接给用户的步骤顺序与真实代码生成依赖保持一致：
+
+- `nextSteps()` / `postGenerateNextSteps()` 应该反映 fresh scaffold 中可直接
+  执行的安全顺序。
+- Kitex 脚手架即使是默认 starter 场景，也必须先执行 `make sqlc` 再执行
+  第一次 `go mod tidy`，因为生成的 `internal/base/data` / repository 接线会
+  import `internal/db/gen`。
+- Hertz 脚手架只有在 `WithDatabase=true` 时，才需要同样的
+  `make sqlc` → `go mod tidy` 顺序。
+- 如果你调整了这条顺序，记得在同一个 PR 里同步更新对应 mono 测试，以及
+  受影响的文档 / 示例。
+
 ## Pull Request
 
 - 使用 `.github/PULL_REQUEST_TEMPLATE.md`

@@ -179,6 +179,7 @@ generated project, then compiled into `internal/pkg/i18n/catalog_gen.go` via
 ```bash
 ncgo new user-api --module github.com/acme/user-api --kind kitex
 cd user-api
+make sqlc
 go mod tidy
 make dev
 ```
@@ -221,7 +222,9 @@ ncgo new user-api --module github.com/acme/user-api --kind kitex --no-generate
 
 In that mode ncgo prints the exact generator command to run later. When the
 generator runs successfully, it creates `go.mod`; the remaining next steps start
-at `go mod tidy`.
+at `make sqlc` when the generated scaffold already imports `internal/db/gen`
+(all Kitex services, plus Hertz services with `WithDatabase=true`), otherwise at
+`go mod tidy`.
 
 Generated projects intentionally keep `template/`:
 

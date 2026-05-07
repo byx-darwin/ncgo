@@ -144,6 +144,26 @@ func writeKitexTemplate(dir string) error {
 			return fmt.Errorf("scaffold: write %s: %w", name, err)
 		}
 	}
+	for _, extra := range []struct {
+		asset string
+		path  string
+	}{
+		{asset: "kitex/sqlc.yaml", path: "internal/db/sqlc.yaml"},
+		{asset: "kitex/query/health.sql", path: "internal/db/query/health.sql"},
+		{asset: "kitex/schema/000001_placeholder.sql", path: "internal/db/schema/000001_placeholder.sql"},
+	} {
+		b, err := fs.ReadFile(srcFS, extra.asset)
+		if err != nil {
+			return fmt.Errorf("scaffold: read embedded %s: %w", extra.asset, err)
+		}
+		full := filepath.Join(dir, filepath.FromSlash(extra.path))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(full), err)
+		}
+		if err := os.WriteFile(full, b, 0o644); err != nil {
+			return fmt.Errorf("scaffold: write %s: %w", full, err)
+		}
+	}
 	return nil
 }
 
@@ -309,6 +329,11 @@ func writeManifest(dir string, opts Options, idl string) error {
 // nextSteps is the agent-facing handoff: the exact shell sequence to run
 // when ncgo did not (or could not) call the generator itself. The hz/kitex
 // invocation differs by Kind; everything before and after is shared.
+//
+// Important ordering rule: when the generated tree imports internal/db/gen
+// (all Kitex scaffolds, plus Hertz scaffolds with WithDatabase enabled), we
+// must run `make sqlc` before the first `go mod tidy`; otherwise Go treats the
+// missing local package as an external module path and resolution fails.
 func nextSteps(opts Options, idl string) []string {
 	rel, _ := filepath.Rel(mustCwd(), opts.Dir)
 	if rel == "" {
@@ -318,10 +343,13 @@ func nextSteps(opts Options, idl string) []string {
 		fmt.Sprintf("cd %s", rel),
 		fmt.Sprintf("go mod init %s", opts.Module),
 		generatorCommand(opts, idl),
-		"go mod tidy",
 	}
+	if requiresSQLCBeforeTidy(opts) {
+		steps = append(steps, "make sqlc")
+	}
+	steps = append(steps, "go mod tidy")
 	if opts.WithDatabase {
-		steps = append(steps, "make migrate-up", "make sqlc-gen")
+		steps = append(steps, "make migrate-up")
 	}
 	steps = append(steps, "make dev")
 	return steps
@@ -339,6 +367,9 @@ func generatorCommand(opts Options, idl string) string {
 // postGenerateNextSteps is what we print after hz/kitex already ran
 // successfully. The generator has already created go.mod, so only tidy
 // and runtime follow-ups remain.
+//
+// The same sqlc-before-tidy ordering from nextSteps still matters here:
+// generation may have written code that already imports internal/db/gen.
 func postGenerateNextSteps(opts Options) []string {
 	rel, _ := filepath.Rel(mustCwd(), opts.Dir)
 	if rel == "" {
@@ -346,13 +377,24 @@ func postGenerateNextSteps(opts Options) []string {
 	}
 	steps := []string{
 		fmt.Sprintf("cd %s", rel),
-		"go mod tidy",
 	}
+	if requiresSQLCBeforeTidy(opts) {
+		steps = append(steps, "make sqlc")
+	}
+	steps = append(steps, "go mod tidy")
 	if opts.WithDatabase {
-		steps = append(steps, "make migrate-up", "make sqlc-gen")
+		steps = append(steps, "make migrate-up")
 	}
 	steps = append(steps, "make dev")
 	return steps
+}
+
+// requiresSQLCBeforeTidy reports whether the scaffolded code references
+// internal/db/gen before the user has had a chance to run `go mod tidy`.
+// Kitex always wires base/data + repository placeholders, while Hertz only
+// needs sqlc first when the database scaffold is enabled.
+func requiresSQLCBeforeTidy(opts Options) bool {
+	return defaultKind(opts.Kind) == manifest.KindKitex || opts.WithDatabase
 }
 
 func mustCwd() string {
