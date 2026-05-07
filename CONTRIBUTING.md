@@ -30,6 +30,25 @@ go test ./... -count=1
 Use the smallest useful scope first when iterating, but make sure the final PR
 state passes the full checks above.
 
+## Optional pre-commit workflow / 可选 pre-commit 工作流
+
+This repository now includes `.pre-commit-config.yaml` for contributors who use
+[`pre-commit`](https://pre-commit.com/).
+
+Recommended setup:
+
+1. install `pre-commit` with your preferred package manager
+2. run `pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push`
+3. run `pre-commit run --all-files` once after bootstrapping or after changing hook config
+
+Hook split:
+
+- `pre-commit`: file hygiene checks plus `gofmt` for staged Go files
+- `pre-push`: `go vet ./...`, `go test ./... -count=1`, `go build .`, and `./scripts/smoke.sh`
+
+The pre-push hooks intentionally mirror the repository's CI checks, so they may
+take longer than the pre-commit stage.
+
 ## Making changes / 改动约定
 
 - Keep changes minimal and consistent with the current project structure.

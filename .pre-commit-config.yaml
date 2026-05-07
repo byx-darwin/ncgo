@@ -1,0 +1,58 @@
+minimum_pre_commit_version: '3.7.0'
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args:
+          - --markdown-linebreak-ext=md
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: bash -c 'gofmt -w "$@"' --
+        language: system
+        types:
+          - go
+        require_serial: true
+
+      - id: go-vet
+        name: go vet ./...
+        entry: go vet ./...
+        language: system
+        pass_filenames: false
+        stages:
+          - pre-push
+
+      - id: go-test
+        name: go test ./... -count=1
+        entry: go test ./... -count=1
+        language: system
+        pass_filenames: false
+        stages:
+          - pre-push
+
+      - id: go-build
+        name: go build .
+        entry: go build .
+        language: system
+        pass_filenames: false
+        stages:
+          - pre-push
+
+      - id: smoke-test
+        name: ./scripts/smoke.sh
+        entry: ./scripts/smoke.sh
+        language: system
+        pass_filenames: false
+        stages:
+          - pre-push

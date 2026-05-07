@@ -33,6 +33,24 @@ go test ./... -count=1
 
 日常迭代时可以先跑更小范围的检查，但 PR 最终状态应能通过上面的完整检查。
 
+## 可选的 pre-commit 工作流
+
+仓库现在提供了 `.pre-commit-config.yaml`，方便使用
+[`pre-commit`](https://pre-commit.com/) 的协作者把部分检查前移到本地。
+
+推荐用法：
+
+1. 用你偏好的包管理方式安装 `pre-commit`
+2. 执行 `pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push`
+3. 初次接入或修改 hook 配置后，执行一次 `pre-commit run --all-files`
+
+hook 分层如下：
+
+- `pre-commit`：文件卫生检查，以及对暂存 Go 文件执行 `gofmt`
+- `pre-push`：执行 `go vet ./...`、`go test ./... -count=1`、`go build .` 和 `./scripts/smoke.sh`
+
+`pre-push` 故意对齐仓库 CI 的核心检查，因此耗时会明显高于 `pre-commit` 阶段。
+
 ## 改动约定
 
 - 尽量保持改动最小，并遵循当前项目结构
