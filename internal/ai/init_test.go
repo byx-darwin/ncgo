@@ -232,7 +232,7 @@ func TestInitClaudeTeamPresetWritesAdditionalStarterFiles(t *testing.T) {
 		t.Fatalf("team preset should write more than minimal set: %v", res.Written)
 	}
 	plan, _ := os.ReadFile(filepath.Join(root, ".claude/commands/plan.md"))
-	if !strings.Contains(string(plan), "Plan before editing") {
+	if !strings.Contains(string(plan), "Plan before editing") || !strings.Contains(string(plan), ".claude/generated/project-context.md") || !strings.Contains(string(plan), "machine-consumed fields") {
 		t.Fatalf("team preset command template missing expected content")
 	}
 	writeTests, _ := os.ReadFile(filepath.Join(root, ".claude/skills/write-tests.md"))
@@ -252,11 +252,23 @@ func TestInitClaudeTeamPresetWritesAdditionalStarterFiles(t *testing.T) {
 		t.Fatalf("team preset doc-sync skill missing contract and API doc guidance")
 	}
 	implementChange, _ := os.ReadFile(filepath.Join(root, ".claude/commands/implement-change.md"))
-	if !strings.Contains(string(implementChange), "Use the `implementer` agent") || !strings.Contains(string(implementChange), "write-tests") {
+	if !strings.Contains(string(implementChange), "Use the `implementer` agent") || !strings.Contains(string(implementChange), "write-tests") || !strings.Contains(string(implementChange), "run-validation") || !strings.Contains(string(implementChange), ".claude/generated/project-context.md") {
 		t.Fatalf("team preset implement-change command missing implementer workflow")
 	}
+	fixFailing, _ := os.ReadFile(filepath.Join(root, ".claude/commands/fix-failing-test.md"))
+	if !strings.Contains(string(fixFailing), "golden output") || !strings.Contains(string(fixFailing), "go test -race") {
+		t.Fatalf("team preset fix-failing-test command missing debugger workflow guidance")
+	}
+	updateDocs, _ := os.ReadFile(filepath.Join(root, ".claude/commands/update-docs.md"))
+	if !strings.Contains(string(updateDocs), "stable machine-consumed fields") || !strings.Contains(string(updateDocs), "Swagger/OpenAPI") {
+		t.Fatalf("team preset update-docs command missing contract-doc guidance")
+	}
+	reviewDiff, _ := os.ReadFile(filepath.Join(root, ".claude/commands/review-diff.md"))
+	if !strings.Contains(string(reviewDiff), "layering drift") || !strings.Contains(string(reviewDiff), "generated-output ownership mistakes") {
+		t.Fatalf("team preset review-diff command missing review checklist guidance")
+	}
 	implementer, _ := os.ReadFile(filepath.Join(root, ".claude/agents/implementer.md"))
-	if !strings.Contains(string(implementer), "name: implementer") || !strings.Contains(string(implementer), "tools: Read, Write, Edit, Bash") {
+	if !strings.Contains(string(implementer), "name: implementer") || !strings.Contains(string(implementer), "tools: Read, Write, Edit, Bash") || !strings.Contains(string(implementer), ".claude/generated/project-context.md") || !strings.Contains(string(implementer), "context.Background()") {
 		t.Fatalf("team preset implementer template missing Claude Code frontmatter")
 	}
 	planner, _ := os.ReadFile(filepath.Join(root, ".claude/agents/planner.md"))
@@ -264,7 +276,7 @@ func TestInitClaudeTeamPresetWritesAdditionalStarterFiles(t *testing.T) {
 		t.Fatalf("team preset planner template missing Claude Code frontmatter")
 	}
 	docWriter, _ := os.ReadFile(filepath.Join(root, ".claude/agents/doc-writer.md"))
-	if !strings.Contains(string(docWriter), "name: doc-writer") || !strings.Contains(string(docWriter), "services/<name>/README.md") {
+	if !strings.Contains(string(docWriter), "name: doc-writer") || !strings.Contains(string(docWriter), "services/<name>/README.md") || !strings.Contains(string(docWriter), "stable machine-consumed field") || !strings.Contains(string(docWriter), "Swagger or OpenAPI") {
 		t.Fatalf("team preset doc-writer template missing repository-aware doc guidance")
 	}
 	reviewer, _ := os.ReadFile(filepath.Join(root, ".claude/agents/reviewer.md"))

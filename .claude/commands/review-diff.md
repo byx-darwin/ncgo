@@ -8,6 +8,8 @@ Use the `reviewer` agent after `implementer` has completed focused validation.
 - identify contract-sensitive files touched
 - confirm tests/checks that were run
 - note whether docs were updated
+- check for layering drift, context mistakes, or generated-output ownership mistakes
+- call out obvious data-access, observability, or sensitive-data handling risks when present in the diff
 - call out any remaining risk or follow-up items
 
 End with exactly one review outcome:

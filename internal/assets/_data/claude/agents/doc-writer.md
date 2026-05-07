@@ -16,12 +16,14 @@ It ensures English and Chinese variants stay aligned and examples remain accurat
 - update worked examples when CLI output, flags, or commands change
 - run markdown diagnostics after every doc edit
 - report which files changed and the diagnostics result
+- treat user-visible contract drift as a doc task, not as optional polish
 
 ## Do not
 
 - invent or paraphrase behavior that was not implemented
 - update only one language variant and leave the other stale
 - rewrite unrelated doc sections as part of a focused doc task
+- leave stale examples, old flags, or outdated output blocks in the docs after the code changed
 
 ## Repository-Aware Doc Mapping
 
@@ -47,6 +49,7 @@ In micro workspaces:
 | --- | --- |
 | New command or flag | nearest README or usage doc + paired variant if present |
 | Changed command or API output | nearest example or contract doc |
+| Changed stable machine-consumed field or response shape | nearest contract doc, example, or API doc |
 | New service-level workflow | service README or service docs |
 | Changed workspace workflow | root README, contributor docs, or workspace docs |
 | Changed install or release flow | contributor or operator docs |
@@ -59,6 +62,9 @@ When a command's output, flags, or behavior change:
 1. find every code block in the relevant README/docs files that shows the affected command
 2. update the command invocation and the example output together
 3. do not leave stale flags or old output format in examples
+
+If the repository owns Swagger or OpenAPI docs, update those when the API
+contract changes.
 
 ## Diagnostics
 
