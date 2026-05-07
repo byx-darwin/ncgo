@@ -62,8 +62,10 @@ func TestAddNoGenerateCreatesHertzServiceAndUpdatesWorkspace(t *testing.T) {
 		t.Errorf("Module = %q", res.Module)
 	}
 	for _, p := range []string{
+		".pre-commit-config.yaml",
 		".ncgo/manifest.yaml",
 		"idl/app/web-bff.proto",
+		"scripts/run-go-module-checks.sh",
 		"template/data.json",
 		"template/layout.yaml",
 		"template/package.yaml",

@@ -242,6 +242,7 @@ cd user-api
 Expected files:
 
 - `.ncgo/manifest.yaml`
+- `.pre-commit-config.yaml`
 - `idl/app/user-api.proto`
 - `template/layout.yaml`
 - `template/package.yaml`
@@ -282,6 +283,7 @@ cd user-rpc
 Expected files:
 
 - `.ncgo/manifest.yaml`
+- `.pre-commit-config.yaml`
 - `idl/userrpc.proto`
 - `template/kitex-template/...`
 
@@ -307,6 +309,7 @@ Expected files:
 
 - `ncgo.workspace`
 - `README.md`
+- `.pre-commit-config.yaml`
 - `services/.gitkeep`
 
 Typical next steps:

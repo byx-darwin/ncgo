@@ -180,7 +180,7 @@ ncgo add rpc user-rpc --root .
 ncgo add bff web-bff --root .
 ```
 
-根目录保存 `ncgo.workspace`，每个生成的服务保存自己的 `.ncgo/manifest.yaml`。
+根目录保存 `ncgo.workspace`，并额外生成工作区级 `.pre-commit-config.yaml`；每个生成的服务保存自己的 `.ncgo/manifest.yaml`。
 
 当你在 micro 根目录执行 `ncgo doctor --root .` 或 `ncgo protolint --root .` 时，ncgo
 现在会自动遍历 `ncgo.workspace` 里登记的服务，并聚合各服务 `manifest.service.idl`
@@ -200,6 +200,10 @@ ncgo new user-api --module github.com/acme/user-api --kind kitex --no-generate
 ```
 
 此时 ncgo 会打印之后可手动执行的生成器命令。生成器成功后会创建 `go.mod`，后续步骤从 `go mod tidy` 开始。
+
+生成后的单体服务和 micro 工作区还会包含根目录 `.pre-commit-config.yaml`
+以及 `scripts/run-go-module-checks.sh`，方便协作者启用 `pre-commit` /
+`pre-push` 对一个或多个 Go module 执行统一检查。
 
 ## AI 上下文
 

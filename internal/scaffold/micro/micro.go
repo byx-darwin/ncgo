@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
 )
 
 type Options struct {
@@ -46,6 +47,9 @@ func Generate(opts Options) (*Result, error) {
 		return nil, err
 	}
 	if err := writeReadme(dir, opts); err != nil {
+		return nil, err
+	}
+	if err := shared.WriteRepositoryHooks(dir); err != nil {
 		return nil, err
 	}
 	if err := os.WriteFile(filepath.Join(dir, "services", ".gitkeep"), nil, 0o644); err != nil {
@@ -106,6 +110,7 @@ func writeReadme(dir string, opts Options) error {
 	body := fmt.Sprintf("# %s\n\n"+
 		"ncgo micro workspace for module `%s`.\n\n"+
 		"- Workspace metadata: `ncgo.workspace`\n"+
+		"- Local hooks config: `.pre-commit-config.yaml`\n"+
 		"- Services live under `services/` and keep their own `.ncgo/manifest.yaml`.\n\n"+
 		"Use `ncgo add rpc <name>` to add Kitex RPC services and `ncgo add bff <name>` to add Hertz BFF services.\n",
 		opts.Name, opts.Module)

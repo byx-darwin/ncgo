@@ -28,7 +28,7 @@ func TestGenerateProducesMicroWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	for _, p := range []string{"ncgo.workspace", "README.md", "services/.gitkeep"} {
+	for _, p := range []string{"ncgo.workspace", "README.md", ".pre-commit-config.yaml", "scripts/run-go-module-checks.sh", "services/.gitkeep"} {
 		if _, err := os.Stat(filepath.Join(res.Dir, p)); err != nil {
 			t.Fatalf("expected %s: %v", p, err)
 		}
@@ -42,6 +42,13 @@ func TestGenerateProducesMicroWorkspace(t *testing.T) {
 	}
 	if len(w.Services) != 0 {
 		t.Errorf("new micro workspace should start with no services, got %v", w.Services)
+	}
+	readme, err := os.ReadFile(filepath.Join(res.Dir, "README.md"))
+	if err != nil {
+		t.Fatalf("read README: %v", err)
+	}
+	if !strings.Contains(string(readme), ".pre-commit-config.yaml") {
+		t.Errorf("workspace README missing pre-commit guidance")
 	}
 }
 

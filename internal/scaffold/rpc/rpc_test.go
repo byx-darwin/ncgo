@@ -62,8 +62,10 @@ func TestAddNoGenerateCreatesKitexServiceAndUpdatesWorkspace(t *testing.T) {
 		t.Errorf("Module = %q", res.Module)
 	}
 	for _, p := range []string{
+		".pre-commit-config.yaml",
 		".ncgo/manifest.yaml",
 		"idl/userrpc.proto",
+		"scripts/run-go-module-checks.sh",
 		"template/kitex-template/main.yaml",
 		"template/kitex-template/server.yaml",
 	} {

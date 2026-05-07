@@ -194,8 +194,9 @@ ncgo new commerce --module github.com/acme/commerce --mode micro
 cd commerce
 ```
 
-This creates a root `ncgo.workspace`, `README.md`, and an empty `services/`
-directory. Add Kitex RPC and Hertz BFF services with:
+This creates a root `ncgo.workspace`, `README.md`, a workspace-level
+`.pre-commit-config.yaml`, and an empty `services/` directory. Add Kitex RPC
+and Hertz BFF services with:
 
 ```bash
 ncgo add rpc user-rpc --root .
@@ -226,6 +227,11 @@ Generated projects intentionally keep `template/`:
 
 - Hertz: `template/layout.yaml`, `template/package.yaml`, `template/data.json`
 - Kitex: `template/kitex-template/*.yaml`
+
+Generated mono services and micro workspaces also include a root
+`.pre-commit-config.yaml` plus `scripts/run-go-module-checks.sh` so
+contributors can enable `pre-commit` / `pre-push` checks across one or more Go
+modules.
 
 These files make future IDL updates reproducible (`make update` in generated
 Kitex projects, equivalent generator command for Hertz).

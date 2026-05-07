@@ -50,10 +50,12 @@ func TestGenerateNoGenerateProducesGoldenTree(t *testing.T) {
 	got := walk(t, res.Dir)
 	want := []string{
 		".ncgo/manifest.yaml",
+		".pre-commit-config.yaml",
 		"idl/api.proto",
 		"idl/app/demo.proto",
 		"idl/openapi/annotations.proto",
 		"idl/openapi/openapi.proto",
+		"scripts/run-go-module-checks.sh",
 		"template/data.json",
 		"template/layout.yaml",
 		"template/package.yaml",
@@ -163,6 +165,32 @@ func TestGenerateHertzTemplateIncludesSafeOptionalWiringAnchors(t *testing.T) {
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("hertz layout missing optional wiring anchor %q", want)
+		}
+	}
+}
+
+func TestGenerateWritesRepositoryHookFiles(t *testing.T) {
+	opts := baseOpts(t)
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	config, err := os.ReadFile(filepath.Join(res.Dir, ".pre-commit-config.yaml"))
+	if err != nil {
+		t.Fatalf("read pre-commit config: %v", err)
+	}
+	for _, want := range []string{"default_install_hook_types", "./scripts/run-go-module-checks.sh vet", "go-build-all-modules"} {
+		if !strings.Contains(string(config), want) {
+			t.Errorf("pre-commit config missing %q", want)
+		}
+	}
+	script, err := os.ReadFile(filepath.Join(res.Dir, "scripts", "run-go-module-checks.sh"))
+	if err != nil {
+		t.Fatalf("read pre-push helper script: %v", err)
+	}
+	for _, want := range []string{"find . -name go.mod", "usage: $0 <vet|test|build>", "go test ./... -count=1"} {
+		if !strings.Contains(string(script), want) {
+			t.Errorf("pre-push helper missing %q", want)
 		}
 	}
 }
@@ -551,8 +579,10 @@ func TestGenerateKitexNoGenerateProducesTree(t *testing.T) {
 	}
 	got := walk(t, res.Dir)
 	for _, want := range []string{
+		".pre-commit-config.yaml",
 		".ncgo/manifest.yaml",
 		"idl/demo.proto",
+		"scripts/run-go-module-checks.sh",
 		"template/kitex-template/main.yaml",
 		"template/kitex-template/server.yaml",
 		"template/kitex-template/handler.yaml",

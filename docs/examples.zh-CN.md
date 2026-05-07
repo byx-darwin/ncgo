@@ -219,6 +219,7 @@ cd user-api
 预期会看到这些文件：
 
 - `.ncgo/manifest.yaml`
+- `.pre-commit-config.yaml`
 - `idl/app/user-api.proto`
 - `template/layout.yaml`
 - `template/package.yaml`
@@ -254,6 +255,7 @@ cd user-rpc
 预期会看到这些文件：
 
 - `.ncgo/manifest.yaml`
+- `.pre-commit-config.yaml`
 - `idl/userrpc.proto`
 - `template/kitex-template/...`
 
@@ -279,6 +281,7 @@ cd commerce
 
 - `ncgo.workspace`
 - `README.md`
+- `.pre-commit-config.yaml`
 - `services/.gitkeep`
 
 典型下一步：

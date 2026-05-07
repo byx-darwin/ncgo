@@ -32,6 +32,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
 )
 
 // Options describes a `ncgo new --mode mono` invocation.
@@ -81,6 +82,9 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 	if err := writeManifest(dir, opts, idl); err != nil {
+		return nil, err
+	}
+	if err := shared.WriteRepositoryHooks(dir); err != nil {
 		return nil, err
 	}
 	res := &Result{Dir: dir, NextSteps: nextSteps(opts, idl)}
