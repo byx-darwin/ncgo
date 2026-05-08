@@ -28,7 +28,7 @@ func TestGenerateProducesMicroWorkspace(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	for _, p := range []string{"ncgo.workspace", "README.md", ".pre-commit-config.yaml", "scripts/run-go-module-checks.sh", "services/.gitkeep"} {
+	for _, p := range []string{"ncgo.workspace", "README.md", "compose.yaml", ".pre-commit-config.yaml", "scripts/run-go-module-checks.sh", "services/.gitkeep"} {
 		if _, err := os.Stat(filepath.Join(res.Dir, p)); err != nil {
 			t.Fatalf("expected %s: %v", p, err)
 		}
@@ -49,6 +49,16 @@ func TestGenerateProducesMicroWorkspace(t *testing.T) {
 	}
 	if !strings.Contains(string(readme), ".pre-commit-config.yaml") {
 		t.Errorf("workspace README missing pre-commit guidance")
+	}
+	if !strings.Contains(string(readme), "compose.yaml") {
+		t.Errorf("workspace README missing compose guidance")
+	}
+	composeBody, err := os.ReadFile(filepath.Join(res.Dir, "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read compose.yaml: %v", err)
+	}
+	if !strings.Contains(string(composeBody), "services: {}") {
+		t.Errorf("empty workspace compose should start with services: {}\n---\n%s", composeBody)
 	}
 }
 

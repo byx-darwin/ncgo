@@ -63,6 +63,7 @@ v0.5 MVP 已完成：
 | 项目元数据 | 服务内 `.ncgo/manifest.yaml`；micro 根目录 `ncgo.workspace` |
 | Hertz | IDL 占位、`hz` 自定义 layout/package 输入、HTTP 服务骨架 |
 | Kitex | IDL 占位、Kitex template tree、RPC 服务骨架 |
+| 容器化 | 服务级 `Dockerfile` / `.dockerignore`；mono 与 micro 根目录生成 `compose.yaml` |
 | Domain | `internal/usecase/<name>`、`internal/repository/<name>`、DI register 文件 |
 | Infra | `internal/base/...` 下的可选 Go 文件 |
 | AI 上下文 | `AGENTS.md`、`CLAUDE.md`、`.claude/generated/project-context.md`、`.cursor/rules/ncgo.mdc` |
@@ -160,6 +161,9 @@ Hertz 模板默认提供 `zh-CN`、`zh-TW`、`ja-JP`、`ko-KR`、`fr-FR`、`de-D
 `internal/pkg/i18n/locales/*.json` 中维护，并通过 `make i18n` 生成
 `internal/pkg/i18n/catalog_gen.go`。
 
+新的服务脚手架还会额外生成服务级 `Dockerfile`、`.dockerignore` 和
+`compose.yaml`，方便本地容器构建与运行。
+
 ### Kitex RPC 服务
 
 ```bash
@@ -172,6 +176,8 @@ make dev
 
 Kitex 服务名会被规范化为合法 proto / Go 标识符。例如 `user-api` 会生成 `idl/userapi.proto`、proto package `userapi`、service `UserApi`。
 
+Kitex 脚手架同样会附带服务级 `Dockerfile`、`.dockerignore` 和 `compose.yaml`。
+
 ### Micro 工作区
 
 ```bash
@@ -181,7 +187,10 @@ ncgo add rpc user-rpc --root .
 ncgo add bff web-bff --root .
 ```
 
-根目录保存 `ncgo.workspace`，并额外生成工作区级 `.pre-commit-config.yaml`；每个生成的服务保存自己的 `.ncgo/manifest.yaml`。
+根目录保存 `ncgo.workspace`，并额外生成工作区级 `compose.yaml` 与
+`.pre-commit-config.yaml`；每个生成的服务保存自己的 `.ncgo/manifest.yaml`、`Dockerfile`
+以及服务级 `compose.yaml`。后续执行 `ncgo add rpc` / `ncgo add bff` 时，工作区根目录
+`compose.yaml` 也会自动刷新。
 
 当你在 micro 根目录执行 `ncgo doctor --root .` 或 `ncgo protolint --root .` 时，ncgo
 现在会自动遍历 `ncgo.workspace` 里登记的服务，并聚合各服务 `manifest.service.idl`

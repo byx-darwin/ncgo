@@ -290,6 +290,7 @@ func Select(traffic Traffic, instances []Instance, rules RuleSet) Selection {
 }
 
 type NacosDiscoveryConfig struct {
+	ServerAddr  string `json:"server_addr" yaml:"server_addr"`
 	NamespaceID string `json:"namespace_id" yaml:"namespace_id"`
 	GroupName   string `json:"group_name" yaml:"group_name"`
 	ClusterName string `json:"cluster_name" yaml:"cluster_name"`
@@ -297,8 +298,9 @@ type NacosDiscoveryConfig struct {
 }
 
 type PolarisDiscoveryConfig struct {
-	Namespace string `json:"namespace" yaml:"namespace"`
-	Service   string `json:"service" yaml:"service"`
+	Addresses []string `json:"addresses" yaml:"addresses"`
+	Namespace string   `json:"namespace" yaml:"namespace"`
+	Service   string   `json:"service" yaml:"service"`
 }
 
 const (
@@ -307,15 +309,17 @@ const (
 )
 
 type NacosRuleConfig struct {
+	ServerAddr  string `json:"server_addr" yaml:"server_addr"`
 	NamespaceID string `json:"namespace_id" yaml:"namespace_id"`
 	GroupName   string `json:"group_name" yaml:"group_name"`
 	DataID      string `json:"data_id" yaml:"data_id"`
 }
 
 type PolarisRuleConfig struct {
-	Namespace string `json:"namespace" yaml:"namespace"`
-	Group     string `json:"group" yaml:"group"`
-	FileName  string `json:"file_name" yaml:"file_name"`
+	Addresses []string `json:"addresses" yaml:"addresses"`
+	Namespace string   `json:"namespace" yaml:"namespace"`
+	Group     string   `json:"group" yaml:"group"`
+	FileName  string   `json:"file_name" yaml:"file_name"`
 }
 
 type NacosInstance struct {

@@ -300,15 +300,12 @@ service %s {
 	}, "\n")
 }
 
-// writeManifest delegates to internal/manifest.Save for the project-root
-// .ncgo/manifest.yaml so the schema and atomic-write semantics stay in one
-// place.
-func writeManifest(dir string, opts Options, idl string) error {
+func buildManifest(opts Options, idl string) *manifest.Manifest {
 	now := opts.Now
 	if now.IsZero() {
 		now = time.Now().UTC()
 	}
-	m := &manifest.Manifest{
+	return &manifest.Manifest{
 		Ncgo: manifest.Meta{
 			Version:       opts.NCGOVersion,
 			AssetsVersion: opts.AssetsVersion,
@@ -323,7 +320,17 @@ func writeManifest(dir string, opts Options, idl string) error {
 		},
 		GeneratedAt: now,
 	}
-	return manifest.Save(dir, m)
+}
+
+// writeManifest delegates to internal/manifest.Save for the project-root
+// .ncgo/manifest.yaml so the schema and atomic-write semantics stay in one
+// place.
+func writeManifest(dir string, opts Options, idl string) (*manifest.Manifest, error) {
+	m := buildManifest(opts, idl)
+	if err := manifest.Save(dir, m); err != nil {
+		return nil, err
+	}
+	return m, nil
 }
 
 // nextSteps is the agent-facing handoff: the exact shell sequence to run

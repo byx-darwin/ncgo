@@ -49,8 +49,12 @@ func TestGenerateNoGenerateProducesGoldenTree(t *testing.T) {
 	}
 	got := walk(t, res.Dir)
 	want := []string{
+		".dockerignore",
 		".ncgo/manifest.yaml",
 		".pre-commit-config.yaml",
+		"Dockerfile",
+		"compose.yaml",
+		"conf/docker/conf.yaml",
 		"idl/api.proto",
 		"idl/app/demo.proto",
 		"idl/openapi/annotations.proto",
@@ -62,6 +66,103 @@ func TestGenerateNoGenerateProducesGoldenTree(t *testing.T) {
 	}
 	if !equal(got, want) {
 		t.Errorf("tree mismatch\n got: %v\nwant: %v", got, want)
+	}
+}
+
+func TestGenerateWritesHertzContainerFiles(t *testing.T) {
+	opts := baseOpts(t)
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	dockerfile, err := os.ReadFile(filepath.Join(res.Dir, "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	for _, want := range []string{"EXPOSE 8080", "ENTRYPOINT [\"./app\"]", "ENV GO_ENV=docker"} {
+		if !strings.Contains(string(dockerfile), want) {
+			t.Fatalf("Dockerfile missing %q\n---\n%s", want, dockerfile)
+		}
+	}
+	composeBody, err := os.ReadFile(filepath.Join(res.Dir, "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read compose.yaml: %v", err)
+	}
+	for _, want := range []string{"name: demo", "8080:8080", "dockerfile: Dockerfile", "config-center-nacos", "config-center-polaris", "GO_ENV: docker"} {
+		if !strings.Contains(string(composeBody), want) {
+			t.Fatalf("compose.yaml missing %q\n---\n%s", want, composeBody)
+		}
+	}
+	dockerConf, err := os.ReadFile(filepath.Join(res.Dir, "conf", "docker", "conf.yaml"))
+	if err != nil {
+		t.Fatalf("read conf/docker/conf.yaml: %v", err)
+	}
+	for _, want := range []string{"env: docker", "config_center:", "server_addr: nacos:8848", "release:", "- polaris:8091", "- polaris:8093"} {
+		if !strings.Contains(string(dockerConf), want) {
+			t.Fatalf("docker conf missing %q\n---\n%s", want, dockerConf)
+		}
+	}
+}
+
+func TestGenerateWithDatabaseComposeIncludesPostgres(t *testing.T) {
+	opts := baseOpts(t)
+	opts.WithDatabase = true
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	composeBody, err := os.ReadFile(filepath.Join(res.Dir, "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read compose.yaml: %v", err)
+	}
+	for _, want := range []string{"postgres:", "DATABASE_URL: postgres://postgres:postgres@postgres:5432/demo?sslmode=disable", "5432:5432"} {
+		if !strings.Contains(string(composeBody), want) {
+			t.Fatalf("database compose missing %q\n---\n%s", want, composeBody)
+		}
+	}
+	dockerConf, err := os.ReadFile(filepath.Join(res.Dir, "conf", "docker", "conf.yaml"))
+	if err != nil {
+		t.Fatalf("read conf/docker/conf.yaml: %v", err)
+	}
+	for _, want := range []string{"env: docker", "database:", "enabled: true", `dsn: "postgres://postgres:postgres@postgres:5432/demo?sslmode=disable"`} {
+		if !strings.Contains(string(dockerConf), want) {
+			t.Fatalf("docker conf missing %q\n---\n%s", want, dockerConf)
+		}
+	}
+}
+
+func TestGenerateWritesKitexContainerFiles(t *testing.T) {
+	opts := baseOpts(t)
+	opts.Kind = manifest.KindKitex
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	dockerfile, err := os.ReadFile(filepath.Join(res.Dir, "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	if !strings.Contains(string(dockerfile), "EXPOSE 8888") {
+		t.Fatalf("kitex Dockerfile missing EXPOSE 8888\n---\n%s", dockerfile)
+	}
+	if !strings.Contains(string(dockerfile), "ENV GO_ENV=docker") {
+		t.Fatalf("kitex Dockerfile missing GO_ENV=docker\n---\n%s", dockerfile)
+	}
+	composeBody, err := os.ReadFile(filepath.Join(res.Dir, "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read compose.yaml: %v", err)
+	}
+	for _, want := range []string{"8888:8888", "GO_ENV: docker"} {
+		if !strings.Contains(string(composeBody), want) {
+			t.Fatalf("kitex compose missing %q\n---\n%s", want, composeBody)
+		}
+	}
+	dockerConf, err := os.ReadFile(filepath.Join(res.Dir, "conf", "docker", "conf.yaml"))
+	if err != nil {
+		t.Fatalf("read conf/docker/conf.yaml: %v", err)
+	}
+	if !strings.Contains(string(dockerConf), "env: docker") {
+		t.Fatalf("kitex docker conf missing env docker\n---\n%s", dockerConf)
 	}
 }
 
@@ -651,6 +752,8 @@ func TestGenerateHertzWithDatabaseRendersTopLevelDatabaseConfig(t *testing.T) {
 		"database:",
 		"enabled: false",
 		"dsn: \"\"",
+		"server_addr: \"\"",
+		"addresses: []",
 		"max_conns: 20",
 		"health_check_period_seconds: 30",
 		"# Redis 连接配置：作为共享默认值供 rate_limit / idempotency / signature nonce 复用",
@@ -670,6 +773,8 @@ func TestGenerateHertzWithDatabaseRendersTopLevelDatabaseConfig(t *testing.T) {
 	for _, want := range []string{
 		"Database DatabaseConfig",
 		"Redis       RedisConfig",
+		"ServerAddr  string `json:\"server_addr\" yaml:\"server_addr\"`",
+		"Addresses []string `json:\"addresses\" yaml:\"addresses\"`",
 		"type DatabaseConfig struct",
 		"type RedisConfig = RateLimitRedisConfig",
 		"func (c *Config) applyRedisFallbacks()",

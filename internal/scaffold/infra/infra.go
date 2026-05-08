@@ -23,6 +23,7 @@ import (
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	planpkg "github.com/byx-darwin/ncgo/internal/scaffold/plan"
+	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
 )
 
 // Kind values supported by `ncgo add infra`. The corresponding template files
@@ -209,6 +210,17 @@ func Add(opts Options) (*Result, error) {
 	}
 	if updated && !opts.DryRun {
 		if err := manifest.Save(root, m); err != nil {
+			return nil, err
+		}
+	}
+	if !opts.DryRun {
+		if err := shared.WriteServiceDockerConfig(root, m); err != nil {
+			return nil, err
+		}
+		if err := shared.WriteMonoCompose(root, m); err != nil {
+			return nil, err
+		}
+		if err := shared.RefreshWorkspaceComposeForServiceRoot(root); err != nil {
 			return nil, err
 		}
 	}

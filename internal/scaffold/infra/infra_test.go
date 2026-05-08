@@ -20,6 +20,40 @@ func seedKitexProject(t *testing.T, infra []string) string {
 	return seedProjectKind(t, manifest.KindKitex, "idl/demo.proto", infra)
 }
 
+func seedWorkspaceServiceProject(t *testing.T, kind string, serviceInfra []string) (string, string) {
+	t.Helper()
+	root := t.TempDir()
+	w := &manifest.Workspace{
+		Ncgo:        manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test"},
+		Mode:        manifest.ModeMicro,
+		Name:        "commerce",
+		Module:      "github.com/x/commerce",
+		Services:    []manifest.WorkspaceService{{Name: "demo", Kind: kind, Dir: "services/demo"}},
+		GeneratedAt: time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC),
+	}
+	if err := manifest.SaveWorkspace(root, w); err != nil {
+		t.Fatalf("seed workspace: %v", err)
+	}
+	serviceRoot := filepath.Join(root, "services", "demo")
+	m := &manifest.Manifest{
+		Ncgo:   manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test"},
+		Mode:   manifest.ModeMono,
+		Module: "github.com/x/commerce/services/demo",
+		Service: manifest.Service{
+			Name: "demo", Kind: kind, IDL: "idl/demo.proto",
+		},
+		Infra:       serviceInfra,
+		GeneratedAt: time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC),
+	}
+	if kind == manifest.KindHertz {
+		m.Service.IDL = "idl/app/demo.proto"
+	}
+	if err := manifest.Save(serviceRoot, m); err != nil {
+		t.Fatalf("seed workspace service: %v", err)
+	}
+	return root, serviceRoot
+}
+
 func seedProjectKind(t *testing.T, kind, idl string, infra []string) string {
 	t.Helper()
 	root := t.TempDir()
@@ -102,6 +136,16 @@ func TestAddRedisCopiesFileAndUpdatesManifest(t *testing.T) {
 	if !strings.Contains(string(confBody), "# ncgo:add-infra:start redis") || !strings.Contains(string(confBody), "redis:") {
 		t.Errorf("redis config block missing in conf/dev/conf.yaml:\n%s", confBody)
 	}
+	dockerConfPath := filepath.Join(root, "conf", "docker", "conf.yaml")
+	dockerConfBody, err := os.ReadFile(dockerConfPath)
+	if err != nil {
+		t.Fatalf("read docker config: %v", err)
+	}
+	for _, want := range []string{"env: docker", "redis:", "- redis:6379"} {
+		if !strings.Contains(string(dockerConfBody), want) {
+			t.Fatalf("docker conf missing %q\n---\n%s", want, dockerConfBody)
+		}
+	}
 	if _, err := os.Stat(filepath.Join(root, "conf", "dev", "redis.yaml")); !os.IsNotExist(err) {
 		t.Errorf("redis should no longer write a standalone redis.yaml: stat err = %v", err)
 	}
@@ -111,6 +155,31 @@ func TestAddRedisCopiesFileAndUpdatesManifest(t *testing.T) {
 	}
 	if len(m.Infra) != 1 || m.Infra[0] != KindRedis {
 		t.Errorf("manifest.Infra = %v, want [redis]", m.Infra)
+	}
+	composeBody, err := os.ReadFile(filepath.Join(root, "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read compose: %v", err)
+	}
+	for _, want := range []string{"demo:", "redis:", "config-center-nacos"} {
+		if !strings.Contains(string(composeBody), want) {
+			t.Fatalf("compose missing %q\n---\n%s", want, composeBody)
+		}
+	}
+}
+
+func TestAddRedisRefreshesParentWorkspaceCompose(t *testing.T) {
+	workspaceRoot, serviceRoot := seedWorkspaceServiceProject(t, manifest.KindHertz, nil)
+	if _, err := Add(Options{Root: serviceRoot, Kind: KindRedis}); err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	composeBody, err := os.ReadFile(filepath.Join(workspaceRoot, "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read workspace compose: %v", err)
+	}
+	for _, want := range []string{"./services/demo", "redis:", "18080:8080"} {
+		if !strings.Contains(string(composeBody), want) {
+			t.Fatalf("workspace compose missing %q\n---\n%s", want, composeBody)
+		}
 	}
 }
 
@@ -182,6 +251,26 @@ func TestAddHertzDataInfraWritesConfigIntoSingleConfFile(t *testing.T) {
 			}
 			if _, err := os.Stat(filepath.Join(root, tc.standalone)); !os.IsNotExist(err) {
 				t.Fatalf("standalone snippet file should not exist (%s): %v", tc.standalone, err)
+			}
+			dockerConfPath := filepath.Join(root, "conf", "docker", "conf.yaml")
+			dockerBody, err := os.ReadFile(dockerConfPath)
+			if err != nil {
+				t.Fatalf("read docker config %s: %v", dockerConfPath, err)
+			}
+			if !strings.Contains(string(dockerBody), "env: docker") {
+				t.Fatalf("docker conf missing env docker\n---\n%s", dockerBody)
+			}
+			var dockerWant string
+			switch tc.kind {
+			case KindKafka:
+				dockerWant = "- kafka:9092"
+			case KindES:
+				dockerWant = "- http://elasticsearch:9200"
+			case KindClickHouse:
+				dockerWant = "- clickhouse:9000"
+			}
+			if dockerWant != "" && !strings.Contains(string(dockerBody), dockerWant) {
+				t.Fatalf("docker conf missing %q\n---\n%s", dockerWant, dockerBody)
 			}
 		})
 	}

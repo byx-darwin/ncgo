@@ -88,7 +88,17 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if err := writeIDLPlaceholder(dir, idl, opts); err != nil {
 		return nil, err
 	}
-	if err := writeManifest(dir, opts, idl); err != nil {
+	m, err := writeManifest(dir, opts, idl)
+	if err != nil {
+		return nil, err
+	}
+	if err := shared.WriteServiceContainerFiles(dir, defaultKind(opts.Kind)); err != nil {
+		return nil, err
+	}
+	if err := shared.WriteServiceDockerConfig(dir, m); err != nil {
+		return nil, err
+	}
+	if err := shared.WriteMonoCompose(dir, m); err != nil {
 		return nil, err
 	}
 	if err := shared.WriteRepositoryHooks(dir); err != nil {

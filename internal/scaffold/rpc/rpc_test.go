@@ -64,6 +64,10 @@ func TestAddNoGenerateCreatesKitexServiceAndUpdatesWorkspace(t *testing.T) {
 	for _, p := range []string{
 		".pre-commit-config.yaml",
 		".ncgo/manifest.yaml",
+		".dockerignore",
+		"Dockerfile",
+		"conf/docker/conf.yaml",
+		"compose.yaml",
 		"idl/userrpc.proto",
 		"scripts/run-go-module-checks.sh",
 		"template/kitex-template/main.yaml",
@@ -86,6 +90,15 @@ func TestAddNoGenerateCreatesKitexServiceAndUpdatesWorkspace(t *testing.T) {
 	}
 	if len(w.Services) != 1 || w.Services[0].Name != "user-rpc" || w.Services[0].Dir != "services/user-rpc" {
 		t.Errorf("workspace services = %+v", w.Services)
+	}
+	composeBody, err := os.ReadFile(filepath.Join(root, "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read workspace compose: %v", err)
+	}
+	for _, want := range []string{"user-rpc:", "./services/user-rpc", "18888:8888", "GO_ENV: docker"} {
+		if !strings.Contains(string(composeBody), want) {
+			t.Fatalf("workspace compose missing %q\n---\n%s", want, composeBody)
+		}
 	}
 }
 
@@ -111,7 +124,7 @@ func TestAddDryRunPlansWithoutWriting(t *testing.T) {
 	if len(w.Services) != 0 {
 		t.Fatalf("dry-run updated workspace services = %+v, want empty", w.Services)
 	}
-	if !planContains(res.Plan, "directory", "create") || !planContains(res.Plan, "workspace", "add") || !planContains(res.Plan, "generator", "run") {
+	if !planContains(res.Plan, "directory", "create") || !planContains(res.Plan, "workspace", "add") || !planContains(res.Plan, "generator", "run") || !planContains(res.Plan, "file", "write") {
 		t.Fatalf("plan missing expected items: %+v", res.Plan)
 	}
 }

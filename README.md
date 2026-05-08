@@ -69,6 +69,7 @@ Deferred optionals remain documented but intentionally not implemented yet:
 | Project metadata | `.ncgo/manifest.yaml` for services; `ncgo.workspace` for micro roots |
 | Hertz | IDL placeholder, custom `hz` layout/package inputs, HTTP service skeleton |
 | Kitex | IDL placeholder, custom Kitex template tree, RPC service skeleton |
+| Containerization | Service-level `Dockerfile` / `.dockerignore`; `compose.yaml` for mono and micro roots |
 | Domain | `internal/usecase/<name>`, `internal/repository/<name>`, DI register file |
 | Infra | Optional drop-in Go files under `internal/base/...` |
 | AI context | `AGENTS.md`, `CLAUDE.md`, `.claude/generated/project-context.md`, `.cursor/rules/ncgo.mdc` |
@@ -174,6 +175,9 @@ locales are maintained under `internal/pkg/i18n/locales/*.json` in the
 generated project, then compiled into `internal/pkg/i18n/catalog_gen.go` via
 `make i18n`.
 
+New scaffolds also include a service-level `Dockerfile`, `.dockerignore`, and
+`compose.yaml` for local container builds.
+
 ### Kitex RPC service
 
 ```bash
@@ -188,6 +192,9 @@ Kitex service names are normalised for valid proto/Go identifiers. For example,
 `user-api` produces `idl/userapi.proto`, proto package `userapi`, and service
 `UserApi`.
 
+Kitex scaffolds also ship with a service-level `Dockerfile`, `.dockerignore`,
+and `compose.yaml`.
+
 ### Micro workspace
 
 ```bash
@@ -195,16 +202,18 @@ ncgo new commerce --module github.com/acme/commerce --mode micro
 cd commerce
 ```
 
-This creates a root `ncgo.workspace`, `README.md`, a workspace-level
-`.pre-commit-config.yaml`, and an empty `services/` directory. Add Kitex RPC
-and Hertz BFF services with:
+This creates a root `ncgo.workspace`, `README.md`, `compose.yaml`, a
+workspace-level `.pre-commit-config.yaml`, and an empty `services/` directory.
+Add Kitex RPC and Hertz BFF services with:
 
 ```bash
 ncgo add rpc user-rpc --root .
 ncgo add bff web-bff --root .
 ```
 
-Each generated service keeps its own `.ncgo/manifest.yaml`.
+Each generated service keeps its own `.ncgo/manifest.yaml`, `Dockerfile`, and
+service-local `compose.yaml`; the workspace root `compose.yaml` is refreshed as
+services are added.
 
 ## Prepare vs Generate
 

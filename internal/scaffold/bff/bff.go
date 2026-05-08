@@ -16,6 +16,7 @@ import (
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scaffold/mono"
 	planpkg "github.com/byx-darwin/ncgo/internal/scaffold/plan"
+	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
 )
 
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
@@ -103,6 +104,9 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 	updated := mergeService(w, manifest.WorkspaceService{Name: opts.Name, Kind: manifest.KindHertz, Dir: serviceRel})
 	if updated {
 		if err := manifest.SaveWorkspace(root, w); err != nil {
+			return nil, err
+		}
+		if err := shared.WriteWorkspaceCompose(root, w); err != nil {
 			return nil, err
 		}
 	}
@@ -214,6 +218,7 @@ func buildPlan(serviceDir, name string, workspaceUpdated, noGenerate bool, next 
 		generatorAction, generatorDetail = "skip", "--no-generate"
 	}
 	items = append(items, planpkg.Item{Kind: "generator", Action: generatorAction, Detail: generatorDetail})
+	items = append(items, planpkg.Item{Kind: "file", Action: "write", Path: "compose.yaml", Detail: "workspace orchestration"})
 	for _, step := range next {
 		items = append(items, planpkg.Item{Kind: "next_step", Action: "run", Detail: step})
 	}

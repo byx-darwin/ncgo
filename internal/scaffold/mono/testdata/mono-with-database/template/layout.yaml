@@ -133,10 +133,14 @@ layouts:
         # 是否允许配置中心返回空内容；true 时保留本地配置
         allow_empty: false
         nacos:
+          # Nacos 服务端地址；多个地址可按 SDK 约定自行拼接
+          server_addr: ""
           namespace_id: ""
           group_name: DEFAULT_GROUP
           data_id: "{{.ServiceName}}.yaml"
         polaris:
+          # Polaris 配置中心地址列表；通常使用 config gRPC 端口 8093
+          addresses: []
           namespace: ""
           group: ncgo-config
           file_name: "{{.ServiceName}}.yaml"
@@ -539,11 +543,13 @@ layouts:
           # 服务发现提供方；按需选择 nacos / polaris
           provider: "" # nacos | polaris
           nacos:
+            server_addr: ""
             namespace_id: ""
             group_name: DEFAULT_GROUP
             cluster_name: DEFAULT
             service_name: {{.ServiceName}}
           polaris:
+            addresses: []
             namespace: ""
             service: {{.ServiceName}}
         rules:
@@ -554,10 +560,12 @@ layouts:
           # provider=config 时可指定本地规则文件；为空表示由业务方自行接入
           local_file: ""
           nacos:
+            server_addr: ""
             namespace_id: ""
             group_name: NCGO_CANARY
             data_id: "{{.ServiceName}}.canary.yaml"
           polaris:
+            addresses: []
             namespace: ""
             group: ncgo-canary
             file_name: "{{.ServiceName}}.canary.yaml"
@@ -639,12 +647,14 @@ layouts:
       }
 
       type ConfigCenterNacosConfig struct {
+          ServerAddr  string `json:"server_addr" yaml:"server_addr"`
           NamespaceID string `json:"namespace_id" yaml:"namespace_id"`
           GroupName   string `json:"group_name" yaml:"group_name"`
           DataID      string `json:"data_id" yaml:"data_id"`
       }
 
       type ConfigCenterPolarisConfig struct {
+          Addresses []string `json:"addresses" yaml:"addresses"`
           Namespace string `json:"namespace" yaml:"namespace"`
           Group     string `json:"group" yaml:"group"`
           FileName  string `json:"file_name" yaml:"file_name"`
@@ -908,6 +918,7 @@ layouts:
       }
 
       type ReleaseNacosDiscoveryConfig struct {
+          ServerAddr  string `json:"server_addr" yaml:"server_addr"`
           NamespaceID string `json:"namespace_id" yaml:"namespace_id"`
           GroupName   string `json:"group_name" yaml:"group_name"`
           ClusterName string `json:"cluster_name" yaml:"cluster_name"`
@@ -915,6 +926,7 @@ layouts:
       }
 
       type ReleasePolarisDiscoveryConfig struct {
+          Addresses []string `json:"addresses" yaml:"addresses"`
           Namespace string `json:"namespace" yaml:"namespace"`
           Service   string `json:"service" yaml:"service"`
       }
@@ -928,12 +940,14 @@ layouts:
       }
 
       type ReleaseNacosRuleConfig struct {
+          ServerAddr  string `json:"server_addr" yaml:"server_addr"`
           NamespaceID string `json:"namespace_id" yaml:"namespace_id"`
           GroupName   string `json:"group_name" yaml:"group_name"`
           DataID      string `json:"data_id" yaml:"data_id"`
       }
 
       type ReleasePolarisRuleConfig struct {
+          Addresses []string `json:"addresses" yaml:"addresses"`
           Namespace string `json:"namespace" yaml:"namespace"`
           Group     string `json:"group" yaml:"group"`
           FileName  string `json:"file_name" yaml:"file_name"`

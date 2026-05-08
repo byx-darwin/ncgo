@@ -49,6 +49,16 @@ func Generate(opts Options) (*Result, error) {
 	if err := writeReadme(dir, opts); err != nil {
 		return nil, err
 	}
+	if err := shared.WriteWorkspaceCompose(dir, &manifest.Workspace{
+		Ncgo:        manifest.Meta{Version: opts.NCGOVersion, AssetsVersion: opts.AssetsVersion},
+		Mode:        manifest.ModeMicro,
+		Name:        opts.Name,
+		Module:      opts.Module,
+		Services:    []manifest.WorkspaceService{},
+		GeneratedAt: opts.Now,
+	}); err != nil {
+		return nil, err
+	}
 	if err := shared.WriteRepositoryHooks(dir); err != nil {
 		return nil, err
 	}
@@ -110,6 +120,7 @@ func writeReadme(dir string, opts Options) error {
 	body := fmt.Sprintf("# %s\n\n"+
 		"ncgo micro workspace for module `%s`.\n\n"+
 		"- Workspace metadata: `ncgo.workspace`\n"+
+		"- Workspace orchestration: `compose.yaml`\n"+
 		"- Local hooks config: `.pre-commit-config.yaml`\n"+
 		"- Services live under `services/` and keep their own `.ncgo/manifest.yaml`.\n\n"+
 		"Use `ncgo add rpc <name>` to add Kitex RPC services and `ncgo add bff <name>` to add Hertz BFF services.\n",
