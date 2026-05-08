@@ -1,12 +1,14 @@
 // Package infra implements `ncgo add infra <kind>`.
 //
 // The optional add-on files in internal/assets/_data/optional/ or
-// internal/assets/_data/<framework>/optional/ are literal Go source templates:
-// each one is copied verbatim to its target package in the project. Most
-// add-ons land in internal/base/data/<kind>.go; specialized add-ons may target
-// packages such as internal/base/registry, internal/base/observability, or
-// internal/base/logging. Add updates the manifest's infra list and prints the
-// setup commands the user must run.
+// internal/assets/_data/<framework>/optional/ are copied into the project.
+// Most are written verbatim; a small set of Hertz helper assets also render
+// `{{.GoModule}}` placeholders before write. Most add-ons land in
+// internal/base/data/<kind>.go; specialized add-ons may target packages such as
+// internal/base/registry, internal/base/observability, or
+// internal/base/logging. Hertz data add-ons may also emit example config
+// snippets under conf/dev/*.yaml. Add updates the manifest's infra list and
+// prints the setup commands the user must run.
 package infra
 
 import (
@@ -16,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strings"
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
@@ -94,6 +97,17 @@ var outputRelPaths = map[string]string{
 	KindReleaseCanary:     filepath.Join("internal", "base", "release", "canary.go"),
 }
 
+const hertzRedisSharedHelperRelPath = "internal/base/data/redis_shared.go"
+
+const hertzConfigRelPath = "conf/dev/conf.yaml"
+
+var hertzConfigSnippetKeys = map[string]string{
+	KindRedis:      "redis",
+	KindKafka:      "kafka",
+	KindES:         "es",
+	KindClickHouse: "clickhouse",
+}
+
 // Options configures Add.
 type Options struct {
 	Root   string // project root containing .ncgo/manifest.yaml
@@ -140,25 +154,39 @@ func Add(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
+	files, err = appendHertzRedisHelperIfMissing(files, root, m.Service.Kind, kind)
+	if err != nil {
+		return nil, err
+	}
 	if opts.Wire && !wireSupportedKind(kind) {
 		return nil, unsupportedWireError()
 	}
-	bodies := make([][]byte, 0, len(files))
-	paths := make([]string, 0, len(files))
-	filePlans := make([]PlanItem, 0, len(files))
+	writes := make([]plannedWrite, 0, len(files)+1)
+	paths := make([]string, 0, len(files)+1)
+	filePlans := make([]PlanItem, 0, len(files)+1)
 	for _, file := range files {
 		body, err := fs.ReadFile(assets.FS(), file.SourcePath)
 		if err != nil {
 			return nil, fmt.Errorf("infra: read embedded %s: %w", file.SourcePath, err)
 		}
+		body = renderAssetBody(body, m.Module)
 		dst := filepath.Join(root, file.OutputRelPath)
 		action, err := plannedFileAction(dst, opts.Force)
 		if err != nil {
 			return nil, err
 		}
-		bodies = append(bodies, body)
+		writes = append(writes, plannedWrite{Path: dst, Body: body, Action: action})
 		paths = append(paths, dst)
 		filePlans = append(filePlans, PlanItem{Kind: "file", Action: action, Path: dst})
+	}
+	confWrite, err := planHertzConfigWrite(root, m.Service.Kind, kind, opts.Force)
+	if err != nil {
+		return nil, err
+	}
+	if confWrite != nil {
+		writes = append(writes, *confWrite)
+		paths = append(paths, confWrite.Path)
+		filePlans = append(filePlans, PlanItem{Kind: "file", Action: confWrite.Action, Path: confWrite.Path})
 	}
 	wiredPaths := []string(nil)
 	wirePlans := []PlanItem(nil)
@@ -169,8 +197,8 @@ func Add(opts Options) (*Result, error) {
 		}
 	}
 	if !opts.DryRun {
-		for i, dst := range paths {
-			if err := writeFile(dst, bodies[i]); err != nil {
+		for _, w := range writes {
+			if err := writeFile(w.Path, w.Body); err != nil {
 				return nil, err
 			}
 		}
@@ -190,7 +218,7 @@ func Add(opts Options) (*Result, error) {
 			return nil, err
 		}
 	}
-	next := nextSteps(kind, m.Service.Name)
+	next := nextSteps(kind, m.Service.Kind, m.Service.Name)
 	return &Result{
 		WrittenPath:  paths[0],
 		WrittenPaths: paths,
@@ -205,6 +233,12 @@ func Add(opts Options) (*Result, error) {
 type addOnFile struct {
 	SourcePath    string
 	OutputRelPath string
+}
+
+type plannedWrite struct {
+	Path   string
+	Body   []byte
+	Action string
 }
 
 func assetFiles(serviceKind, infraKind string) ([]addOnFile, error) {
@@ -233,6 +267,134 @@ func assetFiles(serviceKind, infraKind string) ([]addOnFile, error) {
 		return nil, fmt.Errorf("infra: kind %q has no output path", infraKind)
 	}
 	return []addOnFile{{SourcePath: srcPath, OutputRelPath: rel}}, nil
+}
+
+func appendHertzRedisHelperIfMissing(files []addOnFile, root, serviceKind, infraKind string) ([]addOnFile, error) {
+	if serviceKind != manifest.KindHertz || infraKind != KindRedis {
+		return files, nil
+	}
+	helperPath := filepath.Join(root, filepath.FromSlash(hertzRedisSharedHelperRelPath))
+	if _, err := os.Stat(helperPath); err == nil {
+		return files, nil
+	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
+		return nil, fmt.Errorf("infra: stat %s: %w", helperPath, err)
+	}
+	return append(files, addOnFile{SourcePath: "hertz/optional/redis_shared.go", OutputRelPath: filepath.FromSlash(hertzRedisSharedHelperRelPath)}), nil
+}
+
+func renderAssetBody(body []byte, module string) []byte {
+	if module == "" {
+		return body
+	}
+	rendered := strings.ReplaceAll(string(body), "{{.GoModule}}", module)
+	return []byte(rendered)
+}
+
+func planHertzConfigWrite(root, serviceKind, infraKind string, force bool) (*plannedWrite, error) {
+	if serviceKind != manifest.KindHertz {
+		return nil, nil
+	}
+	if _, ok := hertzConfigSnippetKeys[infraKind]; !ok {
+		return nil, nil
+	}
+	snippet, err := fs.ReadFile(assets.FS(), filepath.ToSlash(filepath.Join("hertz", "optional-config", infraKind+".yaml")))
+	if err != nil {
+		return nil, fmt.Errorf("infra: read embedded hertz/optional-config/%s.yaml: %w", infraKind, err)
+	}
+	path := filepath.Join(root, filepath.FromSlash(hertzConfigRelPath))
+	current, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			return &plannedWrite{
+				Path:   path,
+				Body:   []byte(wrapHertzConfigSnippet(string(snippet), infraKind) + "\n"),
+				Action: "create",
+			}, nil
+		}
+		return nil, fmt.Errorf("infra: read %s: %w", path, err)
+	}
+	merged, changed, err := mergeHertzConfig(current, string(snippet), infraKind, force)
+	if err != nil {
+		return nil, err
+	}
+	if !changed {
+		return nil, nil
+	}
+	return &plannedWrite{Path: path, Body: []byte(merged), Action: "update"}, nil
+}
+
+func mergeHertzConfig(current []byte, snippet, infraKind string, force bool) (string, bool, error) {
+	src := string(current)
+	startMarker, endMarker := hertzConfigMarkers(infraKind)
+	if strings.Contains(src, startMarker) || strings.Contains(src, endMarker) {
+		if !strings.Contains(src, startMarker) || !strings.Contains(src, endMarker) {
+			return "", false, fmt.Errorf("infra: malformed config markers for %q in %s", infraKind, filepath.FromSlash(hertzConfigRelPath))
+		}
+		if !force {
+			return src, false, nil
+		}
+		return replaceMarkedHertzConfigBlock(src, wrapHertzConfigSnippet(snippet, infraKind), startMarker, endMarker)
+	}
+	if hasTopLevelConfigKey(src, hertzConfigSnippetKeys[infraKind]) {
+		return src, false, nil
+	}
+	block := wrapHertzConfigSnippet(snippet, infraKind)
+	trimmed := strings.TrimRight(src, "\n")
+	if trimmed == "" {
+		return block + "\n", true, nil
+	}
+	return trimmed + "\n\n" + block + "\n", true, nil
+}
+
+func wrapHertzConfigSnippet(snippet, infraKind string) string {
+	startMarker, endMarker := hertzConfigMarkers(infraKind)
+	return startMarker + "\n" + strings.TrimRight(snippet, "\n") + "\n" + endMarker
+}
+
+func hertzConfigMarkers(infraKind string) (string, string) {
+	return "# ncgo:add-infra:start " + infraKind, "# ncgo:add-infra:end " + infraKind
+}
+
+func replaceMarkedHertzConfigBlock(src, block, startMarker, endMarker string) (string, bool, error) {
+	start := strings.Index(src, startMarker)
+	if start < 0 {
+		return src, false, nil
+	}
+	end := strings.Index(src[start:], endMarker)
+	if end < 0 {
+		return "", false, fmt.Errorf("infra: malformed config markers: missing %q", endMarker)
+	}
+	end += start
+	lineEnd := end + len(endMarker)
+	if lineEnd < len(src) && src[lineEnd] == '\r' {
+		lineEnd++
+	}
+	if lineEnd < len(src) && src[lineEnd] == '\n' {
+		lineEnd++
+	}
+	out := src[:start] + block
+	if lineEnd < len(src) {
+		out += src[lineEnd:]
+	} else {
+		out += "\n"
+	}
+	return out, true, nil
+}
+
+func hasTopLevelConfigKey(src, key string) bool {
+	needle := key + ":"
+	for _, line := range strings.Split(src, "\n") {
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
+			continue
+		}
+		if strings.HasPrefix(line, needle) {
+			return true
+		}
+	}
+	return false
 }
 
 func frameworkAdapterName(infraKind, serviceKind string) string {
@@ -363,7 +525,7 @@ func buildPlan(filePlans []PlanItem, manifestUpdated bool, wire bool, wiredPaths
 	return plan
 }
 
-func nextSteps(kind, serviceName string) []string {
+func nextSteps(kind, serviceKind, serviceName string) []string {
 	if steps, ok := setupSteps[kind]; ok {
 		out := append([]string(nil), steps...)
 		if serviceName != "" {
@@ -378,6 +540,11 @@ func nextSteps(kind, serviceName string) []string {
 	steps := make([]string, 0, len(goGetDeps[kind])+1)
 	for _, dep := range goGetDeps[kind] {
 		steps = append(steps, "go get "+dep)
+	}
+	if serviceKind == manifest.KindHertz {
+		if key, ok := hertzConfigSnippetKeys[kind]; ok {
+			steps = append(steps, "review "+filepath.FromSlash(hertzConfigRelPath)+" and complete the `"+key+"` section for local config or your config-center payload")
+		}
 	}
 	steps = append(steps, "go mod tidy")
 	return steps

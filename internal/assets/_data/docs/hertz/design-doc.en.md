@@ -97,18 +97,28 @@ defer func() { _ = injector.Shutdown() }()
 do.ProvideValue(injector, cfg)                 // *conf.Config
 
 // DB-backed services add:
-do.ProvideValue[context.Context](injector, startupCtx)
-do.ProvideValue(injector, pgCfg)               // *pgxpool.Config
-do.Provide(injector, data.NewPostgres)         // *pgxpool.Pool
-do.Provide(injector, data.New)                 // *data.Data + cleanup
+if cfg.Database.Enabled {
+    startupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    pgCfg, _ := data.NewPostgresConfigFromDatabase(cfg.Database)
+    pool, _ := data.NewPostgres(startupCtx, pgCfg)
+    dbData, cleanup, _ := data.New(pool)
+    defer cleanup()
+    do.ProvideValue[context.Context](injector, startupCtx)
+    do.ProvideValue(injector, pgCfg)
+    do.ProvideValue(injector, pool)
+    do.ProvideValue(injector, dbData)
+}
 do.Provide(injector, repository.NewUserRepo)
 do.Provide(injector, adapter.NewDeviceAdapter)
 do.Provide(injector, usecase.NewUserUseCase)
 do.Provide(injector, handler.NewUserHandler)
 ```
 
-The `defer injector.Shutdown()` invokes cleanup callbacks returned by
-providers (e.g. `data.New` closes the pgx pool).
+The database cleanup is now attached directly to `server.Run()` via
+`defer cleanup()` immediately after `data.New(pool)` succeeds;
+`injector.Shutdown()` still handles other providers that implement a shutdown
+lifecycle interface.
 
 ### 2.4 Request Lifecycle
 
@@ -215,15 +225,24 @@ Short summary of the current Hertz dynamic rate-limit model:
 errors from "reject the request" to "let it through". Use only when the
 backing Redis is non-critical.
 
+By default, the Redis-backed middleware stores reuse a single process-local
+`redis.UniversalClient` derived from top-level `cfg.Redis`. Only per-module
+Redis overrides, or explicit dedicated wiring, create a separate pool.
+
 ### 3.4 Database (`with_database: true`)
 
 When the scaffolder is invoked with `--db postgres`:
 
+- `internal/base/conf/conf.go` exposes a top-level `DatabaseConfig`, mapped to
+  the `database.*` block in `conf/dev/conf.yaml`, separate from
+  `rate_limit.database.*`.
 - `internal/base/data/data.go` exposes `Data{ Pool *pgxpool.Pool, Queries *gen.Queries }`,
   with `New(pool)` returning a cleanup that closes the pool.
-- `data.NewPostgres(ctx, *pgxpool.Config)` opens + pings the pool. Pass
-  the full `*pgxpool.Config` via `samber/do` so every option (hooks,
-  timeouts, before-acquire) is honoured.
+- `data.NewPostgresConfigFromDatabase(cfg.Database)` converts the top-level
+  `database.*` settings into `*pgxpool.Config`; `data.NewPostgres(ctx, *pgxpool.Config)`
+  opens + pings the pool. The default template now performs this wiring
+  automatically when `cfg.Database.Enabled=true`, then injects `startupCtx`,
+  `pgCfg`, `pool`, and `dbData` via `do.ProvideValue(...)`.
 - `internal/db/`:
   - `schema/*.sql` — table DDL (input to sqlc).
   - `query/*.sql` — sqlc query annotations.
@@ -250,9 +269,11 @@ When the scaffolder is invoked with `--db postgres`:
 
 ### 3.6 Optional Infra Snippets
 
-`ncgo add infra <kind>` copies a byte-verbatim optional Go file from either
+`ncgo add infra <kind>` copies an optional Go file from either
 `internal/assets/_data/hertz/optional/<kind>.go` or the common
-`internal/assets/_data/optional/<kind>.go`. Data clients drop under
+`internal/assets/_data/optional/<kind>.go`. Most files are written verbatim;
+Hertz helper assets may additionally render `{{.GoModule}}` placeholders before
+write. Data clients drop under
 `internal/base/data/`; specialized add-ons may target packages such as
 `internal/base/observability/`.
 
@@ -261,14 +282,17 @@ When the scaffolder is invoked with `--db postgres`:
 - Provides: `*data.Redis{ Client redis.UniversalClient }`
   (`UniversalOptions` auto-selects single / cluster / sentinel).
 - Dep: `github.com/redis/go-redis/v9`.
-- Failure codes: `10308 config_invalid` (nil opts),
+- Failure codes: `10308 config_invalid` (nil cfg / nil opts),
   `10304 cache_unavailable` (`Ping` failed).
-- Wiring:
+- Default wiring (reuses top-level `cfg.Redis` and the same client as middleware):
   ```go
   do.ProvideValue[context.Context](inj, startupCtx)
-  do.ProvideValue(inj, &redis.UniversalOptions{Addrs: cfg.Redis.Addrs, DB: cfg.Redis.DB})
   do.Provide(inj, data.NewRedis)
   ```
+- `ncgo add infra redis` also materializes `internal/base/data/redis_shared.go`
+  when it is missing, so middleware and `data.Redis` can reuse the same shared
+  client by default.
+- For a dedicated connection pool, call `data.NewRedisWithOptions` explicitly.
 
 #### Kafka (`kafka.go`)
 
@@ -364,8 +388,9 @@ Flag-to-file mapping:
 
 ## 7. Optional Infra
 
-Each `optional/*.go` file is byte-verbatim copy material. `infra.Add`
-reads the file from the embedded FS and writes it to its target path, usually
+Each `optional/*.go` file is copy material for `infra.Add`. Most are written as-is;
+some Hertz helper assets also render `{{.GoModule}}` placeholders before write.
+`infra.Add` reads the file from the embedded FS and writes it to its target path, usually
 `internal/base/data/<kind>.go`, or a specialized package such as
 `internal/base/observability/otel.go`.
 

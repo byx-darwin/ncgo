@@ -1141,9 +1141,11 @@ if cfg.RateLimit.Source.Type == "grpc" {
     rlOpts.GRPC = newDynamicRuleGRPCClient(cfg)
 }
 if cfg.RateLimit.Source.Type == "database" {
-    rlOpts.Database = repository.NewRateLimitRuleHook(
-        repository.NewRateLimitRuleRepository(do.MustInvoke[*data.Data](injector)),
-    )
+    var dbData *data.Data
+    if cfg.Database.Enabled {
+        dbData = do.MustInvoke[*data.Data](injector)
+    }
+    rlOpts.Database = repository.NewRateLimitRuleHook(repository.NewRateLimitRuleRepository(dbData))
 }
 
 resolver := ratelimit.NewResolver(cfg.RateLimit, rlOpts)
@@ -1154,7 +1156,8 @@ resolver := ratelimit.NewResolver(cfg.RateLimit, rlOpts)
 - `resolver` 在服务启动时创建一次,作为进程级单例复用。
 - 当 `source.type=config` 时,`Options` 可为空。
 - 开启数据库能力的模板会默认生成可编译的 sqlc/schema/migration/repository 骨架。
-- 若项目未启用数据库模板,`database` source 仍会退回 no-op hook,最终走本地配置规则兜底。
+- 若项目未启用数据库模板,或虽然带数据库模板但 `cfg.Database.Enabled=false`,
+  `database` source 都会退回 no-op hook,最终走本地配置规则兜底。
 - 对 Hertz 单体模式,建议将 database 接入收敛到 `internal/repository` + `DatabaseHook`
   这一条固定路径,避免在 middleware 或 handler 中直接查库。
 

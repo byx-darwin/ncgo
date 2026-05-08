@@ -132,6 +132,7 @@ type newOptions struct {
 	mode       string
 	kind       string
 	db         string
+	infra      []string
 	idl        string
 	dir        string
 	noGenerate bool
@@ -153,6 +154,7 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&opts.mode, "mode", "mono", "Project mode: mono | micro")
 	f.StringVar(&opts.kind, "kind", manifest.KindHertz, "Mono service kind: hertz | kitex")
 	f.StringVar(&opts.db, "db", "none", "Mono database: postgres | none")
+	f.StringSliceVar(&opts.infra, "infra", nil, "Mono infra add-ons to scaffold at creation time (currently: redis)")
 	f.StringVar(&opts.idl, "idl", "", "Mono IDL path, default idl/app/<name>.proto (hertz) or idl/<service>.proto (kitex)")
 	f.StringVar(&opts.dir, "dir", "", "Target directory, default ./<name>")
 	f.BoolVar(&opts.noGenerate, "no-generate", false, "Mono only: skip the generator invocation; only write manifest + template/ + idl placeholder")
@@ -194,6 +196,7 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 		Kind:          opts.kind,
 		Dir:           dir,
 		WithDatabase:  opts.db == "postgres",
+		Infra:         opts.infra,
 		IDL:           opts.idl,
 		AssetsVersion: assets.Version(),
 		NCGOVersion:   Version,
@@ -229,6 +232,9 @@ func runNewMicro(cmd *cobra.Command, name string, opts *newOptions) error {
 	}
 	if opts.db != "none" {
 		return errors.New("--db is only supported with --mode mono")
+	}
+	if len(opts.infra) > 0 {
+		return errors.New("--infra is only supported with --mode mono")
 	}
 	dir := opts.dir
 	if dir == "" {

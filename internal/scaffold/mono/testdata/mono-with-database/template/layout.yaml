@@ -140,6 +140,93 @@ layouts:
           namespace: ""
           group: ncgo-config
           file_name: "{{.ServiceName}}.yaml"
+      {{ if .WithDatabase}}
+      # 数据库配置
+      database:
+        # 是否启用数据库连接
+        enabled: false
+        # PostgreSQL DSN；例如 postgres://user:pass@host:5432/dbname?sslmode=disable
+        # 启用数据库时必须填写
+        dsn: ""
+        # 连接池最大连接数；需结合数据库实例上限和服务副本数评估
+        max_conns: 20
+        # 连接池最小空闲连接数；可减少突发流量时的建连开销
+        min_conns: 2
+        # 单连接最大生命周期，单位秒
+        # 运维建议：略小于数据库或代理层连接回收时间，避免同时批量失效
+        max_conn_lifetime_seconds: 1800
+        # 单连接最大空闲时间，单位秒
+        # 运维建议：用于及时回收长时间不用的连接，降低空闲连接占用
+        max_conn_idle_time_seconds: 300
+        # 连接健康检查周期，单位秒
+        # 运维建议：不要过小，否则会增加额外探测开销
+        health_check_period_seconds: 30
+      {{ end}}
+      # Redis 连接配置：作为共享默认值供 rate_limit / idempotency / signature nonce 复用
+      # 如需给某个模块单独走另一套 Redis，可在对应模块的 redis 字段内覆盖
+      redis:
+        # Redis 节点地址列表；单机、集群、哨兵都复用这一字段
+        addrs:
+          - 127.0.0.1:6379
+        # 以下为可选连接参数，不需要时保留默认值即可
+        client_name: ""
+        username: ""
+        password: ""
+        # 逻辑库编号
+        db: 0
+        # 哨兵模式主节点名；为空表示非哨兵模式
+        master_name: ""
+        sentinel_username: ""
+        sentinel_password: ""
+        # RESP 协议版本，通常使用 3
+        protocol: 3
+        # 命令失败后的最大重试次数
+        max_retries: 3
+        # 重试退避区间，单位毫秒
+        min_retry_backoff_milliseconds: 8
+        max_retry_backoff_milliseconds: 512
+        # 建连与读写超时，单位秒
+        dial_timeout_seconds: 5
+        # 首次建连失败时的拨号重试次数/间隔
+        dialer_retries: 5
+        dialer_retry_timeout_milliseconds: 100
+        read_timeout_seconds: 3
+        write_timeout_seconds: 3
+        # 是否为上下文 deadline/timeout 启用保护
+        context_timeout_enabled: true
+        # 网络读写缓冲区大小，单位字节
+        read_buffer_size: 32768
+        write_buffer_size: 32768
+        # 连接池配置
+        # 是否按 FIFO 取连接；默认 false 更常见，通常无需单独调整
+        pool_fifo: false
+        # 运维建议：pool_size 需结合单实例并发、Redis 实例连接上限和副本数综合评估
+        pool_size: 10
+        # 最小空闲连接数；可减少突发流量时的冷启动建连开销
+        min_idle_conns: 2
+        # 最大空闲连接数；0 表示使用客户端默认策略
+        max_idle_conns: 0
+        # 0 表示不额外限制活跃连接，交由 pool_size / Redis 服务端上限共同约束
+        max_active_conns: 0
+        max_concurrent_dials: 0
+        pool_timeout_seconds: 4
+        conn_max_idle_time_seconds: 300
+        conn_max_lifetime_seconds: 1800
+        conn_max_lifetime_jitter_seconds: 0
+        # 集群/只读相关开关
+        max_redirects: 3
+        # 只读路由通常用于读写分离场景；若业务强依赖强一致，保持 false
+        read_only: false
+        # route_by_latency / route_randomly 主要用于集群路由策略，单机/主从常保持 false
+        route_by_latency: false
+        route_randomly: false
+        # Client identity / RESP3 兼容性相关设置
+        disable_identity: false
+        identity_suffix: ""
+        # 生产环境通常保持 false，除非你已经验证客户端与服务端对 RESP3 特性兼容
+        unstable_resp3: false
+        # 节点被标记为失败后的冷却时间，单位秒
+        failing_timeout_seconds: 15
       # HTTP 服务配置
       server:
         # 服务名：用于日志、指标、链路追踪、错误归属等
@@ -286,70 +373,9 @@ layouts:
             max_requests: 50
             client_ttl_seconds: 300
           rules: []
-        # redis 后端高级配置；仅 backend=redis 时生效
-        redis:
-          # Redis 节点地址列表；单机、主从、哨兵都复用这一字段
-          addrs:
-            - 127.0.0.1:6379
-          # 以下为可选连接参数，不需要时保留默认值即可
-          client_name: ""
-          username: ""
-          password: ""
-          # 逻辑库编号
-          db: 0
-          # 哨兵模式主节点名；为空表示非哨兵模式
-          master_name: ""
-          sentinel_username: ""
-          sentinel_password: ""
-          # RESP 协议版本，通常使用 3
-          protocol: 3
-          # 命令失败后的最大重试次数
-          max_retries: 3
-          # 重试退避区间，单位毫秒
-          min_retry_backoff_milliseconds: 8
-          max_retry_backoff_milliseconds: 512
-          # 建连与读写超时，单位秒
-          dial_timeout_seconds: 5
-          # 首次建连失败时的拨号重试次数/间隔
-          dialer_retries: 5
-          dialer_retry_timeout_milliseconds: 100
-          read_timeout_seconds: 3
-          write_timeout_seconds: 3
-          # 是否为上下文 deadline/timeout 启用保护
-          context_timeout_enabled: true
-          # 网络读写缓冲区大小，单位字节
-          read_buffer_size: 32768
-          write_buffer_size: 32768
-          # 连接池配置
-          # 是否按 FIFO 取连接；默认 false 更常见，通常无需单独调整
-          pool_fifo: false
-          # 运维建议：pool_size 需结合单实例并发、Redis 实例连接上限和副本数综合评估
-          pool_size: 10
-          # 最小空闲连接数；可减少突发流量时的冷启动建连开销
-          min_idle_conns: 2
-          # 最大空闲连接数；0 表示使用客户端默认策略
-          max_idle_conns: 0
-          # 0 表示不额外限制活跃连接，交由 pool_size / Redis 服务端上限共同约束
-          max_active_conns: 0
-          max_concurrent_dials: 0
-          pool_timeout_seconds: 4
-          conn_max_idle_time_seconds: 300
-          conn_max_lifetime_seconds: 1800
-          conn_max_lifetime_jitter_seconds: 0
-          # 集群/只读相关开关
-          max_redirects: 3
-          # 只读路由通常用于读写分离场景；若业务强依赖强一致，保持 false
-          read_only: false
-          # route_by_latency / route_randomly 主要用于集群路由策略，单机/主从常保持 false
-          route_by_latency: false
-          route_randomly: false
-          # Client identity / RESP3 兼容性相关设置
-          disable_identity: false
-          identity_suffix: ""
-          # 生产环境通常保持 false，除非你已经验证客户端与服务端对 RESP3 特性兼容
-          unstable_resp3: false
-          # 节点被标记为失败后的冷却时间，单位秒
-          failing_timeout_seconds: 15
+        # 可选：仅当需要覆盖顶层 redis 连接时填写；留空则复用顶层 redis
+        # 结构与顶层 redis 完全一致
+        redis: {}
       # 幂等配置
       idempotency:
         # 是否启用幂等中间件
@@ -383,10 +409,9 @@ layouts:
         skip_paths:
           - /healthz
           - /readyz
-        # redis 配置复用限流的 redis 参数模型；至少要提供 addrs
-        redis:
-          addrs:
-            - 127.0.0.1:6379
+        # 可选：仅当需要覆盖顶层 redis 连接时填写；留空则复用顶层 redis
+        # 结构与顶层 redis 完全一致
+        redis: {}
       # 鉴权配置（签名鉴权 / Token 鉴权）
       auth:
         # 不需要鉴权的公开接口
@@ -425,10 +450,9 @@ layouts:
             memory:
               # 内存模式最大缓存条目数
               max_entries: 100000
-            redis:
-              # redis 模式至少提供节点地址
-              addrs:
-                - 127.0.0.1:6379
+            # 可选：仅当需要覆盖顶层 redis 连接时填写；留空则复用顶层 redis
+            # 结构与顶层 redis 完全一致
+            redis: {}
         # Token 鉴权配置：适合 BFF / 用户态接口
         token:
           # 总开关
@@ -588,6 +612,10 @@ layouts:
           Env          string             `json:"env" yaml:"env"`
           Debug        bool               `json:"debug" yaml:"debug"`
           ConfigCenter ConfigCenterConfig `json:"config_center" yaml:"config_center"`
+      {{ if .WithDatabase}}
+          Database     DatabaseConfig     `json:"database" yaml:"database"`
+      {{ end}}
+          Redis        RedisConfig        `json:"redis" yaml:"redis"`
           Server       ServerConfig       `json:"server" yaml:"server"`
           Swagger      SwaggerConfig      `json:"swagger" yaml:"swagger"`
           Security     SecurityConfig     `json:"security" yaml:"security"`
@@ -634,6 +662,18 @@ layouts:
           KeepAliveTimeoutSeconds int    `json:"keep_alive_timeout_seconds" yaml:"keep_alive_timeout_seconds"`
           RequestTimeoutSeconds   int    `json:"request_timeout_seconds" yaml:"request_timeout_seconds"`
       }
+
+      {{ if .WithDatabase}}
+      type DatabaseConfig struct {
+          Enabled                  bool   `json:"enabled" yaml:"enabled"`
+          DSN                      string `json:"dsn" yaml:"dsn"`
+          MaxConns                 int32  `json:"max_conns" yaml:"max_conns"`
+          MinConns                 int32  `json:"min_conns" yaml:"min_conns"`
+          MaxConnLifetimeSeconds   int    `json:"max_conn_lifetime_seconds" yaml:"max_conn_lifetime_seconds"`
+          MaxConnIdleTimeSeconds   int    `json:"max_conn_idle_time_seconds" yaml:"max_conn_idle_time_seconds"`
+          HealthCheckPeriodSeconds int    `json:"health_check_period_seconds" yaml:"health_check_period_seconds"`
+      }
+      {{ end}}
 
       type SwaggerConfig struct {
           Enabled  bool   `json:"enabled" yaml:"enabled"`
@@ -758,6 +798,8 @@ layouts:
           UnstableResp3                 bool     `json:"unstable_resp3" yaml:"unstable_resp3"`
           FailingTimeoutSeconds         int      `json:"failing_timeout_seconds" yaml:"failing_timeout_seconds"`
       }
+
+      type RedisConfig = RateLimitRedisConfig
 
       type MemoryCacheConfig struct {
           MaxEntries int `json:"max_entries" yaml:"max_entries"`
@@ -973,6 +1015,17 @@ layouts:
                       Group: "ncgo-config",
                   },
               },
+      {{ if .WithDatabase}}
+              Database: DatabaseConfig{
+                  Enabled:                  false,
+                  MaxConns:                 20,
+                  MinConns:                 2,
+                  MaxConnLifetimeSeconds:   1800,
+                  MaxConnIdleTimeSeconds:   300,
+                  HealthCheckPeriodSeconds: 30,
+              },
+      {{ end}}
+              Redis: defaultRedisConfig(),
               Server: ServerConfig{
                   Addr:                    ":8080",
                   Version:                 "v1",
@@ -1036,28 +1089,6 @@ layouts:
                           ClientTTLSeconds: 300,
                       },
                   },
-                  Redis: RateLimitRedisConfig{
-                      Addrs:                          []string{"127.0.0.1:6379"},
-                      Protocol:                       3,
-                      MaxRetries:                     3,
-                      MinRetryBackoffMilliseconds:    8,
-                      MaxRetryBackoffMilliseconds:    512,
-                      DialTimeoutSeconds:             5,
-                      DialerRetries:                  5,
-                      DialerRetryTimeoutMilliseconds: 100,
-                      ReadTimeoutSeconds:             3,
-                      WriteTimeoutSeconds:            3,
-                      ContextTimeoutEnabled:          true,
-                      ReadBufferSize:                 32768,
-                      WriteBufferSize:                32768,
-                      PoolSize:                       10,
-                      MinIdleConns:                   2,
-                      PoolTimeoutSeconds:             4,
-                      ConnMaxIdleTimeSeconds:         300,
-                      ConnMaxLifetimeSeconds:         1800,
-                      MaxRedirects:                   3,
-                      FailingTimeoutSeconds:          15,
-                  },
               },
               Idempotency: IdempotencyConfig{
                   Backend:    "memory",
@@ -1069,9 +1100,6 @@ layouts:
                       Memory:     MemoryCacheConfig{MaxEntries: 100000},
                   Methods:    []string{"POST", "PUT", "PATCH", "DELETE"},
                   SkipPaths:  []string{"/healthz", "/readyz"},
-                  Redis: RateLimitRedisConfig{
-                      Addrs: []string{"127.0.0.1:6379"},
-                  },
               },
               Auth: AuthConfig{
                   PublicPaths: []string{"/healthz", "/readyz", "/swagger/*"},
@@ -1086,9 +1114,6 @@ layouts:
                           KeyPrefix:  "signature_nonce",
                           TTLSeconds: 300,
                               Memory:     MemoryCacheConfig{MaxEntries: 100000},
-                          Redis: RateLimitRedisConfig{
-                              Addrs: []string{"127.0.0.1:6379"},
-                          },
                       },
                   },
                   Token: TokenConfig{
@@ -1140,10 +1165,164 @@ layouts:
           }
       }
 
+      func defaultRedisConfig() RedisConfig {
+          return RedisConfig{
+              Addrs:                          []string{"127.0.0.1:6379"},
+              Protocol:                       3,
+              MaxRetries:                     3,
+              MinRetryBackoffMilliseconds:    8,
+              MaxRetryBackoffMilliseconds:    512,
+              DialTimeoutSeconds:             5,
+              DialerRetries:                  5,
+              DialerRetryTimeoutMilliseconds: 100,
+              ReadTimeoutSeconds:             3,
+              WriteTimeoutSeconds:            3,
+              ContextTimeoutEnabled:          true,
+              ReadBufferSize:                 32768,
+              WriteBufferSize:                32768,
+              PoolSize:                       10,
+              MinIdleConns:                   2,
+              PoolTimeoutSeconds:             4,
+              ConnMaxIdleTimeSeconds:         300,
+              ConnMaxLifetimeSeconds:         1800,
+              MaxRedirects:                   3,
+              FailingTimeoutSeconds:          15,
+          }
+      }
+
+      func (c *Config) applyRedisFallbacks() {
+          if c == nil {
+              return
+          }
+          c.Redis = mergeRedisConfig(c.Redis, defaultRedisConfig())
+          c.RateLimit.Redis = mergeRedisConfig(c.RateLimit.Redis, c.Redis)
+          c.Idempotency.Redis = mergeRedisConfig(c.Idempotency.Redis, c.Redis)
+          c.Auth.Signature.Nonce.Redis = mergeRedisConfig(c.Auth.Signature.Nonce.Redis, c.Redis)
+      }
+
+      func mergeRedisConfig(primary, fallback RedisConfig) RedisConfig {
+          if len(primary.Addrs) == 0 && len(fallback.Addrs) > 0 {
+              primary.Addrs = append([]string(nil), fallback.Addrs...)
+          }
+          if primary.ClientName == "" {
+              primary.ClientName = fallback.ClientName
+          }
+          if primary.Username == "" {
+              primary.Username = fallback.Username
+          }
+          if primary.Password == "" {
+              primary.Password = fallback.Password
+          }
+          if primary.DB == 0 {
+              primary.DB = fallback.DB
+          }
+          if primary.MasterName == "" {
+              primary.MasterName = fallback.MasterName
+          }
+          if primary.SentinelUsername == "" {
+              primary.SentinelUsername = fallback.SentinelUsername
+          }
+          if primary.SentinelPassword == "" {
+              primary.SentinelPassword = fallback.SentinelPassword
+          }
+          if primary.Protocol == 0 {
+              primary.Protocol = fallback.Protocol
+          }
+          if primary.MaxRetries == 0 {
+              primary.MaxRetries = fallback.MaxRetries
+          }
+          if primary.MinRetryBackoffMilliseconds == 0 {
+              primary.MinRetryBackoffMilliseconds = fallback.MinRetryBackoffMilliseconds
+          }
+          if primary.MaxRetryBackoffMilliseconds == 0 {
+              primary.MaxRetryBackoffMilliseconds = fallback.MaxRetryBackoffMilliseconds
+          }
+          if primary.DialTimeoutSeconds == 0 {
+              primary.DialTimeoutSeconds = fallback.DialTimeoutSeconds
+          }
+          if primary.DialerRetries == 0 {
+              primary.DialerRetries = fallback.DialerRetries
+          }
+          if primary.DialerRetryTimeoutMilliseconds == 0 {
+              primary.DialerRetryTimeoutMilliseconds = fallback.DialerRetryTimeoutMilliseconds
+          }
+          if primary.ReadTimeoutSeconds == 0 {
+              primary.ReadTimeoutSeconds = fallback.ReadTimeoutSeconds
+          }
+          if primary.WriteTimeoutSeconds == 0 {
+              primary.WriteTimeoutSeconds = fallback.WriteTimeoutSeconds
+          }
+          if !primary.ContextTimeoutEnabled {
+              primary.ContextTimeoutEnabled = fallback.ContextTimeoutEnabled
+          }
+          if primary.ReadBufferSize == 0 {
+              primary.ReadBufferSize = fallback.ReadBufferSize
+          }
+          if primary.WriteBufferSize == 0 {
+              primary.WriteBufferSize = fallback.WriteBufferSize
+          }
+          if !primary.PoolFIFO {
+              primary.PoolFIFO = fallback.PoolFIFO
+          }
+          if primary.PoolSize == 0 {
+              primary.PoolSize = fallback.PoolSize
+          }
+          if primary.MinIdleConns == 0 {
+              primary.MinIdleConns = fallback.MinIdleConns
+          }
+          if primary.MaxIdleConns == 0 {
+              primary.MaxIdleConns = fallback.MaxIdleConns
+          }
+          if primary.MaxActiveConns == 0 {
+              primary.MaxActiveConns = fallback.MaxActiveConns
+          }
+          if primary.MaxConcurrentDials == 0 {
+              primary.MaxConcurrentDials = fallback.MaxConcurrentDials
+          }
+          if primary.PoolTimeoutSeconds == 0 {
+              primary.PoolTimeoutSeconds = fallback.PoolTimeoutSeconds
+          }
+          if primary.ConnMaxIdleTimeSeconds == 0 {
+              primary.ConnMaxIdleTimeSeconds = fallback.ConnMaxIdleTimeSeconds
+          }
+          if primary.ConnMaxLifetimeSeconds == 0 {
+              primary.ConnMaxLifetimeSeconds = fallback.ConnMaxLifetimeSeconds
+          }
+          if primary.ConnMaxLifetimeJitterSeconds == 0 {
+              primary.ConnMaxLifetimeJitterSeconds = fallback.ConnMaxLifetimeJitterSeconds
+          }
+          if primary.MaxRedirects == 0 {
+              primary.MaxRedirects = fallback.MaxRedirects
+          }
+          if !primary.ReadOnly {
+              primary.ReadOnly = fallback.ReadOnly
+          }
+          if !primary.RouteByLatency {
+              primary.RouteByLatency = fallback.RouteByLatency
+          }
+          if !primary.RouteRandomly {
+              primary.RouteRandomly = fallback.RouteRandomly
+          }
+          if !primary.DisableIdentity {
+              primary.DisableIdentity = fallback.DisableIdentity
+          }
+          if primary.IdentitySuffix == "" {
+              primary.IdentitySuffix = fallback.IdentitySuffix
+          }
+          if !primary.UnstableResp3 {
+              primary.UnstableResp3 = fallback.UnstableResp3
+          }
+          if primary.FailingTimeoutSeconds == 0 {
+              primary.FailingTimeoutSeconds = fallback.FailingTimeoutSeconds
+          }
+          return primary
+      }
+
       func (c *Config) Validate() error {
           if c == nil {
               return oops.In("config").Code(10308).Public("config_invalid").New("config is nil")
           }
+          c.applyRedisFallbacks()
           if c.Server.Addr == "" {
               return oops.In("config").Code(10308).Public("config_invalid").New("server.addr is empty")
           }
@@ -1153,6 +1332,16 @@ layouts:
           if err := validateConfigCenter(c.ConfigCenter); err != nil {
               return err
           }
+      {{ if .WithDatabase}}
+          if c.Database.Enabled {
+              if c.Database.DSN == "" {
+                  return oops.In("config").Code(10308).Public("config_invalid").New("database.dsn is empty")
+              }
+              if c.Database.MaxConns < 0 || c.Database.MinConns < 0 || c.Database.MaxConnLifetimeSeconds < 0 || c.Database.MaxConnIdleTimeSeconds < 0 || c.Database.HealthCheckPeriodSeconds < 0 {
+                  return oops.In("config").Code(10308).Public("config_invalid").New("database pool settings must not be negative")
+              }
+          }
+      {{ end}}
           if c.Swagger.Enabled {
               if !strings.HasPrefix(strings.TrimSpace(c.Swagger.Path), "/") {
                   return oops.In("config").Code(10308).Public("config_invalid").New("swagger.path must start with /")
@@ -3592,6 +3781,178 @@ layouts:
           return configured
       }
 
+  - path: internal/base/data/redis_shared.go
+    delims: ["{{", "}}"]
+    body: |-
+      package data
+
+      import (
+          "encoding/json"
+          "sync"
+          "time"
+
+          "github.com/redis/go-redis/v9"
+
+          "{{.GoModule}}/internal/base/conf"
+      )
+
+      type RedisConfig = conf.RedisConfig
+      type Config = conf.Config
+
+      var (
+          sharedRedisClientsMu sync.Mutex
+          sharedRedisClients = map[string]redis.UniversalClient{}
+      )
+
+      func SharedRedisClient(cfg RedisConfig) redis.UniversalClient {
+          key := redisClientKey(cfg)
+          sharedRedisClientsMu.Lock()
+          defer sharedRedisClientsMu.Unlock()
+          if client := sharedRedisClients[key]; client != nil {
+              return client
+          }
+          client := redis.NewUniversalClient(RedisUniversalOptions(cfg))
+          sharedRedisClients[key] = client
+          return client
+      }
+
+      func CloseSharedRedisClient(cfg RedisConfig) {
+          key := redisClientKey(cfg)
+          sharedRedisClientsMu.Lock()
+          defer sharedRedisClientsMu.Unlock()
+          if client := sharedRedisClients[key]; client != nil {
+              _ = client.Close()
+              delete(sharedRedisClients, key)
+          }
+      }
+
+      func RedisUniversalOptions(cfg RedisConfig) *redis.UniversalOptions {
+          return &redis.UniversalOptions{
+              Addrs:                 cfg.Addrs,
+              ClientName:            cfg.ClientName,
+              DB:                    cfg.DB,
+              Protocol:              cfg.Protocol,
+              Username:              cfg.Username,
+              Password:              cfg.Password,
+              SentinelUsername:      cfg.SentinelUsername,
+              SentinelPassword:      cfg.SentinelPassword,
+              MaxRetries:            cfg.MaxRetries,
+              MinRetryBackoff:       durationMilliseconds(cfg.MinRetryBackoffMilliseconds),
+              MaxRetryBackoff:       durationMilliseconds(cfg.MaxRetryBackoffMilliseconds),
+              DialTimeout:           durationSeconds(cfg.DialTimeoutSeconds),
+              DialerRetries:         cfg.DialerRetries,
+              DialerRetryTimeout:    durationMilliseconds(cfg.DialerRetryTimeoutMilliseconds),
+              ReadTimeout:           durationSeconds(cfg.ReadTimeoutSeconds),
+              WriteTimeout:          durationSeconds(cfg.WriteTimeoutSeconds),
+              ContextTimeoutEnabled: cfg.ContextTimeoutEnabled,
+              ReadBufferSize:        cfg.ReadBufferSize,
+              WriteBufferSize:       cfg.WriteBufferSize,
+              PoolFIFO:              cfg.PoolFIFO,
+              PoolSize:              cfg.PoolSize,
+              MaxConcurrentDials:    cfg.MaxConcurrentDials,
+              PoolTimeout:           durationSeconds(cfg.PoolTimeoutSeconds),
+              MinIdleConns:          cfg.MinIdleConns,
+              MaxIdleConns:          cfg.MaxIdleConns,
+              MaxActiveConns:        cfg.MaxActiveConns,
+              ConnMaxIdleTime:       durationSeconds(cfg.ConnMaxIdleTimeSeconds),
+              ConnMaxLifetime:       durationSeconds(cfg.ConnMaxLifetimeSeconds),
+              ConnMaxLifetimeJitter: durationSeconds(cfg.ConnMaxLifetimeJitterSeconds),
+              MaxRedirects:          cfg.MaxRedirects,
+              ReadOnly:              cfg.ReadOnly,
+              RouteByLatency:        cfg.RouteByLatency,
+              RouteRandomly:         cfg.RouteRandomly,
+              MasterName:            cfg.MasterName,
+              DisableIdentity:       cfg.DisableIdentity,
+              IdentitySuffix:        cfg.IdentitySuffix,
+              UnstableResp3:         cfg.UnstableResp3,
+              FailingTimeoutSeconds: cfg.FailingTimeoutSeconds,
+          }
+      }
+
+      func redisClientKey(cfg RedisConfig) string {
+          payload, err := json.Marshal(cfg)
+          if err != nil {
+              panic(err)
+          }
+          return string(payload)
+      }
+
+      func CloseSharedRedisClients() {
+          sharedRedisClientsMu.Lock()
+          defer sharedRedisClientsMu.Unlock()
+          for key, client := range sharedRedisClients {
+              _ = client.Close()
+              delete(sharedRedisClients, key)
+          }
+      }
+
+      func durationSeconds(value int) time.Duration {
+          if value <= 0 {
+              return 0
+          }
+          return time.Duration(value) * time.Second
+      }
+
+      func durationMilliseconds(value int) time.Duration {
+          if value <= 0 {
+              return 0
+          }
+          return time.Duration(value) * time.Millisecond
+      }
+
+  - path: internal/base/data/redis_shared_test.go
+    delims: ["", ""]
+    body: |-
+      package data
+
+      import (
+          "testing"
+
+          "{{.GoModule}}/internal/base/conf"
+      )
+
+      func TestSharedRedisClientReusesMatchingConfigs(t *testing.T) {
+          CloseSharedRedisClients()
+          t.Cleanup(CloseSharedRedisClients)
+
+          a := SharedRedisClient(conf.RedisConfig{Addrs: []string{"redis-1:6379"}, PoolSize: 10})
+          b := SharedRedisClient(conf.RedisConfig{Addrs: []string{"redis-1:6379"}, PoolSize: 10})
+          if a != b {
+              t.Fatal("expected matching redis configs to share one client")
+          }
+      }
+
+      func TestSharedRedisClientSeparatesDifferentConfigs(t *testing.T) {
+          CloseSharedRedisClients()
+          t.Cleanup(CloseSharedRedisClients)
+
+          a := SharedRedisClient(conf.RedisConfig{Addrs: []string{"redis-1:6379"}, PoolSize: 10})
+          b := SharedRedisClient(conf.RedisConfig{Addrs: []string{"redis-2:6379"}, PoolSize: 10})
+          if a == b {
+              t.Fatal("expected different redis configs to create different clients")
+          }
+      }
+
+  - path: internal/pkg/middleware/redis_client.go
+    delims: ["{{", "}}"]
+    body: |-
+      package middleware
+
+      import (
+          "github.com/redis/go-redis/v9"
+
+          "{{.GoModule}}/internal/base/conf"
+          "{{.GoModule}}/internal/base/data"
+      )
+
+      func sharedRedisClient(cfg conf.RedisConfig) redis.UniversalClient {
+          return data.SharedRedisClient(cfg)
+      }
+
+      func closeSharedRedisClients() {
+          data.CloseSharedRedisClients()
+      }
+
   - path: internal/pkg/middleware/signature.go
     delims: ["{{", "}}"]
     body: |-
@@ -3700,7 +4061,7 @@ layouts:
 
       func newSignatureNonceStore(cfg conf.SignatureNonceConfig) signatureNonceStore {
           if cfg.Enabled && cfg.Backend == "redis" {
-              return &redisSignatureNonceStore{client: redis.NewUniversalClient(redisUniversalOptions(cfg.Redis))}
+              return &redisSignatureNonceStore{client: sharedRedisClient(cfg.Redis)}
           }
               return newMemorySignatureNonceStore(cfg.Memory.MaxEntries)
       }
@@ -3906,6 +4267,78 @@ layouts:
           req.CopyTo(&c.Request)
           c.Request.Header.Set("X-Signature", ComputeSignature(secret, CanonicalRequest(c, timestamp, nonce)))
           return c
+      }
+
+  - path: internal/pkg/middleware/redis_client_test.go
+    delims: ["", ""]
+    body: |-
+      package middleware
+
+      import (
+          "testing"
+
+          "{{.GoModule}}/internal/base/conf"
+      )
+
+      func TestSharedRedisClientReusesMatchingConfigs(t *testing.T) {
+          closeSharedRedisClients()
+          t.Cleanup(closeSharedRedisClients)
+
+          a := sharedRedisClient(conf.RedisConfig{Addrs: []string{"redis-1:6379"}, PoolSize: 10})
+          b := sharedRedisClient(conf.RedisConfig{Addrs: []string{"redis-1:6379"}, PoolSize: 10})
+          if a != b {
+              t.Fatal("expected matching redis configs to share one client")
+          }
+      }
+
+      func TestSharedRedisClientSeparatesDifferentConfigs(t *testing.T) {
+          closeSharedRedisClients()
+          t.Cleanup(closeSharedRedisClients)
+
+          a := sharedRedisClient(conf.RedisConfig{Addrs: []string{"redis-1:6379"}, PoolSize: 10})
+          b := sharedRedisClient(conf.RedisConfig{Addrs: []string{"redis-2:6379"}, PoolSize: 10})
+          if a == b {
+              t.Fatal("expected different redis configs to create different clients")
+          }
+      }
+
+      func TestRedisStoresReuseSharedClient(t *testing.T) {
+          closeSharedRedisClients()
+          t.Cleanup(closeSharedRedisClients)
+
+          redisCfg := conf.RedisConfig{Addrs: []string{"redis-shared:6379"}, PoolSize: 10}
+          nonceStore, ok := newSignatureNonceStore(conf.SignatureNonceConfig{Enabled: true, Backend: "redis", Redis: redisCfg}).(*redisSignatureNonceStore)
+          if !ok {
+              t.Fatal("expected redis signature nonce store")
+          }
+          rateStore, ok := newRateLimitStore(conf.RateLimitConfig{Backend: "redis", Redis: redisCfg}).(*redisRateLimitStore)
+          if !ok {
+              t.Fatal("expected redis rate-limit store")
+          }
+          idemStore, ok := newIdempotencyStore(conf.IdempotencyConfig{Backend: "redis", Redis: redisCfg}).(*redisIdempotencyStore)
+          if !ok {
+              t.Fatal("expected redis idempotency store")
+          }
+          if nonceStore.client != rateStore.client || rateStore.client != idemStore.client {
+              t.Fatal("expected redis-backed middleware stores to reuse the shared client")
+          }
+      }
+
+      func TestRedisStoresSeparateOverrideClients(t *testing.T) {
+          closeSharedRedisClients()
+          t.Cleanup(closeSharedRedisClients)
+
+          rateStore, ok := newRateLimitStore(conf.RateLimitConfig{Backend: "redis", Redis: conf.RedisConfig{Addrs: []string{"redis-rate:6379"}, PoolSize: 10}}).(*redisRateLimitStore)
+          if !ok {
+              t.Fatal("expected redis rate-limit store")
+          }
+          idemStore, ok := newIdempotencyStore(conf.IdempotencyConfig{Backend: "redis", Redis: conf.RedisConfig{Addrs: []string{"redis-idem:6379"}, PoolSize: 10}}).(*redisIdempotencyStore)
+          if !ok {
+              t.Fatal("expected redis idempotency store")
+          }
+          if rateStore.client == idemStore.client {
+              t.Fatal("expected different module redis overrides to keep separate clients")
+          }
       }
 
   # ── pkg/middleware: token/JWT ─────────────────────────────────────────────
@@ -5749,6 +6182,7 @@ layouts:
           "github.com/redis/go-redis/v9"
           "github.com/samber/hot"
 
+          "{{.GoModule}}/internal/base/data"
           "{{.GoModule}}/internal/base/conf"
           "{{.GoModule}}/internal/pkg/ratelimit"
           "{{.GoModule}}/internal/pkg/response"
@@ -5837,7 +6271,7 @@ layouts:
 
       func newRateLimitStore(cfg conf.RateLimitConfig) rateLimitStore {
           if cfg.Backend == "redis" {
-              return &redisRateLimitStore{client: redis.NewUniversalClient(redisUniversalOptions(cfg.Redis))}
+              return &redisRateLimitStore{client: sharedRedisClient(cfg.Redis)}
           }
           return newMemoryRateLimitStore(cfg.Memory.MaxEntries)
       }
@@ -5851,46 +6285,7 @@ layouts:
       }
 
       func redisUniversalOptions(cfg conf.RateLimitRedisConfig) *redis.UniversalOptions {
-          return &redis.UniversalOptions{
-              Addrs:                 cfg.Addrs,
-              ClientName:            cfg.ClientName,
-              DB:                    cfg.DB,
-              Protocol:              cfg.Protocol,
-              Username:              cfg.Username,
-              Password:              cfg.Password,
-              SentinelUsername:      cfg.SentinelUsername,
-              SentinelPassword:      cfg.SentinelPassword,
-              MaxRetries:            cfg.MaxRetries,
-              MinRetryBackoff:       durationMilliseconds(cfg.MinRetryBackoffMilliseconds),
-              MaxRetryBackoff:       durationMilliseconds(cfg.MaxRetryBackoffMilliseconds),
-              DialTimeout:           durationSeconds(cfg.DialTimeoutSeconds),
-              DialerRetries:         cfg.DialerRetries,
-              DialerRetryTimeout:    durationMilliseconds(cfg.DialerRetryTimeoutMilliseconds),
-              ReadTimeout:           durationSeconds(cfg.ReadTimeoutSeconds),
-              WriteTimeout:          durationSeconds(cfg.WriteTimeoutSeconds),
-              ContextTimeoutEnabled: cfg.ContextTimeoutEnabled,
-              ReadBufferSize:        cfg.ReadBufferSize,
-              WriteBufferSize:       cfg.WriteBufferSize,
-              PoolFIFO:              cfg.PoolFIFO,
-              PoolSize:              cfg.PoolSize,
-              MaxConcurrentDials:    cfg.MaxConcurrentDials,
-              PoolTimeout:           durationSeconds(cfg.PoolTimeoutSeconds),
-              MinIdleConns:          cfg.MinIdleConns,
-              MaxIdleConns:          cfg.MaxIdleConns,
-              MaxActiveConns:        cfg.MaxActiveConns,
-              ConnMaxIdleTime:       durationSeconds(cfg.ConnMaxIdleTimeSeconds),
-              ConnMaxLifetime:       durationSeconds(cfg.ConnMaxLifetimeSeconds),
-              ConnMaxLifetimeJitter: durationSeconds(cfg.ConnMaxLifetimeJitterSeconds),
-              MaxRedirects:          cfg.MaxRedirects,
-              ReadOnly:              cfg.ReadOnly,
-              RouteByLatency:        cfg.RouteByLatency,
-              RouteRandomly:         cfg.RouteRandomly,
-              MasterName:            cfg.MasterName,
-              DisableIdentity:       cfg.DisableIdentity,
-              IdentitySuffix:        cfg.IdentitySuffix,
-              UnstableResp3:         cfg.UnstableResp3,
-              FailingTimeoutSeconds: cfg.FailingTimeoutSeconds,
-          }
+          return data.RedisUniversalOptions(cfg)
       }
 
       func durationSeconds(value int) time.Duration {
@@ -6599,7 +6994,7 @@ layouts:
 
       func newIdempotencyStore(cfg conf.IdempotencyConfig) idempotencyStore {
           if cfg.Backend == "redis" {
-              return &redisIdempotencyStore{client: redis.NewUniversalClient(redisUniversalOptions(cfg.Redis))}
+              return &redisIdempotencyStore{client: sharedRedisClient(cfg.Redis)}
           }
               return newMemoryIdempotencyStore(cfg.Memory.MaxEntries)
       }
@@ -6988,6 +7383,56 @@ layouts:
           }
       }
 
+  - path: internal/base/conf/conf_test.go
+    delims: ["", ""]
+    body: |-
+      package conf
+
+      import "testing"
+
+      func TestApplyRedisFallbacksUsesTopLevelRedis(t *testing.T) {
+          cfg := &Config{
+              Redis: RedisConfig{Addrs: []string{"redis-shared:6379"}, PoolSize: 20, ContextTimeoutEnabled: true},
+              RateLimit: RateLimitConfig{Backend: "redis"},
+              Idempotency: IdempotencyConfig{Backend: "redis"},
+              Auth: AuthConfig{Signature: SignatureConfig{Nonce: SignatureNonceConfig{Enabled: true, Backend: "redis"}}},
+          }
+
+          cfg.applyRedisFallbacks()
+
+          for name, got := range map[string]RedisConfig{
+              "rate_limit":      cfg.RateLimit.Redis,
+              "idempotency":     cfg.Idempotency.Redis,
+              "signature_nonce": cfg.Auth.Signature.Nonce.Redis,
+          } {
+              if len(got.Addrs) != 1 || got.Addrs[0] != "redis-shared:6379" {
+                  t.Fatalf("%s addrs = %v, want shared redis", name, got.Addrs)
+              }
+              if got.PoolSize != 20 || !got.ContextTimeoutEnabled {
+                  t.Fatalf("%s redis fallback = %+v", name, got)
+              }
+          }
+      }
+
+      func TestValidateAppliesRedisFallbacks(t *testing.T) {
+          cfg := Default()
+          cfg.Redis.Addrs = []string{"redis-top:6379"}
+          cfg.Redis.PoolSize = 32
+          cfg.RateLimit.Enabled = true
+          cfg.RateLimit.Backend = "redis"
+          cfg.RateLimit.Redis = RateLimitRedisConfig{Addrs: []string{"redis-rate:6379"}}
+
+          if err := cfg.Validate(); err != nil {
+              t.Fatalf("Validate: %v", err)
+          }
+          if len(cfg.RateLimit.Redis.Addrs) != 1 || cfg.RateLimit.Redis.Addrs[0] != "redis-rate:6379" {
+              t.Fatalf("rate_limit addrs = %v, want module override", cfg.RateLimit.Redis.Addrs)
+          }
+          if cfg.RateLimit.Redis.PoolSize != 32 {
+              t.Fatalf("rate_limit pool_size = %d, want inherited top-level pool size", cfg.RateLimit.Redis.PoolSize)
+          }
+      }
+
   # ── base/data ────────────────────────────────────────────────────────────
   - path: internal/base/data/data.go
     delims: ["{{", "}}"]
@@ -6997,10 +7442,12 @@ layouts:
       {{ if .WithDatabase}}
       import (
           "context"
+          "time"
 
           "github.com/jackc/pgx/v5/pgxpool"
           "github.com/samber/oops"
 
+          "{{.GoModule}}/internal/base/conf"
           "{{.GoModule}}/internal/db/gen"
       )
 
@@ -7080,6 +7527,21 @@ layouts:
                   Wrapf(err, "pgxpool.ParseConfig")
           }
           return cfg, nil
+      }
+
+      // NewPostgresConfigFromDatabase converts conf.DatabaseConfig into pgxpool.Config.
+      // It is the default bridge between conf.Get().Database and NewPostgres.
+      func NewPostgresConfigFromDatabase(cfg conf.DatabaseConfig) (*pgxpool.Config, error) {
+          pgCfg, err := NewPostgresConfig(cfg.DSN)
+          if err != nil {
+              return nil, err
+          }
+          pgCfg.MaxConns = cfg.MaxConns
+          pgCfg.MinConns = cfg.MinConns
+          pgCfg.MaxConnLifetime = time.Duration(cfg.MaxConnLifetimeSeconds) * time.Second
+          pgCfg.MaxConnIdleTime = time.Duration(cfg.MaxConnIdleTimeSeconds) * time.Second
+          pgCfg.HealthCheckPeriod = time.Duration(cfg.HealthCheckPeriodSeconds) * time.Second
+          return pgCfg, nil
       }
       {{ else}}
       // Data is intentionally empty for pure BFF services.
@@ -7640,9 +8102,7 @@ layouts:
           swaggerFiles "github.com/swaggo/files"
           "github.com/samber/do/v2"
 
-      {{ if .WithDatabase}}
           "{{.GoModule}}/internal/base/data"
-      {{ end}}
           "{{.GoModule}}/internal/base/conf"
           "{{.GoModule}}/internal/docs"
           "{{.GoModule}}/internal/handler/health"
@@ -7656,11 +8116,51 @@ layouts:
       // Wire infrastructure, repositories, adapters, usecases, and handlers here.
       func Run() {
           injector := do.New()
+          defer data.CloseSharedRedisClients()
           defer func() { _ = injector.Shutdown() }()
 
+          cfg := conf.Get()
+          if cfg == nil {
+              cfg = conf.Default()
+          }
+          do.ProvideValue(injector, cfg)
+
+      {{ if .WithDatabase}}
+          if cfg.Database.Enabled {
+              startupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+              defer cancel()
+
+              pgCfg, err := data.NewPostgresConfigFromDatabase(cfg.Database)
+              if err != nil {
+                  panic(err)
+              }
+              pool, err := data.NewPostgres(startupCtx, pgCfg)
+              if err != nil {
+                  panic(err)
+              }
+              dbData, cleanup, err := data.New(pool)
+              if err != nil {
+                  pool.Close()
+                  panic(err)
+              }
+              defer cleanup()
+
+              do.ProvideValue[context.Context](injector, startupCtx)
+              do.ProvideValue(injector, pgCfg)
+              do.ProvideValue(injector, pool)
+              do.ProvideValue(injector, dbData)
+          }
+
+          // TODO: register additional providers with samber/do.
+          // Example:
+          // do.Provide(injector, repository.NewUserRepo)
+          // do.Provide(injector, adapter.NewDeviceAdapter)
+          // do.Provide(injector, usecase.NewUserUseCase)
+          // do.Provide(injector, handler.NewUserHandler)
+      {{ else}}
           // TODO: register providers with samber/do.
           // For DB-backed services, build a full *pgxpool.Config first, then:
-          // startupCtx, cancel := context.WithTimeout(context.Background(), 10 * time.Second)
+          // startupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
           // defer cancel()
           // do.ProvideValue[context.Context](injector, startupCtx)
           // do.ProvideValue(injector, pgCfg)
@@ -7670,12 +8170,7 @@ layouts:
           // do.Provide(injector, adapter.NewDeviceAdapter)
           // do.Provide(injector, usecase.NewUserUseCase)
           // do.Provide(injector, handler.NewUserHandler)
-
-          cfg := conf.Get()
-          if cfg == nil {
-              cfg = conf.Default()
-          }
-          do.ProvideValue(injector, cfg)
+      {{ end}}
           // ncgo:wire:logging:init
 
           h := server.Default(
@@ -7724,9 +8219,11 @@ layouts:
       var rlOpts ratelimit.Options
       {{ if .WithDatabase}}
       if strings.EqualFold(strings.TrimSpace(cfg.RateLimit.Source.Type), "database") {
-          rlOpts.Database = repository.NewRateLimitRuleHook(
-              repository.NewRateLimitRuleRepository(do.MustInvoke[*data.Data](injector)),
-          )
+          var dbData *data.Data
+          if cfg.Database.Enabled {
+              dbData = do.MustInvoke[*data.Data](injector)
+          }
+          rlOpts.Database = repository.NewRateLimitRuleHook(repository.NewRateLimitRuleRepository(dbData))
       }
       {{ else}}
       if strings.EqualFold(strings.TrimSpace(cfg.RateLimit.Source.Type), "database") {

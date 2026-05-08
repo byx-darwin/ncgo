@@ -331,6 +331,12 @@ Supported common infra add-ons: `redis`, `kafka`, `es`, `clickhouse`,
 and `release_canary` (`canary` alias).
 Kitex-only add-ons: `registry_etcd`.
 
+For Hertz projects, `redis` now defaults to a single shared
+`redis.UniversalClient` derived from top-level `cfg.Redis`: signature nonce,
+rate-limit, idempotency, and optional `internal/base/data/redis.go` reuse the
+same client unless you set a module-specific Redis override or call
+`data.NewRedisWithOptions` for a dedicated pool.
+
 `observability_otel` now targets Alibaba LoongSuite Go Agent. It generates
 `internal/base/observability/otel.go` with `OTEL_*` environment helpers and
 prints setup steps such as installing the `otel` CLI and using `otel go build`.

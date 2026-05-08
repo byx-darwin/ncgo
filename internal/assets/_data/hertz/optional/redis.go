@@ -4,31 +4,10 @@
 // then register with samber/do:
 //
 //	do.ProvideValue[context.Context](injector, startupCtx) // context.WithTimeout(...) recommended
-//	do.ProvideValue(injector, &redis.UniversalOptions{
-//	    Addrs:           []string{"redis-1:6379", "redis-2:6379"},
-//	    DB:              0,
-//	    Username:        "default",
-//	    Password:        "secret",
-//	    MasterName:      "",  // sentinel mode
-//	    SentinelAddrs:   nil, // sentinel mode
-//	    DialTimeout:     5 * time.Second,
-//	    ReadTimeout:     3 * time.Second,
-//	    WriteTimeout:    3 * time.Second,
-//	    PoolSize:        10,
-//	    MinIdleConns:    2,
-//	    PoolTimeout:     4 * time.Second,
-//	    ConnMaxIdleTime: 5 * time.Minute,
-//	    ConnMaxLifetime: 30 * time.Minute,
-//	    MaxRetries:      3,
-//	    MinRetryBackoff: 8 * time.Millisecond,
-//	    MaxRetryBackoff: 512 * time.Millisecond,
-//	    TLSConfig:       nil, // *tls.Config
-//	    Protocol:        3,
-//	})
 //	do.Provide(injector, data.NewRedis)
 //
-// UniversalOptions auto-selects between single / cluster / sentinel based on
-// the fields you set. See: https://pkg.go.dev/github.com/redis/go-redis/v9#UniversalOptions
+// NewRedis reads cfg.Redis and reuses the same shared UniversalClient used by
+// redis-backed middleware. For a dedicated client, call NewRedisWithOptions.
 //
 // Required dependency:
 //
@@ -49,9 +28,36 @@ type Redis struct {
 	Client redis.UniversalClient
 }
 
-// NewRedis creates a Redis client from the full UniversalOptions struct,
-// validates connectivity with the injected startup context, and returns a cleanup function for samber/do.
-func NewRedis(ctx context.Context, opts *redis.UniversalOptions) (*Redis, func(), error) {
+// NewRedis reuses the shared Redis client derived from cfg.Redis, validates
+// connectivity with the injected startup context, and returns a cleanup
+// function for samber/do.
+func NewRedis(ctx context.Context, cfg *Config) (*Redis, func(), error) {
+	if cfg == nil {
+		return nil, nil, oops.
+			In("redis").
+			Tags("cache", "redis", "configuration").
+			Code(10308).
+			Public("config_invalid").
+			New("data.Config is nil")
+	}
+	cli := SharedRedisClient(cfg.Redis)
+	if err := cli.Ping(ctx).Err(); err != nil {
+		CloseSharedRedisClient(cfg.Redis)
+		return nil, nil, oops.
+			In("redis").
+			Tags("cache", "redis", "connection").
+			Code(10304).
+			Public("cache_unavailable").
+			With("addrs_count", len(cfg.Redis.Addrs)).
+			Wrapf(err, "redis.Ping")
+	}
+	cleanup := func() { CloseSharedRedisClient(cfg.Redis) }
+	return &Redis{Client: cli}, cleanup, nil
+}
+
+// NewRedisWithOptions creates a dedicated Redis client from raw UniversalOptions.
+// Use it only when you intentionally want a different connection pool than cfg.Redis.
+func NewRedisWithOptions(ctx context.Context, opts *redis.UniversalOptions) (*Redis, func(), error) {
 	if opts == nil {
 		return nil, nil, oops.
 			In("redis").

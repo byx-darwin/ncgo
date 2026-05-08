@@ -39,9 +39,14 @@ func TestRunAddInfraJSONDryRun(t *testing.T) {
 	if !got.DryRun || !got.Updated {
 		t.Fatalf("dryRun/updated = %v/%v, want true/true", got.DryRun, got.Updated)
 	}
-	wantPath := filepath.Join(root, "internal", "base", "data", "redis.go")
-	if len(got.WrittenPaths) != 1 || got.WrittenPaths[0] != wantPath {
-		t.Fatalf("writtenPaths = %v, want [%s]", got.WrittenPaths, wantPath)
+	for _, wantPath := range []string{
+		filepath.Join(root, "internal", "base", "data", "redis.go"),
+		filepath.Join(root, "internal", "base", "data", "redis_shared.go"),
+		filepath.Join(root, "conf", "dev", "conf.yaml"),
+	} {
+		if !containsPath(got.WrittenPaths, wantPath) {
+			t.Fatalf("writtenPaths = %v, want to contain %s", got.WrittenPaths, wantPath)
+		}
 	}
 	if len(got.WiredPaths) != 0 {
 		t.Fatalf("wiredPaths = %v, want empty", got.WiredPaths)
@@ -49,8 +54,13 @@ func TestRunAddInfraJSONDryRun(t *testing.T) {
 	if !planHas(got.Plan, "file", "create") || !planHas(got.Plan, "manifest", "add") || !planHas(got.Plan, "next_step", "run") {
 		t.Fatalf("plan missing expected items: %+v", got.Plan)
 	}
-	if _, err := os.Stat(wantPath); !os.IsNotExist(err) {
-		t.Fatalf("dry-run wrote redis file: stat err = %v", err)
+	for _, path := range []string{
+		filepath.Join(root, "internal", "base", "data", "redis.go"),
+		filepath.Join(root, "internal", "base", "data", "redis_shared.go"),
+	} {
+		if _, err := os.Stat(path); !os.IsNotExist(err) {
+			t.Fatalf("dry-run wrote file %s: stat err = %v", path, err)
+		}
 	}
 }
 
@@ -80,6 +90,9 @@ func TestRunAddInfraPlanShorthand(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "internal", "base", "data", "redis.go")); !os.IsNotExist(err) {
 		t.Fatalf("--plan wrote redis file: stat err = %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(root, "internal", "base", "data", "redis_shared.go")); !os.IsNotExist(err) {
+		t.Fatalf("--plan wrote redis helper: stat err = %v", err)
+	}
 }
 
 func TestRunAddInfraDefaultTextOutput(t *testing.T) {
@@ -98,6 +111,9 @@ func TestRunAddInfraDefaultTextOutput(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "internal", "base", "data", "redis.go")); err != nil {
 		t.Fatalf("redis file was not written: %v", err)
 	}
+	if _, err := os.Stat(filepath.Join(root, "internal", "base", "data", "redis_shared.go")); err != nil {
+		t.Fatalf("redis helper was not written: %v", err)
+	}
 }
 
 func TestRunAddInfraRejectsInvalidOutputBeforeWriting(t *testing.T) {
@@ -109,6 +125,9 @@ func TestRunAddInfraRejectsInvalidOutputBeforeWriting(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "internal", "base", "data", "redis.go")); !os.IsNotExist(err) {
 		t.Fatalf("invalid output wrote redis file: stat err = %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "internal", "base", "data", "redis_shared.go")); !os.IsNotExist(err) {
+		t.Fatalf("invalid output wrote redis helper: stat err = %v", err)
 	}
 }
 
@@ -238,6 +257,15 @@ func seedAddWorkspace(t *testing.T) string {
 func planHas(plan []infra.PlanItem, kind, action string) bool {
 	for _, item := range plan {
 		if item.Kind == kind && item.Action == action {
+			return true
+		}
+	}
+	return false
+}
+
+func containsPath(paths []string, want string) bool {
+	for _, path := range paths {
+		if path == want {
 			return true
 		}
 	}

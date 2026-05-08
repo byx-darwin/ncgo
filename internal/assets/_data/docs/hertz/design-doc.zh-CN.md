@@ -93,18 +93,27 @@ defer func() { _ = injector.Shutdown() }()
 do.ProvideValue(injector, cfg)                 // *conf.Config
 
 // DB 服务追加:
-do.ProvideValue[context.Context](injector, startupCtx)
-do.ProvideValue(injector, pgCfg)               // *pgxpool.Config
-do.Provide(injector, data.NewPostgres)         // *pgxpool.Pool
-do.Provide(injector, data.New)                 // *data.Data + cleanup
+if cfg.Database.Enabled {
+    startupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+    defer cancel()
+    pgCfg, _ := data.NewPostgresConfigFromDatabase(cfg.Database)
+    pool, _ := data.NewPostgres(startupCtx, pgCfg)
+    dbData, cleanup, _ := data.New(pool)
+    defer cleanup()
+    do.ProvideValue[context.Context](injector, startupCtx)
+    do.ProvideValue(injector, pgCfg)
+    do.ProvideValue(injector, pool)
+    do.ProvideValue(injector, dbData)
+}
 do.Provide(injector, repository.NewUserRepo)
 do.Provide(injector, adapter.NewDeviceAdapter)
 do.Provide(injector, usecase.NewUserUseCase)
 do.Provide(injector, handler.NewUserHandler)
 ```
 
-`defer injector.Shutdown()` 会执行 provider 返回的 cleanup(例如
-`data.New` 关闭 pgx 连接池)。
+数据库连接池的 cleanup 现在由 `server.Run()` 在创建 `dbData` 后直接
+`defer cleanup()` 挂到服务生命周期上;`injector.Shutdown()` 仍负责其它实现了
+shutdown 接口的 provider。
 
 ### 2.4 请求生命周期
 
@@ -201,15 +210,22 @@ public 路径(默认 `/healthz`、`/readyz`,加上 `cfg.Auth.PublicPaths`)
 `fail_open`(rate-limit / signature nonce / idempotency)把"依赖故障 →
 拒绝请求"改为"依赖故障 → 放行"。仅当后端 Redis 不是关键路径时才用。
 
+默认情况下，所有基于 Redis 的 middleware store 会复用一份由顶层
+`cfg.Redis` 派生出的进程内 `redis.UniversalClient`。只有模块级 Redis
+override，或显式独立接线，才会创建单独连接池。
+
 ### 3.4 数据库(`with_database: true`)
 
 脚手架带 `--db postgres` 时:
 
+- `internal/base/conf/conf.go` 暴露顶层 `DatabaseConfig`,对应 `conf/dev/conf.yaml`
+  的 `database.*` 配置域,与 `rate_limit.database.*` 分离。
 - `internal/base/data/data.go` 暴露 `Data{ Pool *pgxpool.Pool, Queries *gen.Queries }`,
-  `New(pool)` 返回的 cleanup 会关闭连接池。
-- `data.NewPostgres(ctx, *pgxpool.Config)` 打开并 ping 连接池。完整的
-  `*pgxpool.Config` 通过 `samber/do` 注入,保留所有选项(hooks、超时、
-  before-acquire 等)。
+  `New(pool)` 返回 cleanup 用于关闭连接池。
+- `data.NewPostgresConfigFromDatabase(cfg.Database)` 会把顶层 `database.*`
+  转成 `*pgxpool.Config`;`data.NewPostgres(ctx, *pgxpool.Config)` 负责打开并 ping
+  连接池。默认模板会在 `cfg.Database.Enabled=true` 时自动完成这段 wiring,随后把
+  `startupCtx` / `pgCfg` / `pool` / `dbData` 通过 `do.ProvideValue(...)` 注入。
 - `internal/db/`:
   - `schema/*.sql` —— 表 DDL(sqlc 输入)。
   - `query/*.sql` —— sqlc 注解的查询。
@@ -238,7 +254,8 @@ public 路径(默认 `/healthz`、`/readyz`,加上 `cfg.Auth.PublicPaths`)
 
 `ncgo add infra <kind>` 从
 `internal/assets/_data/hertz/optional/<kind>.go` 或 common
-`internal/assets/_data/optional/<kind>.go` 字节级复制一个 Go 文件。数据客户端
+`internal/assets/_data/optional/<kind>.go` 复制一个 Go 文件。大多数素材会原样写出;
+少数 Hertz helper 资产还会在写入前渲染 `{{.GoModule}}` 占位符。数据客户端
 通常落到 `internal/base/data/`;专门能力可以落到
 `internal/base/observability/` 等包。
 
@@ -247,14 +264,17 @@ public 路径(默认 `/healthz`、`/readyz`,加上 `cfg.Auth.PublicPaths`)
 - 暴露:`*data.Redis{ Client redis.UniversalClient }`(`UniversalOptions`
   自动判定 single / cluster / sentinel)。
 - 依赖:`github.com/redis/go-redis/v9`。
-- 错误码:`10308 config_invalid`(opts 为 nil)、
+- 错误码:`10308 config_invalid`(cfg/opts 为 nil)、
   `10304 cache_unavailable`(`Ping` 失败)。
-- 接线:
+- 默认接线(复用顶层 `cfg.Redis` 与 middleware 共用 client):
   ```go
   do.ProvideValue[context.Context](inj, startupCtx)
-  do.ProvideValue(inj, &redis.UniversalOptions{Addrs: cfg.Redis.Addrs, DB: cfg.Redis.DB})
   do.Provide(inj, data.NewRedis)
   ```
+- `ncgo add infra redis` 在缺少 `internal/base/data/redis_shared.go`
+  时也会一并补齐，使 middleware 与 `data.Redis` 默认复用同一个共享
+  client。
+- 如需独立连接池，可显式使用 `data.NewRedisWithOptions`。
 
 #### Kafka(`kafka.go`)
 
@@ -346,7 +366,8 @@ flag 与文件的对应关系:
 
 ## 7. 可选基础设施
 
-每个 `optional/*.go` 文件都是字节级原样复制素材。`infra.Add` 从嵌入 FS
+每个 `optional/*.go` 文件都是 `infra.Add` 的素材。大多数会原样写出;少数
+Hertz helper 资产会在写入前渲染 `{{.GoModule}}` 占位符。`infra.Add` 从嵌入 FS
 读取后写到对应目标路径,通常是 `internal/base/data/<kind>.go`,也可以是
 `internal/base/observability/otel.go` 等专门包。
 

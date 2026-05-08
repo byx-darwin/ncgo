@@ -283,6 +283,7 @@ func TestShouldSkipNextStep(t *testing.T) {
 	}{
 		{step: "make migrate-up", want: true},
 		{step: "make dev", want: true},
+		{step: "ncgo add infra redis --root .", want: true},
 		{step: "go mod tidy", want: false},
 		{step: "make sqlc", want: false},
 	} {
@@ -570,6 +571,9 @@ func TestGenerateHertzTemplateIncludesChineseConfigComments(t *testing.T) {
 		"# 是否启用 Swagger UI；建议仅在开发/测试环境开启",
 		"# 配置中心：用于在本地文件之上叠加远程配置；默认关闭",
 		"# provider 需与 conf.RegisterConfigCenterLoader 注册名一致",
+		"# 数据库配置",
+		"# PostgreSQL DSN；例如 postgres://user:pass@host:5432/dbname?sslmode=disable",
+		"# 运维建议：略小于数据库或代理层连接回收时间，避免同时批量失效",
 		"# 当 key_by 包含 ak / ak_user_uuid 等维度时，从该请求头读取 app key",
 		"# 开发环境静态密钥；生产环境建议改为配置中心或密钥管理系统",
 		"# 运维建议：不要把真实生产密钥直接写入仓库或镜像",
@@ -600,15 +604,117 @@ func TestGenerateHertzTemplateIncludesConfigCenterAndOptionalConfigModels(t *tes
 	s := string(body)
 	for _, want := range []string{
 		"ConfigCenter ConfigCenterConfig",
+		"Database     DatabaseConfig",
+		"Redis        RedisConfig",
 		"Logging      LoggingConfig",
 		"Release      ReleaseConfig",
+		"type DatabaseConfig struct",
+		"type RedisConfig = RateLimitRedisConfig",
+		"func NewPostgresConfigFromDatabase(cfg conf.DatabaseConfig)",
 		"type ConfigCenterLoader func(ConfigCenterConfig) ([]byte, error)",
 		"func RegisterConfigCenterLoader(provider string, loader ConfigCenterLoader)",
 		"func mergeConfigCenter(cfg *Config) error",
+		"func (c *Config) applyRedisFallbacks()",
+		"func sharedRedisClient(cfg conf.RedisConfig) redis.UniversalClient",
+		"func SharedRedisClient(cfg RedisConfig) redis.UniversalClient",
+		"defer data.CloseSharedRedisClients()",
+		"func TestRedisStoresReuseSharedClient(t *testing.T)",
+		"database.dsn is empty",
 		"type ReleaseRulesConfig struct",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("hertz config model missing %q", want)
+		}
+	}
+}
+
+func TestGenerateHertzWithDatabaseRendersTopLevelDatabaseConfig(t *testing.T) {
+	requireTools(t, "hz")
+
+	opts := baseOpts(t)
+	opts.NoGenerate = false
+	opts.WithDatabase = true
+
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !res.RanGenerate {
+		t.Fatal("expected RanGenerate = true")
+	}
+
+	confBody, err := os.ReadFile(filepath.Join(res.Dir, "conf", "dev", "conf.yaml"))
+	if err != nil {
+		t.Fatalf("read rendered conf.yaml: %v", err)
+	}
+	for _, want := range []string{
+		"database:",
+		"enabled: false",
+		"dsn: \"\"",
+		"max_conns: 20",
+		"health_check_period_seconds: 30",
+		"# Redis 连接配置：作为共享默认值供 rate_limit / idempotency / signature nonce 复用",
+		"context_timeout_enabled: true",
+		"# 可选：仅当需要覆盖顶层 redis 连接时填写；留空则复用顶层 redis",
+		"redis: {}",
+	} {
+		if !strings.Contains(string(confBody), want) {
+			t.Fatalf("rendered conf/dev/conf.yaml missing %q\n---\n%s", want, confBody)
+		}
+	}
+
+	goBody, err := os.ReadFile(filepath.Join(res.Dir, "internal", "base", "conf", "conf.go"))
+	if err != nil {
+		t.Fatalf("read rendered conf.go: %v", err)
+	}
+	for _, want := range []string{
+		"Database DatabaseConfig",
+		"Redis       RedisConfig",
+		"type DatabaseConfig struct",
+		"type RedisConfig = RateLimitRedisConfig",
+		"func (c *Config) applyRedisFallbacks()",
+		"c.RateLimit.Redis = mergeRedisConfig(c.RateLimit.Redis, c.Redis)",
+		"database.dsn is empty",
+		"database pool settings must not be negative",
+	} {
+		if !strings.Contains(string(goBody), want) {
+			t.Fatalf("rendered internal/base/conf/conf.go missing %q\n---\n%s", want, goBody)
+		}
+	}
+
+	dataBody, err := os.ReadFile(filepath.Join(res.Dir, "internal", "base", "data", "data.go"))
+	if err != nil {
+		t.Fatalf("read rendered data.go: %v", err)
+	}
+	for _, want := range []string{
+		"func NewPostgresConfigFromDatabase(cfg conf.DatabaseConfig)",
+		"pgCfg.MaxConns = cfg.MaxConns",
+		"pgCfg.HealthCheckPeriod = time.Duration(cfg.HealthCheckPeriodSeconds) * time.Second",
+	} {
+		if !strings.Contains(string(dataBody), want) {
+			t.Fatalf("rendered internal/base/data/data.go missing %q\n---\n%s", want, dataBody)
+		}
+	}
+
+	serverBody, err := os.ReadFile(filepath.Join(res.Dir, "internal", "base", "server", "server.go"))
+	if err != nil {
+		t.Fatalf("read rendered server.go: %v", err)
+	}
+	for _, want := range []string{
+		"if cfg.Database.Enabled {",
+		"startupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)",
+		"pgCfg, err := data.NewPostgresConfigFromDatabase(cfg.Database)",
+		"pool, err := data.NewPostgres(startupCtx, pgCfg)",
+		"dbData, cleanup, err := data.New(pool)",
+		"defer cleanup()",
+		"do.ProvideValue[context.Context](injector, startupCtx)",
+		"do.ProvideValue(injector, pool)",
+		"do.ProvideValue(injector, dbData)",
+		"dbData = do.MustInvoke[*data.Data](injector)",
+		"repository.NewRateLimitRuleRepository(dbData)",
+	} {
+		if !strings.Contains(string(serverBody), want) {
+			t.Fatalf("rendered internal/base/server/server.go missing %q\n---\n%s", want, serverBody)
 		}
 	}
 }
@@ -663,6 +769,94 @@ func TestGenerateWritesManifest(t *testing.T) {
 		if !strings.Contains(s, want) {
 			t.Errorf("manifest missing %q\n---\n%s", want, s)
 		}
+	}
+}
+
+func TestGenerateNoGenerateWithRedisAddsHandoffStep(t *testing.T) {
+	opts := baseOpts(t)
+	opts.Infra = []string{"redis"}
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	if !strings.Contains(joined, "ncgo add infra redis --root .") {
+		t.Fatalf("next steps missing redis handoff\n---\n%s", joined)
+	}
+	if _, err := os.Stat(filepath.Join(res.Dir, "internal", "base", "data", "redis.go")); !os.IsNotExist(err) {
+		t.Fatalf("redis add-on should not be materialized before generator run: %v", err)
+	}
+	b, err := os.ReadFile(filepath.Join(res.Dir, ".ncgo", "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if strings.Contains(string(b), "infra:") {
+		t.Fatalf("manifest should not record redis before infra add runs\n---\n%s", string(b))
+	}
+}
+
+func TestGeneratePostGenerateAddsRedisInfra(t *testing.T) {
+	opts := baseOpts(t)
+	opts.NoGenerate = false
+	opts.Infra = []string{"redis"}
+	opts.Runner = &fakeRunner{}
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !res.RanGenerate {
+		t.Fatal("expected RanGenerate = true")
+	}
+	if strings.Contains(strings.Join(res.NextSteps, "\n"), "ncgo add infra redis --root .") {
+		t.Fatalf("post-generate next steps should not include redis handoff: %v", res.NextSteps)
+	}
+	redisPath := filepath.Join(res.Dir, "internal", "base", "data", "redis.go")
+	if _, err := os.Stat(redisPath); err != nil {
+		t.Fatalf("stat redis.go: %v", err)
+	}
+	helperPath := filepath.Join(res.Dir, "internal", "base", "data", "redis_shared.go")
+	if _, err := os.Stat(helperPath); err != nil {
+		t.Fatalf("stat redis_shared.go: %v", err)
+	}
+	redisBody, err := os.ReadFile(redisPath)
+	if err != nil {
+		t.Fatalf("read redis.go: %v", err)
+	}
+	for _, want := range []string{"func NewRedis(ctx context.Context, cfg *Config)", "SharedRedisClient(cfg.Redis)"} {
+		if !strings.Contains(string(redisBody), want) {
+			t.Fatalf("redis.go missing %q\n---\n%s", want, redisBody)
+		}
+	}
+	helperBody, err := os.ReadFile(helperPath)
+	if err != nil {
+		t.Fatalf("read redis_shared.go: %v", err)
+	}
+	for _, want := range []string{"func SharedRedisClient(cfg RedisConfig) redis.UniversalClient", "type Config = conf.Config"} {
+		if !strings.Contains(string(helperBody), want) {
+			t.Fatalf("redis_shared.go missing %q\n---\n%s", want, helperBody)
+		}
+	}
+	confBody, err := os.ReadFile(filepath.Join(res.Dir, "conf", "dev", "conf.yaml"))
+	if err != nil {
+		t.Fatalf("read conf/dev/conf.yaml: %v", err)
+	}
+	if !strings.Contains(string(confBody), "# ncgo:add-infra:start redis") {
+		t.Fatalf("conf/dev/conf.yaml missing redis block\n---\n%s", confBody)
+	}
+	b, err := os.ReadFile(filepath.Join(res.Dir, ".ncgo", "manifest.yaml"))
+	if err != nil {
+		t.Fatalf("read manifest: %v", err)
+	}
+	if !strings.Contains(string(b), "infra:") || !strings.Contains(string(b), "- redis") {
+		t.Fatalf("manifest missing redis infra entry\n---\n%s", string(b))
+	}
+}
+
+func TestGenerateRejectsUnsupportedCreationInfra(t *testing.T) {
+	opts := baseOpts(t)
+	opts.Infra = []string{"kafka"}
+	if _, err := Generate(context.Background(), opts); err == nil || !strings.Contains(err.Error(), "not supported by ncgo new yet") {
+		t.Fatalf("err = %v, want unsupported infra error", err)
 	}
 }
 
@@ -822,7 +1016,7 @@ func TestGenerateHertzCompiles(t *testing.T) {
 	// Run the generated project's own rate-limit packages to verify the shipped
 	// dynamic resolver, repository hook, middleware, and their smoke tests work
 	// in a fresh project.
-	cmd = osexec.CommandContext(context.Background(), "go", "test", "-race", "-count=1", "./internal/repository/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
+	cmd = osexec.CommandContext(context.Background(), "go", "test", "-race", "-count=1", "./internal/base/conf/...", "./internal/repository/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
 	cmd.Dir = res.Dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go test rate-limit packages in %s: %v\n%s", res.Dir, err, out)
@@ -854,7 +1048,7 @@ func TestGenerateHertzWithDatabaseCompiles(t *testing.T) {
 	runInDir(t, res.Dir, "go", "mod", "tidy")
 	runInDir(t, res.Dir, "make", "i18n")
 	runInDir(t, res.Dir, "go", "build", ".")
-	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/base/data/...", "./internal/repository/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
+	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/base/conf/...", "./internal/base/data/...", "./internal/repository/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
 }
 
 func TestGenerateRejectsNonEmptyDir(t *testing.T) {
@@ -1172,8 +1366,9 @@ func assertStepMakeTargetsExist(t *testing.T, steps []string, makefileBody strin
 }
 
 var skippedNextStepReasons = map[string]string{
-	"make migrate-up": "requires external database configuration/state",
-	"make dev":        "starts a long-running development process",
+	"make migrate-up":               "requires external database configuration/state",
+	"make dev":                      "starts a long-running development process",
+	"ncgo add infra redis --root .": "requires the ncgo CLI binary in PATH; scaffold tests cover this path separately",
 }
 
 type nextStepsSmokeCase struct {

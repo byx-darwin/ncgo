@@ -32,6 +32,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	scaffoldinfra "github.com/byx-darwin/ncgo/internal/scaffold/infra"
 	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
 )
 
@@ -42,6 +43,7 @@ type Options struct {
 	Kind          string      // service kind: manifest.KindHertz (default) | manifest.KindKitex
 	Dir           string      // target directory; must be empty or nonexistent
 	WithDatabase  bool        // postgres scaffolding flag
+	Infra         []string    // creation-time infra add-ons (currently only redis)
 	IDL           string      // IDL path relative to project root; default differs by Kind
 	AssetsVersion string      // recorded into manifest.ncgo.assets_version
 	NCGOVersion   string      // recorded into manifest.ncgo.version
@@ -61,6 +63,11 @@ var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
 
 // Generate prepares the directory and (unless NoGenerate) calls hz.
 func Generate(ctx context.Context, opts Options) (*Result, error) {
+	normalizedInfra, err := normalizeCreationInfra(opts.Infra)
+	if err != nil {
+		return nil, err
+	}
+	opts.Infra = normalizedInfra
 	if err := opts.validate(); err != nil {
 		return nil, err
 	}
@@ -96,6 +103,9 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 		r = exec.NewDefault()
 	}
 	if _, err := runGenerator(ctx, r, dir, opts, idl); err != nil {
+		return res, err
+	}
+	if err := addSelectedInfra(dir, opts.Infra); err != nil {
 		return res, err
 	}
 	res.RanGenerate = true
@@ -156,6 +166,36 @@ func (o Options) validate() error {
 	case manifest.KindHertz, manifest.KindKitex:
 	default:
 		return fmt.Errorf("scaffold: kind %q is invalid (hertz|kitex)", o.Kind)
+	}
+	return nil
+}
+
+func normalizeCreationInfra(kinds []string) ([]string, error) {
+	if len(kinds) == 0 {
+		return nil, nil
+	}
+	seen := map[string]struct{}{}
+	normalized := make([]string, 0, len(kinds))
+	for _, kind := range kinds {
+		switch kind {
+		case scaffoldinfra.KindRedis:
+		default:
+			return nil, fmt.Errorf("scaffold: infra %q is not supported by ncgo new yet (want %q)", kind, scaffoldinfra.KindRedis)
+		}
+		if _, ok := seen[kind]; ok {
+			continue
+		}
+		seen[kind] = struct{}{}
+		normalized = append(normalized, kind)
+	}
+	return normalized, nil
+}
+
+func addSelectedInfra(root string, kinds []string) error {
+	for _, kind := range kinds {
+		if _, err := scaffoldinfra.Add(scaffoldinfra.Options{Root: root, Kind: kind}); err != nil {
+			return fmt.Errorf("scaffold: add infra %s: %w", kind, err)
+		}
 	}
 	return nil
 }

@@ -344,6 +344,9 @@ func nextSteps(opts Options, idl string) []string {
 		fmt.Sprintf("go mod init %s", opts.Module),
 		generatorCommand(opts, idl),
 	}
+	for _, kind := range opts.Infra {
+		steps = append(steps, fmt.Sprintf("ncgo add infra %s --root .", kind))
+	}
 	if requiresSQLCBeforeTidy(opts) {
 		steps = append(steps, "make sqlc")
 	}

@@ -60,12 +60,50 @@ func TestAddRedisCopiesFileAndUpdatesManifest(t *testing.T) {
 	if want := filepath.Join(root, "internal", "base", "data", "redis.go"); res.WrittenPath != want {
 		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, want)
 	}
+	helperPath := filepath.Join(root, "internal", "base", "data", "redis_shared.go")
+	if !sliceContains(res.WrittenPaths, helperPath) {
+		t.Errorf("WrittenPaths missing redis helper %q: %v", helperPath, res.WrittenPaths)
+	}
 	body, err := os.ReadFile(res.WrittenPath)
 	if err != nil {
 		t.Fatalf("read written: %v", err)
 	}
-	if !strings.Contains(string(body), "package data") {
-		t.Errorf("written file missing package data:\n%s", body)
+	for _, want := range []string{
+		"package data",
+		"func NewRedis(ctx context.Context, cfg *Config)",
+		"SharedRedisClient(cfg.Redis)",
+		"func NewRedisWithOptions(ctx context.Context, opts *redis.UniversalOptions)",
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("written file missing %q:\n%s", want, body)
+		}
+	}
+	helperBody, err := os.ReadFile(helperPath)
+	if err != nil {
+		t.Fatalf("read helper: %v", err)
+	}
+	for _, want := range []string{
+		"package data",
+		"type Config = conf.Config",
+		"func SharedRedisClient(cfg RedisConfig) redis.UniversalClient",
+	} {
+		if !strings.Contains(string(helperBody), want) {
+			t.Errorf("helper missing %q:\n%s", want, helperBody)
+		}
+	}
+	confPath := filepath.Join(root, "conf", "dev", "conf.yaml")
+	if !planContains(res.Plan, "file", "create", confPath, "") {
+		t.Errorf("Plan missing config create for %s: %+v", confPath, res.Plan)
+	}
+	confBody, err := os.ReadFile(confPath)
+	if err != nil {
+		t.Fatalf("read config: %v", err)
+	}
+	if !strings.Contains(string(confBody), "# ncgo:add-infra:start redis") || !strings.Contains(string(confBody), "redis:") {
+		t.Errorf("redis config block missing in conf/dev/conf.yaml:\n%s", confBody)
+	}
+	if _, err := os.Stat(filepath.Join(root, "conf", "dev", "redis.yaml")); !os.IsNotExist(err) {
+		t.Errorf("redis should no longer write a standalone redis.yaml: stat err = %v", err)
 	}
 	m, err := manifest.Load(root)
 	if err != nil {
@@ -73,6 +111,99 @@ func TestAddRedisCopiesFileAndUpdatesManifest(t *testing.T) {
 	}
 	if len(m.Infra) != 1 || m.Infra[0] != KindRedis {
 		t.Errorf("manifest.Infra = %v, want [redis]", m.Infra)
+	}
+}
+
+func TestAddRedisSkipsExistingSharedHelper(t *testing.T) {
+	root := seedProject(t, nil)
+	helperPath := filepath.Join(root, "internal", "base", "data", "redis_shared.go")
+	if err := os.MkdirAll(filepath.Dir(helperPath), 0o755); err != nil {
+		t.Fatalf("mkdir helper dir: %v", err)
+	}
+	const helperBody = "package data\n\n// pre-existing helper\n"
+	if err := os.WriteFile(helperPath, []byte(helperBody), 0o644); err != nil {
+		t.Fatalf("write helper: %v", err)
+	}
+
+	res, err := Add(Options{Root: root, Kind: KindRedis})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	if sliceContains(res.WrittenPaths, helperPath) {
+		t.Fatalf("WrittenPaths should not rewrite pre-existing helper: %v", res.WrittenPaths)
+	}
+	if got := readFile(t, helperPath); got != helperBody {
+		t.Fatalf("helper was modified\n--- got ---\n%s\n--- want ---\n%s", got, helperBody)
+	}
+	redisBody := readFile(t, filepath.Join(root, "internal", "base", "data", "redis.go"))
+	if !strings.Contains(redisBody, "SharedRedisClient(cfg.Redis)") {
+		t.Fatalf("redis.go should still reuse shared helper\n---\n%s", redisBody)
+	}
+	assertManifestInfra(t, root, KindRedis)
+}
+
+func TestAddHertzDataInfraWritesConfigIntoSingleConfFile(t *testing.T) {
+	for _, tc := range []struct {
+		kind       string
+		wantKey    string
+		standalone string
+	}{
+		{kind: KindKafka, wantKey: "kafka:", standalone: filepath.Join("conf", "dev", "kafka.yaml")},
+		{kind: KindES, wantKey: "es:", standalone: filepath.Join("conf", "dev", "es.yaml")},
+		{kind: KindClickHouse, wantKey: "clickhouse:", standalone: filepath.Join("conf", "dev", "clickhouse.yaml")},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			root := seedProject(t, nil)
+			res, err := Add(Options{Root: root, Kind: tc.kind})
+			if err != nil {
+				t.Fatalf("Add %s: %v", tc.kind, err)
+			}
+			confPath := filepath.Join(root, "conf", "dev", "conf.yaml")
+			if !pathListed(res.WrittenPaths, confPath) {
+				t.Fatalf("WrittenPaths = %v, want to include %s", res.WrittenPaths, confPath)
+			}
+			if !planContains(res.Plan, "file", "create", confPath, "") {
+				t.Fatalf("Plan missing config create for %s: %+v", confPath, res.Plan)
+			}
+			body, err := os.ReadFile(confPath)
+			if err != nil {
+				t.Fatalf("read config %s: %v", confPath, err)
+			}
+			s := string(body)
+			if !strings.Contains(s, tc.wantKey) {
+				t.Fatalf("config %s missing %q\n---\n%s", confPath, tc.wantKey, s)
+			}
+			if !strings.Contains(s, "# ncgo:add-infra:start "+tc.kind) {
+				t.Fatalf("config %s missing generated marker for %s\n---\n%s", confPath, tc.kind, s)
+			}
+			joined := strings.Join(res.NextSteps, "\n")
+			if !strings.Contains(joined, filepath.Join("conf", "dev", "conf.yaml")) {
+				t.Fatalf("next steps missing conf/dev/conf.yaml guidance\n---\n%s", joined)
+			}
+			if _, err := os.Stat(filepath.Join(root, tc.standalone)); !os.IsNotExist(err) {
+				t.Fatalf("standalone snippet file should not exist (%s): %v", tc.standalone, err)
+			}
+		})
+	}
+}
+
+func TestAddHertzDataInfraAppendsToExistingConfFile(t *testing.T) {
+	root := seedProject(t, nil)
+	confPath := filepath.Join(root, "conf", "dev", "conf.yaml")
+	writeTestFile(t, confPath, "env: dev\nserver:\n  name: demo\n")
+
+	res, err := Add(Options{Root: root, Kind: KindKafka})
+	if err != nil {
+		t.Fatalf("Add kafka: %v", err)
+	}
+	if !planContains(res.Plan, "file", "update", confPath, "") {
+		t.Fatalf("Plan missing config update for %s: %+v", confPath, res.Plan)
+	}
+	body := readFile(t, confPath)
+	for _, want := range []string{"env: dev", "server:", "# ncgo:add-infra:start kafka", "kafka:"} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("conf/dev/conf.yaml missing %q\n---\n%s", want, body)
+		}
 	}
 }
 
@@ -896,6 +1027,15 @@ func planContainsAnchor(plan []PlanItem, kind, action, path, detail, anchorSourc
 	return false
 }
 
+func sliceContains(items []string, want string) bool {
+	for _, item := range items {
+		if item == want {
+			return true
+		}
+	}
+	return false
+}
+
 func assertManifestInfra(t *testing.T, root string, want ...string) {
 	t.Helper()
 	m, err := manifest.Load(root)
@@ -1054,4 +1194,13 @@ func TestAddAllSupportedKindsCopySuccessfully(t *testing.T) {
 			}
 		})
 	}
+}
+
+func pathListed(paths []string, want string) bool {
+	for _, p := range paths {
+		if p == want {
+			return true
+		}
+	}
+	return false
 }

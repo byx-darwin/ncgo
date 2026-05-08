@@ -1,0 +1,16 @@
+# Optional Elasticsearch config block for Hertz.
+# Keep the same top-level structure in conf/dev/conf.yaml and in your config-center payload.
+# Adjust these defaults to match how you wire internal/base/data/es.go.
+es:
+  enabled: false
+  addresses:
+    - http://127.0.0.1:9200
+  username: ""
+  password: ""
+  api_key: ""
+  service_token: ""
+  max_retries: 3
+  compress_request_body: true
+  discover_nodes_on_start: false
+  enable_metrics: false
+  enable_debug_logger: false

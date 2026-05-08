@@ -1236,9 +1236,11 @@ if cfg.RateLimit.Source.Type == "grpc" {
     rlOpts.GRPC = newDynamicRuleGRPCClient(cfg)
 }
 if cfg.RateLimit.Source.Type == "database" {
-    rlOpts.Database = repository.NewRateLimitRuleHook(
-        repository.NewRateLimitRuleRepository(do.MustInvoke[*data.Data](injector)),
-    )
+    var dbData *data.Data
+    if cfg.Database.Enabled {
+        dbData = do.MustInvoke[*data.Data](injector)
+    }
+    rlOpts.Database = repository.NewRateLimitRuleHook(repository.NewRateLimitRuleRepository(dbData))
 }
 
 resolver := ratelimit.NewResolver(cfg.RateLimit, rlOpts)
@@ -1251,8 +1253,9 @@ Recommended principles:
 - When `source.type=config`, `Options` may remain empty.
 - In the DB-enabled scaffold, the template already wires a compilable
   sqlc/schema/migration/repository skeleton.
-- In a scaffold without DB support, the placeholder database hook remains a
-  no-op and the resolver falls back to local config rules.
+- In a scaffold without DB support, or when the scaffold has DB support but
+  `cfg.Database.Enabled=false`, the database hook remains a no-op and the
+  resolver falls back to local config rules.
 
 ### A.2 gRPC Client Adapter Example
 
