@@ -443,7 +443,11 @@ func TestAddLoggingWireForHertz(t *testing.T) {
 	body := readFile(t, serverPath)
 	for _, want := range []string{
 		`"github.com/x/demo/internal/base/logging"`,
-		"logging.Init(logging.DefaultConfig()",
+		"logCfg := logging.Config{",
+		"Enabled:   cfg.Logging.Enabled,",
+		"Track:       cfg.Release.Info.Track,",
+		"GitSHA:      cfg.Release.Info.GitSHA,",
+		"BuildTime:   cfg.Release.Info.BuildTime,",
 		"h.Use(logging.HertzRecovery())",
 		"h.Use(logging.HertzRequestID())",
 		"h.Use(logging.HertzAccessLog())",
@@ -586,7 +590,7 @@ func TestAddCanaryWireForHertz(t *testing.T) {
 		t.Fatalf("Add canary --wire: %v", err)
 	}
 	body := readFile(t, filepath.Join(root, "internal", "base", "server", "server.go"))
-	for _, want := range []string{`"github.com/x/demo/internal/base/release"`, "h.Use(release.HertzTraffic())"} {
+	for _, want := range []string{`"github.com/x/demo/internal/base/release"`, "if cfg.Release.Enabled {", "h.Use(release.HertzTraffic())"} {
 		if !strings.Contains(body, want) {
 			t.Errorf("hertz canary wiring missing %q\n---\n%s", want, body)
 		}

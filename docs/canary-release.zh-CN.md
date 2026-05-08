@@ -693,13 +693,15 @@ internal/base/release/kitex.go  # Kitex 服务额外生成
 
 ### 14.6 安全 wiring 示例
 
-Hertz 服务建议在 `internal/base/server/server.go` 的 `middleware.RequestID()` 后、`middleware.AccessLog()` 前接入，这样 access log / 后续 adapter 可以读到灰度上下文：
+Hertz 服务建议在 `internal/base/server/server.go` 的 `middleware.RequestID()` 后、`middleware.AccessLog()` 前按 `cfg.Release.Enabled` 条件接入，这样 access log / 后续 adapter 可以读到灰度上下文：
 
 ```go
 import "<module>/internal/base/release"
 
 h.Use(middleware.RequestID())
-h.Use(release.HertzTraffic())
+if cfg.Release.Enabled {
+    h.Use(release.HertzTraffic())
+}
 h.Use(middleware.AccessLog())
 ```
 

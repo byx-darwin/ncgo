@@ -7688,8 +7688,9 @@ layouts:
           )
           // Optional structured logging wiring (after `ncgo add infra logging`):
           // import "{{.GoModule}}/internal/base/logging"
-          // Initialize logging before registering middleware, then replace the
-          // default Recovery/RequestID/AccessLog middleware below with:
+          // Initialize logging from cfg.Logging / cfg.Release.Info before
+          // registering middleware, then replace the default
+          // Recovery/RequestID/AccessLog middleware below with:
           // h.Use(logging.HertzRecovery())
           // h.Use(logging.HertzRequestID())
           // h.Use(logging.HertzAccessLog())
@@ -7698,7 +7699,9 @@ layouts:
           h.Use(middleware.RequestID())
           // Optional release canary wiring (after `ncgo add infra canary`):
           // import "{{.GoModule}}/internal/base/release"
-          // h.Use(release.HertzTraffic()) // reads X-Traffic-Lane/X-User-ID/X-Tenant-ID
+          // if cfg.Release.Enabled {
+          //     h.Use(release.HertzTraffic()) // reads X-Traffic-Lane/X-User-ID/X-Tenant-ID
+          // }
           // ncgo:wire:canary:server-traffic
           h.Use(middleware.AccessLog())
           h.Use(middleware.RequestTimeout(serverDurationSeconds(cfg.Server.RequestTimeoutSeconds)))

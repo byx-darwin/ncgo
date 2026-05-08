@@ -390,12 +390,14 @@ func TestGenerateHertzTemplateIncludesSafeOptionalWiringAnchors(t *testing.T) {
 		"// ncgo:wire:logging:init",
 		"// ncgo:wire:logging:server-middleware",
 		"import \"{{.GoModule}}/internal/base/logging\"",
+		"cfg.Logging / cfg.Release.Info",
 		"h.Use(logging.HertzRecovery())",
 		"h.Use(logging.HertzRequestID())",
 		"h.Use(logging.HertzAccessLog())",
 		"Optional release canary wiring",
 		"// ncgo:wire:canary:server-traffic",
 		"import \"{{.GoModule}}/internal/base/release\"",
+		"if cfg.Release.Enabled {",
 		"h.Use(release.HertzTraffic())",
 	} {
 		if !strings.Contains(s, want) {

@@ -117,7 +117,7 @@ func wireHertz(root, module, kind string, dryRun bool) (*wireResult, error) {
 		s, err = insertAfterMarkerOrAnyWithPlan(s, "release.HertzTraffic()", markerCanaryServerTraffic, []string{
 			"\th.Use(logging.HertzRequestID())\n",
 			"\th.Use(middleware.RequestID())\n",
-		}, "\th.Use(release.HertzTraffic())\n", path, &plan, "insert_traffic_middleware", "release.HertzTraffic")
+		}, hertzCanaryTraffic(), path, &plan, "insert_traffic_middleware", "release.HertzTraffic")
 		if err != nil {
 			return nil, err
 		}
@@ -234,12 +234,48 @@ func wireKitexClient(path, module, kind string, dryRun bool) (*wireResult, error
 }
 
 func hertzLoggingInit() string {
-	return "\tif _, err := logging.Init(logging.DefaultConfig(), logging.ReleaseInfo{\n" +
+	return "\tlogCfg := logging.Config{\n" +
+		"\t\tEnabled:   cfg.Logging.Enabled,\n" +
+		"\t\tMode:      cfg.Logging.Mode,\n" +
+		"\t\tFormat:    cfg.Logging.Format,\n" +
+		"\t\tLevel:     cfg.Logging.Level,\n" +
+		"\t\tAddSource: cfg.Logging.AddSource,\n" +
+		"\t\tConsole: logging.ConsoleConfig{\n" +
+		"\t\t\tEnabled: cfg.Logging.Console.Enabled,\n" +
+		"\t\t},\n" +
+		"\t\tFile: logging.FileConfig{\n" +
+		"\t\t\tEnabled:    cfg.Logging.File.Enabled,\n" +
+		"\t\t\tDir:        cfg.Logging.File.Dir,\n" +
+		"\t\t\tFilename:   cfg.Logging.File.Filename,\n" +
+		"\t\t\tMaxSizeMB:  cfg.Logging.File.MaxSizeMB,\n" +
+		"\t\t\tMaxBackups: cfg.Logging.File.MaxBackups,\n" +
+		"\t\t\tMaxAgeDays: cfg.Logging.File.MaxAgeDays,\n" +
+		"\t\t\tCompress:   cfg.Logging.File.Compress,\n" +
+		"\t\t},\n" +
+		"\t\tCategories: map[string]logging.CategoryConfig{},\n" +
+		"\t}\n" +
+		"\tfor category, cc := range cfg.Logging.Categories {\n" +
+		"\t\tlogCfg.Categories[category] = logging.CategoryConfig{\n" +
+		"\t\t\tEnabled: cc.Enabled,\n" +
+		"\t\t\tFile:    cc.File,\n" +
+		"\t\t\tLevel:   cc.Level,\n" +
+		"\t\t}\n" +
+		"\t}\n" +
+		"\tif _, err := logging.Init(logCfg, logging.ReleaseInfo{\n" +
 		"\t\tServiceName: cfg.Server.Name,\n" +
 		"\t\tServiceKind: \"hertz\",\n" +
 		"\t\tVersion:     cfg.Server.Version,\n" +
+		"\t\tTrack:       cfg.Release.Info.Track,\n" +
+		"\t\tGitSHA:      cfg.Release.Info.GitSHA,\n" +
+		"\t\tBuildTime:   cfg.Release.Info.BuildTime,\n" +
 		"\t}); err != nil {\n" +
 		"\t\tpanic(err)\n" +
+		"\t}\n"
+}
+
+func hertzCanaryTraffic() string {
+	return "\tif cfg.Release.Enabled {\n" +
+		"\t\th.Use(release.HertzTraffic())\n" +
 		"\t}\n"
 }
 

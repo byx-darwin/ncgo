@@ -623,15 +623,44 @@ go mod tidy
 
 ### 18.1 Hertz server
 
-Hertz 服务建议在 `internal/base/server/server.go` 初始化 logger，然后把默认 `middleware.Recovery()` / `middleware.RequestID()` / `middleware.AccessLog()` 替换为 logging optional 的 middleware：
+Hertz 服务建议在 `internal/base/server/server.go` 用 `cfg.Logging` 初始化 logger，并把 `cfg.Release.Info` 里的发布元信息附加到日志中；然后再把默认 `middleware.Recovery()` / `middleware.RequestID()` / `middleware.AccessLog()` 替换为 logging optional 的 middleware：
 
 ```go
 import "<module>/internal/base/logging"
 
-_, err := logging.Init(logging.DefaultConfig(), logging.ReleaseInfo{
+logCfg := logging.Config{
+    Enabled:   cfg.Logging.Enabled,
+    Mode:      cfg.Logging.Mode,
+    Format:    cfg.Logging.Format,
+    Level:     cfg.Logging.Level,
+    AddSource: cfg.Logging.AddSource,
+    Console: logging.ConsoleConfig{Enabled: cfg.Logging.Console.Enabled},
+    File: logging.FileConfig{
+        Enabled:    cfg.Logging.File.Enabled,
+        Dir:        cfg.Logging.File.Dir,
+        Filename:   cfg.Logging.File.Filename,
+        MaxSizeMB:  cfg.Logging.File.MaxSizeMB,
+        MaxBackups: cfg.Logging.File.MaxBackups,
+        MaxAgeDays: cfg.Logging.File.MaxAgeDays,
+        Compress:   cfg.Logging.File.Compress,
+    },
+    Categories: map[string]logging.CategoryConfig{},
+}
+for category, cc := range cfg.Logging.Categories {
+    logCfg.Categories[category] = logging.CategoryConfig{
+        Enabled: cc.Enabled,
+        File:    cc.File,
+        Level:   cc.Level,
+    }
+}
+
+_, err := logging.Init(logCfg, logging.ReleaseInfo{
     ServiceName: cfg.Server.Name,
     ServiceKind: "hertz",
     Version:     cfg.Server.Version,
+    Track:       cfg.Release.Info.Track,
+    GitSHA:      cfg.Release.Info.GitSHA,
+    BuildTime:   cfg.Release.Info.BuildTime,
 })
 if err != nil {
     panic(err)
