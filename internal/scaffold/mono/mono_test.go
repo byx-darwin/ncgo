@@ -787,8 +787,9 @@ func TestGenerateHertzCompiles(t *testing.T) {
 	}
 
 	// Run the generated project's own rate-limit packages to verify the shipped
-	// dynamic resolver, middleware, and their smoke tests work in a fresh project.
-	cmd = osexec.CommandContext(context.Background(), "go", "test", "-race", "-count=1", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
+	// dynamic resolver, repository hook, middleware, and their smoke tests work
+	// in a fresh project.
+	cmd = osexec.CommandContext(context.Background(), "go", "test", "-race", "-count=1", "./internal/repository/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
 	cmd.Dir = res.Dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go test rate-limit packages in %s: %v\n%s", res.Dir, err, out)
@@ -820,7 +821,7 @@ func TestGenerateHertzWithDatabaseCompiles(t *testing.T) {
 	runInDir(t, res.Dir, "go", "mod", "tidy")
 	runInDir(t, res.Dir, "make", "i18n")
 	runInDir(t, res.Dir, "go", "build", ".")
-	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/base/data/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
+	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/base/data/...", "./internal/repository/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
 }
 
 func TestGenerateRejectsNonEmptyDir(t *testing.T) {

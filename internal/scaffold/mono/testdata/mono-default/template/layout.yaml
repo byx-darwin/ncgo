@@ -32,6 +32,9 @@ layouts:
   - path: internal/db/migrations/
     delims: ["", ""]
     body: ""
+  - path: internal/db/seed/
+    delims: ["", ""]
+    body: ""
   - path: internal/db/gen/
     delims: ["", ""]
     body: ""
@@ -201,13 +204,14 @@ layouts:
           cache_ttl_seconds: 60
           # 当动态规则源报错时，是否回退到本地配置规则
           fallback_on_error: true
-        # gRPC 动态规则源配置；source.type=grpc 时使用
+          # 动态规则命名空间配置；当前字段位于 grpc 下，但也建议作为 cache key / 动态查询的服务标识统一使用
         grpc:
           # 规则中心地址；未配置时会回退本地规则
           target: ""
           timeout_milliseconds: 200
           auth_header: Authorization
           auth_token: ""
+            # 当前服务名 / 规则命名空间；建议保持稳定，并显式纳入动态查询与缓存 key
           service_name: {{.ServiceName}}
         # database hook 配置；source.type=database 时使用
         database:
@@ -243,7 +247,8 @@ layouts:
             max_requests: 100
             # 限流状态在本地/Redis 中的保留时长
             client_ttl_seconds: 300
-          # 本地细粒度兜底规则；按 app_key / method / path / path_prefix 匹配
+          # 本地细粒度兜底规则；推荐按 app_key / method / match_kind / path(path_pattern) / priority 配置。
+          # 兼容旧字段 path_prefix，会按 match_kind=prefix 处理。
           rules: []
         # 鉴权后限流：适合按登录用户或租户做精细控制
         post_auth:
@@ -547,11 +552,14 @@ layouts:
       }
 
       type RateLimitMatchConfig struct {
-          AppKey     string              `json:"app_key" yaml:"app_key"`
-          Method     string              `json:"method" yaml:"method"`
-          Path       string              `json:"path" yaml:"path"`
-          PathPrefix string              `json:"path_prefix" yaml:"path_prefix"`
-          Rule       RateLimitRuleConfig `json:"rule" yaml:"rule"`
+          AppKey      string              `json:"app_key" yaml:"app_key"`
+          Method      string              `json:"method" yaml:"method"`
+          MatchKind   string              `json:"match_kind" yaml:"match_kind"`
+          Path        string              `json:"path" yaml:"path"`
+          PathPattern string              `json:"path_pattern" yaml:"path_pattern"`
+          PathPrefix  string              `json:"path_prefix" yaml:"path_prefix"`
+          Priority    int                 `json:"priority" yaml:"priority"`
+          Rule        RateLimitRuleConfig `json:"rule" yaml:"rule"`
       }
 
       type RateLimitRuleConfig struct {
@@ -945,24 +953,98 @@ layouts:
       }
 
       func validateRateLimitMatch(name string, index int, match RateLimitMatchConfig) error {
-          if strings.TrimSpace(match.AppKey) == "" && strings.TrimSpace(match.Method) == "" && strings.TrimSpace(match.Path) == "" && strings.TrimSpace(match.PathPrefix) == "" {
+          normalized, err := normalizeRateLimitMatch(match)
+          if err != nil {
+              _ = index
+              return oops.In("config").Code(10308).Public("config_invalid").Wrap(err)
+          }
+          if normalized.AppKey == "" && normalized.Method == "" && normalized.MatchKind == "" && normalized.Path == "" && normalized.PathPattern == "" {
               return oops.In("config").Code(10308).Public("config_invalid").New(name + ".rules entry must specify at least one matcher")
           }
-          if method := strings.TrimSpace(match.Method); method != "" {
-              switch strings.ToUpper(method) {
+          if normalized.Method != "" {
+              switch normalized.Method {
               case "GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS", "HEAD":
               default:
                   _ = index
                   return oops.In("config").Code(10308).Public("config_invalid").New(name + ".rules.method is invalid")
               }
           }
-          if path := strings.TrimSpace(match.Path); path != "" && !strings.HasPrefix(path, "/") {
-              return oops.In("config").Code(10308).Public("config_invalid").New(name + ".rules.path must start with /")
-          }
-          if prefix := strings.TrimSpace(match.PathPrefix); prefix != "" && !strings.HasPrefix(prefix, "/") {
-              return oops.In("config").Code(10308).Public("config_invalid").New(name + ".rules.path_prefix must start with /")
+          if normalized.Priority < 0 {
+              return oops.In("config").Code(10308).Public("config_invalid").New(name + ".rules.priority must not be negative")
           }
           return validateRateLimitRule(name+".rules.rule", match.Rule)
+      }
+
+      func normalizeRateLimitMatch(match RateLimitMatchConfig) (RateLimitMatchConfig, error) {
+          match.AppKey = strings.TrimSpace(match.AppKey)
+          match.Method = strings.ToUpper(strings.TrimSpace(match.Method))
+          match.MatchKind = strings.ToLower(strings.TrimSpace(match.MatchKind))
+          match.Path = strings.TrimSpace(match.Path)
+          match.PathPattern = strings.TrimSpace(match.PathPattern)
+          match.PathPrefix = strings.TrimSpace(match.PathPrefix)
+
+          if match.PathPrefix != "" {
+              if match.MatchKind == "" {
+                  match.MatchKind = "prefix"
+              }
+              if match.PathPattern == "" {
+                  match.PathPattern = match.PathPrefix
+              }
+          }
+
+          if match.MatchKind == "" {
+              switch {
+              case match.Path != "":
+                  match.MatchKind = "exact"
+              case match.PathPattern != "":
+                  match.MatchKind = "prefix"
+              }
+          }
+
+          switch match.MatchKind {
+          case "", "exact", "prefix", "glob", "regex":
+          default:
+              return RateLimitMatchConfig{}, oops.In("config").Code(10308).Public("config_invalid").New("rules.match_kind must be one of exact/prefix/glob/regex")
+          }
+
+          if match.Path != "" && !strings.HasPrefix(match.Path, "/") {
+              return RateLimitMatchConfig{}, oops.In("config").Code(10308).Public("config_invalid").New("rules.path must start with /")
+          }
+          if match.PathPattern != "" {
+              switch match.MatchKind {
+              case "regex":
+                  if !strings.HasPrefix(match.PathPattern, "/") && !strings.HasPrefix(match.PathPattern, "^/") {
+                      return RateLimitMatchConfig{}, oops.In("config").Code(10308).Public("config_invalid").New("rules.path_pattern for regex should start with / or ^/")
+                  }
+              default:
+                  if !strings.HasPrefix(match.PathPattern, "/") {
+                      return RateLimitMatchConfig{}, oops.In("config").Code(10308).Public("config_invalid").New("rules.path_pattern must start with /")
+                  }
+              }
+          }
+
+          if match.PathPrefix != "" && match.MatchKind != "prefix" {
+              return RateLimitMatchConfig{}, oops.In("config").Code(10308).Public("config_invalid").New("rules.path_prefix is only compatible with match_kind=prefix")
+          }
+
+          switch match.MatchKind {
+          case "exact":
+              if match.Path == "" && (match.AppKey == "" && match.Method == "") {
+                  return RateLimitMatchConfig{}, oops.In("config").Code(10308).Public("config_invalid").New("rules.match_kind=exact requires path when no app_key/method matcher is present")
+              }
+              if match.PathPattern != "" || match.PathPrefix != "" {
+                  return RateLimitMatchConfig{}, oops.In("config").Code(10308).Public("config_invalid").New("rules.match_kind=exact must not use path_pattern/path_prefix")
+              }
+          case "prefix", "glob", "regex":
+              if match.Path != "" {
+                  return RateLimitMatchConfig{}, oops.In("config").Code(10308).Public("config_invalid").New("rules pattern matcher must use path_pattern instead of path")
+              }
+              if match.PathPattern == "" {
+                  return RateLimitMatchConfig{}, oops.In("config").Code(10308).Public("config_invalid").New("rules pattern matcher requires path_pattern")
+              }
+          }
+
+          return match, nil
       }
 
       func validateRateLimitRule(name string, rule RateLimitRuleConfig) error {
@@ -3956,6 +4038,7 @@ layouts:
 
       import (
           "context"
+          "regexp"
           "strings"
           "sync"
           "time"
@@ -3964,6 +4047,7 @@ layouts:
       )
 
       type Lookup struct {
+          Service  string
           Phase    string
           AppKey   string
           Method   string
@@ -3989,7 +4073,8 @@ layouts:
       }
 
       // DatabaseHook is implemented by the generated project when rate-limit
-      // rules are stored in a business-owned database.
+      // rules are stored in a business-owned database. In Hertz monolith mode,
+      // it is typically backed by an internal/repository query function.
       // Return contract is the same as GRPCClient.
       type DatabaseHook interface {
           ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error)
@@ -4038,6 +4123,9 @@ layouts:
 
       func (r *Resolver) Resolve(ctx context.Context, lookup Lookup) (ResolvedRule, error) {
           lookup = normalizeLookup(lookup)
+          if r != nil && lookup.Service == "" {
+              lookup.Service = strings.TrimSpace(r.cfg.GRPC.ServiceName)
+          }
           if r != nil && r.dynamic != nil {
               rule, found, err := r.dynamic.ResolveRateLimitRule(ctx, lookup)
               switch {
@@ -4086,6 +4174,7 @@ layouts:
           if cfg.GRPC.TimeoutMilliseconds <= 0 {
               cfg.GRPC.TimeoutMilliseconds = 200
           }
+          cfg.GRPC.ServiceName = strings.TrimSpace(cfg.GRPC.ServiceName)
           if cfg.Database.QueryTimeoutMilliseconds <= 0 {
               cfg.Database.QueryTimeoutMilliseconds = 200
           }
@@ -4151,42 +4240,174 @@ layouts:
       }
 
       func matchScore(candidate conf.RateLimitMatchConfig, lookup Lookup) (int, bool) {
+          candidate = normalizeLocalRateLimitMatch(candidate)
           if !matchRule(candidate, lookup) {
               return 0, false
           }
-          score := 0
-          if path := strings.TrimSpace(candidate.Path); path != "" {
-              score += 1000 + len(path)
-          }
-          if prefix := strings.TrimSpace(candidate.PathPrefix); prefix != "" {
-              score += 100 + len(prefix)
-          }
+          score := candidate.Priority * 1000000
           if strings.TrimSpace(candidate.AppKey) != "" {
-              score += 10
+              score += 100000
           }
           if strings.TrimSpace(candidate.Method) != "" {
-              score += 1
+              score += 10000
           }
+          score += localMatchKindRank(candidate) * 1000
+          score += localMatchSpecificity(candidate)
           return score, true
       }
 
       func matchRule(candidate conf.RateLimitMatchConfig, lookup Lookup) bool {
+          candidate = normalizeLocalRateLimitMatch(candidate)
           if strings.TrimSpace(candidate.AppKey) != "" && !strings.EqualFold(strings.TrimSpace(candidate.AppKey), lookup.AppKey) {
               return false
           }
           if strings.TrimSpace(candidate.Method) != "" && strings.ToUpper(strings.TrimSpace(candidate.Method)) != lookup.Method {
               return false
           }
-          if strings.TrimSpace(candidate.Path) != "" && strings.TrimSpace(candidate.Path) != lookup.Path {
+          switch strings.ToLower(strings.TrimSpace(candidate.MatchKind)) {
+          case "":
+          case "exact":
+              if strings.TrimSpace(candidate.Path) != "" && strings.TrimSpace(candidate.Path) != lookup.Path {
+                  return false
+              }
+          case "prefix":
+              if pattern := strings.TrimSpace(candidate.PathPattern); pattern != "" && !strings.HasPrefix(lookup.Path, pattern) {
+                  return false
+              }
+          case "glob":
+              if pattern := strings.TrimSpace(candidate.PathPattern); pattern != "" && !globMatch(pattern, lookup.Path) {
+                  return false
+              }
+          case "regex":
+              if pattern := strings.TrimSpace(candidate.PathPattern); pattern != "" && !regexMatch(pattern, lookup.Path) {
+                  return false
+              }
+          default:
               return false
           }
-          if strings.TrimSpace(candidate.PathPrefix) != "" && !strings.HasPrefix(lookup.Path, strings.TrimSpace(candidate.PathPrefix)) {
+          return strings.TrimSpace(candidate.AppKey) != "" || strings.TrimSpace(candidate.Method) != "" || strings.TrimSpace(candidate.MatchKind) != "" || strings.TrimSpace(candidate.Path) != "" || strings.TrimSpace(candidate.PathPattern) != ""
+      }
+
+      func normalizeLocalRateLimitMatch(candidate conf.RateLimitMatchConfig) conf.RateLimitMatchConfig {
+          candidate.AppKey = strings.TrimSpace(candidate.AppKey)
+          candidate.Method = strings.ToUpper(strings.TrimSpace(candidate.Method))
+          candidate.MatchKind = strings.ToLower(strings.TrimSpace(candidate.MatchKind))
+          candidate.Path = strings.TrimSpace(candidate.Path)
+          candidate.PathPattern = strings.TrimSpace(candidate.PathPattern)
+          candidate.PathPrefix = strings.TrimSpace(candidate.PathPrefix)
+          if candidate.PathPrefix != "" {
+              if candidate.MatchKind == "" {
+                  candidate.MatchKind = "prefix"
+              }
+              if candidate.PathPattern == "" {
+                  candidate.PathPattern = candidate.PathPrefix
+              }
+          }
+          if candidate.MatchKind == "" {
+              switch {
+              case candidate.Path != "":
+                  candidate.MatchKind = "exact"
+              case candidate.PathPattern != "":
+                  candidate.MatchKind = "prefix"
+              }
+          }
+          return candidate
+      }
+
+      func localMatchKindRank(candidate conf.RateLimitMatchConfig) int {
+          switch strings.ToLower(strings.TrimSpace(candidate.MatchKind)) {
+          case "exact":
+              return 4
+          case "prefix":
+              return 3
+          case "glob":
+              return 2
+          case "regex":
+              return 1
+          default:
+              return 0
+          }
+      }
+
+      func localMatchSpecificity(candidate conf.RateLimitMatchConfig) int {
+          switch strings.ToLower(strings.TrimSpace(candidate.MatchKind)) {
+          case "exact":
+              return len(strings.TrimSpace(candidate.Path))
+          case "prefix":
+              return len(strings.TrimSpace(candidate.PathPattern))
+          case "glob":
+              return len(strings.ReplaceAll(strings.TrimSpace(candidate.PathPattern), "*", ""))
+          case "regex":
+              return regexLiteralishLength(strings.TrimSpace(candidate.PathPattern))
+          default:
+              return 0
+          }
+      }
+
+      func globMatch(pattern, path string) bool {
+          if pattern == "" {
               return false
           }
-          return strings.TrimSpace(candidate.AppKey) != "" || strings.TrimSpace(candidate.Method) != "" || strings.TrimSpace(candidate.Path) != "" || strings.TrimSpace(candidate.PathPrefix) != ""
+          if !strings.Contains(pattern, "*") {
+              return pattern == path
+          }
+          parts := strings.Split(pattern, "*")
+          idx := 0
+          if !strings.HasPrefix(pattern, "*") {
+              if !strings.HasPrefix(path, parts[0]) {
+                  return false
+              }
+              idx = len(parts[0])
+              parts = parts[1:]
+          }
+          lastAnchored := !strings.HasSuffix(pattern, "*")
+          for i, part := range parts {
+              if part == "" {
+                  continue
+              }
+              pos := strings.Index(path[idx:], part)
+              if pos < 0 {
+                  return false
+              }
+              idx += pos + len(part)
+              if lastAnchored && i == len(parts)-1 && !strings.HasSuffix(path, part) {
+                  return false
+              }
+          }
+          return true
+      }
+
+      func regexMatch(pattern, path string) bool {
+          matched, err := regexp.MatchString(pattern, path)
+          return err == nil && matched
+      }
+
+      func regexLiteralishLength(pattern string) int {
+          score := 0
+          escaped := false
+          for _, ch := range pattern {
+              if escaped {
+                  if ch != 'A' && ch != 'z' {
+                      score++
+                  }
+                  escaped = false
+                  continue
+              }
+              if ch == '\\' {
+                  escaped = true
+                  continue
+              }
+              switch ch {
+              case '^', '$', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|':
+              default:
+                  score++
+              }
+          }
+          return score
       }
 
       func normalizeLookup(lookup Lookup) Lookup {
+          lookup.Service = strings.TrimSpace(lookup.Service)
           lookup.Phase = strings.ToLower(strings.TrimSpace(lookup.Phase))
           lookup.AppKey = strings.TrimSpace(lookup.AppKey)
           lookup.Method = strings.ToUpper(strings.TrimSpace(lookup.Method))
@@ -4286,7 +4507,7 @@ layouts:
       }
 
       func cacheKey(lookup Lookup) string {
-          return strings.Join([]string{lookup.Phase, lookup.AppKey, lookup.Method, lookup.Path}, "|")
+          return strings.Join([]string{lookup.Service, lookup.Phase, lookup.Method, lookup.Path, lookup.AppKey}, "|")
       }
 
       func durationMilliseconds(value int) time.Duration {
@@ -4311,7 +4532,7 @@ layouts:
       )
 
       func TestResolverMatchesLocalRuleByAppKeyAndPath(t *testing.T) {
-          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {AppKey: "app-1", Path: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 2}} } }}, Options{})
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {AppKey: "app-1", MatchKind: "exact", Path: "/orders", Priority: 100, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 2}} } }}, Options{})
           got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
           if err != nil {
               t.Fatalf("Resolve: %v", err)
@@ -4322,7 +4543,7 @@ layouts:
       }
 
       func TestResolverPrefersMoreSpecificLocalRule(t *testing.T) {
-          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {PathPrefix: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 8}}, {Path: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 6}}, {AppKey: "app-1", Path: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 4}}, {AppKey: "app-1", Method: "GET", Path: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 2}} } }}, Options{})
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {MatchKind: "prefix", PathPattern: "/orders", Priority: 10, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 8}}, {MatchKind: "exact", Path: "/orders", Priority: 20, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 6}}, {AppKey: "app-1", MatchKind: "exact", Path: "/orders", Priority: 30, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 4}}, {AppKey: "app-1", Method: "GET", MatchKind: "exact", Path: "/orders", Priority: 40, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 2}} } }}, Options{})
           got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
           if err != nil {
               t.Fatalf("Resolve: %v", err)
@@ -4340,6 +4561,35 @@ layouts:
           }
           if got.Rule.MaxRequests != 9 {
               t.Fatalf("max_requests = %d, want 9", got.Rule.MaxRequests)
+          }
+      }
+
+      func TestResolverSupportsGlobAndRegexLocalRules(t *testing.T) {
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 100}, Rules: []conf.RateLimitMatchConfig{
+              {MatchKind: "glob", PathPattern: "/orders/*/items", Priority: 20, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 8}},
+              {MatchKind: "regex", PathPattern: "^/orders/[0-9]+$", Priority: 10, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 6}},
+          }}}, Options{})
+
+          got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", Method: "GET", Path: "/orders/42/items"})
+          if err != nil {
+              t.Fatalf("Resolve: %v", err)
+          }
+          if got.Rule.MaxRequests != 8 || got.Source != "config" {
+              t.Fatalf("got %+v, want glob local rule", got)
+          }
+      }
+
+      func TestResolverSupportsPathPrefixCompatibilityAlias(t *testing.T) {
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{
+              {PathPrefix: "/orders/", Priority: 5, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 3}},
+          }}}, Options{})
+
+          got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", Method: "GET", Path: "/orders/42"})
+          if err != nil {
+              t.Fatalf("Resolve: %v", err)
+          }
+          if got.Rule.MaxRequests != 3 {
+              t.Fatalf("got %+v, want path_prefix compatibility rule", got)
           }
       }
 
@@ -4369,6 +4619,25 @@ layouts:
           resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: false}}, Options{GRPC: fakeGRPCClient{err: errors.New("boom")}})
           if _, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"}); err == nil {
               t.Fatalf("Resolve error = nil, want propagated dynamic source error")
+          }
+      }
+
+      func TestResolverInjectsConfiguredServiceNameIntoDynamicLookup(t *testing.T) {
+          gotService := ""
+          resolver := NewResolver(conf.RateLimitConfig{
+              Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true},
+              GRPC:   conf.RateLimitGRPCConfig{ServiceName: " order-api "},
+          }, Options{GRPC: ResolveFunc(func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+              _ = ctx
+              gotService = lookup.Service
+              return nil, false, nil
+          })})
+
+          if _, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", Method: "GET", Path: "/orders"}); err != nil {
+              t.Fatalf("Resolve: %v", err)
+          }
+          if gotService != "order-api" {
+              t.Fatalf("service = %q, want order-api", gotService)
           }
       }
 
@@ -4445,6 +4714,23 @@ layouts:
           }
       }
 
+      func TestResolverCacheKeySeparatesService(t *testing.T) {
+          calls := 0
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}}, Options{GRPC: ResolveFunc(func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+              _ = ctx
+              calls++
+              return nil, false, nil
+          })})
+
+          _, _ = resolver.Resolve(context.Background(), Lookup{Service: "order-api", Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
+          _, _ = resolver.Resolve(context.Background(), Lookup{Service: "order-api", Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
+          _, _ = resolver.Resolve(context.Background(), Lookup{Service: "inventory-api", Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
+
+          if calls != 2 {
+              t.Fatalf("calls = %d, want 2 distinct cache keys by service", calls)
+          }
+      }
+
       type fakeGRPCClient struct {
           rule  *conf.RateLimitRuleConfig
           found bool
@@ -4467,6 +4753,544 @@ layouts:
           c.calls++
           return nil, false, nil
       }
+
+  # ── repository: dynamic rate-limit database skeleton ───────────────────────
+  - path: internal/repository/rate_limit_rule.go
+    delims: ["{{", "}}"]
+    body: |-
+      package repository
+
+      import (
+          "context"
+          "strings"
+      {{ if .WithDatabase}}
+          "errors"
+
+          "github.com/jackc/pgx/v5"
+
+          "{{.GoModule}}/internal/base/data"
+          "{{.GoModule}}/internal/db/gen"
+      {{ end}}
+          "{{.GoModule}}/internal/base/conf"
+          "{{.GoModule}}/internal/pkg/ratelimit"
+      )
+
+      // RateLimitRuleRecord is the repository-facing shape returned by database
+      // queries before mapping into ratelimit's unified config structure.
+      type RateLimitRuleRecord struct {
+          Enabled          bool
+          KeyBy            []string
+          Strategy         string
+          WindowSeconds    int
+          MaxRequests      int
+          RequestsPerSecond float64
+          Burst            int
+          ClientTTLSeconds int
+      }
+
+      // RateLimitRuleFinder is the minimal query contract recommended for Hertz
+      // monolith mode. appKey is optional and may be empty.
+      type RateLimitRuleFinder interface {
+          FindRule(ctx context.Context, service, phase, method, path, appKey string) (*RateLimitRuleRecord, error)
+      }
+
+      type normalizedRateLimitLookup struct {
+          Service string
+          Phase  string
+          Method string
+          Path   string
+          AppKey string
+      }
+
+      func normalizeRateLimitLookup(service, phase, method, path, appKey string) (normalizedRateLimitLookup, bool) {
+          lookup := normalizedRateLimitLookup{
+              Service: strings.TrimSpace(service),
+              Phase:  strings.ToLower(strings.TrimSpace(phase)),
+              Method: strings.ToUpper(strings.TrimSpace(method)),
+              Path:   strings.TrimSpace(path),
+              AppKey: strings.TrimSpace(appKey),
+          }
+          if lookup.Service == "" || lookup.Phase == "" || lookup.Method == "" || lookup.Path == "" {
+              return normalizedRateLimitLookup{}, false
+          }
+          return lookup, true
+      }
+
+      {{ if .WithDatabase}}
+      type rateLimitRuleQuerier interface {
+          GetRateLimitExactRuleByAppKey(ctx context.Context, arg gen.GetRateLimitExactRuleByAppKeyParams) (gen.GetRateLimitExactRuleByAppKeyRow, error)
+          GetRateLimitExactRuleFallback(ctx context.Context, arg gen.GetRateLimitExactRuleFallbackParams) (gen.GetRateLimitExactRuleFallbackRow, error)
+          GetRateLimitPatternRuleByAppKey(ctx context.Context, arg gen.GetRateLimitPatternRuleByAppKeyParams) (gen.GetRateLimitPatternRuleByAppKeyRow, error)
+          GetRateLimitPatternRuleFallback(ctx context.Context, arg gen.GetRateLimitPatternRuleFallbackParams) (gen.GetRateLimitPatternRuleFallbackRow, error)
+      }
+
+      // RateLimitRuleRepository is the generated sqlc-backed repository for
+      // dynamic rate-limit rules.
+      type RateLimitRuleRepository struct {
+          q rateLimitRuleQuerier
+      }
+
+      func NewRateLimitRuleRepository(d *data.Data) *RateLimitRuleRepository {
+          if d == nil || d.Queries == nil {
+              return &RateLimitRuleRepository{}
+          }
+          return &RateLimitRuleRepository{q: d.Queries}
+      }
+
+      func (r *RateLimitRuleRepository) FindRule(ctx context.Context, service, phase, method, path, appKey string) (*RateLimitRuleRecord, error) {
+          if r == nil || r.q == nil {
+              return nil, nil
+          }
+          lookup, ok := normalizeRateLimitLookup(service, phase, method, path, appKey)
+          if !ok {
+              return nil, nil
+          }
+          if lookup.AppKey != "" {
+              record, err := r.findExactRuleByAppKey(ctx, lookup)
+              if err == nil {
+                  return record, nil
+              }
+              if !errors.Is(err, pgx.ErrNoRows) {
+                  return nil, err
+              }
+          }
+          record, err := r.findExactRuleFallback(ctx, lookup)
+          if err == nil {
+              return record, nil
+          }
+          if !errors.Is(err, pgx.ErrNoRows) {
+              return nil, err
+          }
+          if lookup.AppKey != "" {
+              record, err = r.findPatternRuleByAppKey(ctx, lookup)
+              if err == nil {
+                  return record, nil
+              }
+              if !errors.Is(err, pgx.ErrNoRows) {
+                  return nil, err
+              }
+          }
+          record, err = r.findPatternRuleFallback(ctx, lookup)
+          if errors.Is(err, pgx.ErrNoRows) {
+              return nil, nil
+          }
+          return record, err
+      }
+
+      func (r *RateLimitRuleRepository) findExactRuleByAppKey(ctx context.Context, lookup normalizedRateLimitLookup) (*RateLimitRuleRecord, error) {
+          row, err := r.q.GetRateLimitExactRuleByAppKey(ctx, gen.GetRateLimitExactRuleByAppKeyParams{
+              Service: lookup.Service,
+              Phase:  lookup.Phase,
+              Method: lookup.Method,
+              Path:   lookup.Path,
+              AppKey: lookup.AppKey,
+          })
+          if err != nil {
+              return nil, err
+          }
+          return rateLimitRuleRecordFromExactAppKeyRow(row), nil
+      }
+
+      func (r *RateLimitRuleRepository) findExactRuleFallback(ctx context.Context, lookup normalizedRateLimitLookup) (*RateLimitRuleRecord, error) {
+          row, err := r.q.GetRateLimitExactRuleFallback(ctx, gen.GetRateLimitExactRuleFallbackParams{
+              Service: lookup.Service,
+              Phase:  lookup.Phase,
+              Method: lookup.Method,
+              Path:   lookup.Path,
+          })
+          if err != nil {
+              return nil, err
+          }
+          return rateLimitRuleRecordFromExactFallbackRow(row), nil
+      }
+
+      func (r *RateLimitRuleRepository) findPatternRuleByAppKey(ctx context.Context, lookup normalizedRateLimitLookup) (*RateLimitRuleRecord, error) {
+          row, err := r.q.GetRateLimitPatternRuleByAppKey(ctx, gen.GetRateLimitPatternRuleByAppKeyParams{
+              Service: lookup.Service,
+              Phase:  lookup.Phase,
+              Method: lookup.Method,
+              Path:   lookup.Path,
+              AppKey: lookup.AppKey,
+          })
+          if err != nil {
+              return nil, err
+          }
+          return rateLimitRuleRecordFromPatternAppKeyRow(row), nil
+      }
+
+      func (r *RateLimitRuleRepository) findPatternRuleFallback(ctx context.Context, lookup normalizedRateLimitLookup) (*RateLimitRuleRecord, error) {
+          row, err := r.q.GetRateLimitPatternRuleFallback(ctx, gen.GetRateLimitPatternRuleFallbackParams{
+              Service: lookup.Service,
+              Phase:  lookup.Phase,
+              Method: lookup.Method,
+              Path:   lookup.Path,
+          })
+          if err != nil {
+              return nil, err
+          }
+          return rateLimitRuleRecordFromPatternFallbackRow(row), nil
+      }
+
+      func rateLimitRuleRecordFromExactAppKeyRow(row gen.GetRateLimitExactRuleByAppKeyRow) *RateLimitRuleRecord {
+          return buildRateLimitRuleRecord(
+              row.Enabled,
+              row.KeyBy,
+              row.Strategy,
+              row.WindowSeconds,
+              row.MaxRequests,
+              row.RequestsPerSecond,
+              row.Burst,
+              row.ClientTtlSeconds,
+          )
+      }
+
+      func rateLimitRuleRecordFromExactFallbackRow(row gen.GetRateLimitExactRuleFallbackRow) *RateLimitRuleRecord {
+          return buildRateLimitRuleRecord(
+              row.Enabled,
+              row.KeyBy,
+              row.Strategy,
+              row.WindowSeconds,
+              row.MaxRequests,
+              row.RequestsPerSecond,
+              row.Burst,
+              row.ClientTtlSeconds,
+          )
+      }
+
+      func rateLimitRuleRecordFromPatternAppKeyRow(row gen.GetRateLimitPatternRuleByAppKeyRow) *RateLimitRuleRecord {
+          return buildRateLimitRuleRecord(
+              row.Enabled,
+              row.KeyBy,
+              row.Strategy,
+              row.WindowSeconds,
+              row.MaxRequests,
+              row.RequestsPerSecond,
+              row.Burst,
+              row.ClientTtlSeconds,
+          )
+      }
+
+      func rateLimitRuleRecordFromPatternFallbackRow(row gen.GetRateLimitPatternRuleFallbackRow) *RateLimitRuleRecord {
+          return buildRateLimitRuleRecord(
+              row.Enabled,
+              row.KeyBy,
+              row.Strategy,
+              row.WindowSeconds,
+              row.MaxRequests,
+              row.RequestsPerSecond,
+              row.Burst,
+              row.ClientTtlSeconds,
+          )
+      }
+      {{ else}}
+      // RateLimitRuleRepository remains a no-op placeholder when the project was
+      // scaffolded without database support.
+      type RateLimitRuleRepository struct{}
+
+      func NewRateLimitRuleRepository() *RateLimitRuleRepository {
+          return &RateLimitRuleRepository{}
+      }
+
+      func (r *RateLimitRuleRepository) FindRule(ctx context.Context, service, phase, method, path, appKey string) (*RateLimitRuleRecord, error) {
+          _ = ctx
+          _ = service
+          _ = phase
+          _ = method
+          _ = path
+          _ = appKey
+          return nil, nil
+      }
+      {{ end}}
+
+      // RateLimitRuleHook adapts a repository query into ratelimit.DatabaseHook.
+      type RateLimitRuleHook struct {
+          finder RateLimitRuleFinder
+      }
+
+      func NewRateLimitRuleHook(finder RateLimitRuleFinder) *RateLimitRuleHook {
+          return &RateLimitRuleHook{finder: finder}
+      }
+
+      func (h *RateLimitRuleHook) ResolveRateLimitRule(ctx context.Context, lookup ratelimit.Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+          if h == nil || h.finder == nil {
+              return nil, false, nil
+          }
+          record, err := h.finder.FindRule(ctx, lookup.Service, lookup.Phase, lookup.Method, lookup.Path, lookup.AppKey)
+          if err != nil {
+              return nil, false, err
+          }
+          if record == nil {
+              return nil, false, nil
+          }
+          return mapRateLimitRuleRecord(record), true, nil
+      }
+
+      func mapRateLimitRuleRecord(record *RateLimitRuleRecord) *conf.RateLimitRuleConfig {
+          if record == nil {
+              return nil
+          }
+          return &conf.RateLimitRuleConfig{
+              Enabled:           record.Enabled,
+              KeyBy:             append([]string(nil), record.KeyBy...),
+              Strategy:          record.Strategy,
+              WindowSeconds:     record.WindowSeconds,
+              MaxRequests:       record.MaxRequests,
+              RequestsPerSecond: record.RequestsPerSecond,
+              Burst:             record.Burst,
+              ClientTTLSeconds:  record.ClientTTLSeconds,
+          }
+      }
+
+      func buildRateLimitRuleRecord(enabled bool, keyBy []string, strategy string, windowSeconds, maxRequests int32, requestsPerSecond float64, burst, clientTTLSeconds int32) *RateLimitRuleRecord {
+          return &RateLimitRuleRecord{
+              Enabled:           enabled,
+              KeyBy:             append([]string(nil), keyBy...),
+              Strategy:          strategy,
+              WindowSeconds:     int(windowSeconds),
+              MaxRequests:       int(maxRequests),
+              RequestsPerSecond: requestsPerSecond,
+              Burst:             int(burst),
+              ClientTTLSeconds:  int(clientTTLSeconds),
+          }
+      }
+
+  - path: internal/repository/rate_limit_rule_test.go
+    delims: ["{{", "}}"]
+    body: |-
+      package repository
+
+      import (
+          "context"
+          "errors"
+          "testing"
+
+      {{ if .WithDatabase}}
+          "github.com/jackc/pgx/v5"
+
+          "{{.GoModule}}/internal/db/gen"
+      {{ end}}
+          "{{.GoModule}}/internal/pkg/ratelimit"
+      )
+
+      type stubRateLimitRuleFinder struct {
+          record *RateLimitRuleRecord
+          err    error
+          onFind func(service, phase, method, path, appKey string)
+      }
+
+      {{ if .WithDatabase}}
+      type stubRateLimitRuleQuerier struct {
+          calls []string
+          seenServices []string
+
+          exactAppKeyRow     gen.GetRateLimitExactRuleByAppKeyRow
+          exactAppKeyErr     error
+          exactFallbackRow   gen.GetRateLimitExactRuleFallbackRow
+          exactFallbackErr   error
+          patternAppKeyRow   gen.GetRateLimitPatternRuleByAppKeyRow
+          patternAppKeyErr   error
+          patternFallbackRow gen.GetRateLimitPatternRuleFallbackRow
+          patternFallbackErr error
+      }
+
+      func (s *stubRateLimitRuleQuerier) GetRateLimitExactRuleByAppKey(ctx context.Context, arg gen.GetRateLimitExactRuleByAppKeyParams) (gen.GetRateLimitExactRuleByAppKeyRow, error) {
+          _ = ctx
+          s.seenServices = append(s.seenServices, arg.Service)
+          s.calls = append(s.calls, "exact_app")
+          return s.exactAppKeyRow, s.exactAppKeyErr
+      }
+
+      func (s *stubRateLimitRuleQuerier) GetRateLimitExactRuleFallback(ctx context.Context, arg gen.GetRateLimitExactRuleFallbackParams) (gen.GetRateLimitExactRuleFallbackRow, error) {
+          _ = ctx
+          s.seenServices = append(s.seenServices, arg.Service)
+          s.calls = append(s.calls, "exact_fallback")
+          return s.exactFallbackRow, s.exactFallbackErr
+      }
+
+      func (s *stubRateLimitRuleQuerier) GetRateLimitPatternRuleByAppKey(ctx context.Context, arg gen.GetRateLimitPatternRuleByAppKeyParams) (gen.GetRateLimitPatternRuleByAppKeyRow, error) {
+          _ = ctx
+          s.seenServices = append(s.seenServices, arg.Service)
+          s.calls = append(s.calls, "pattern_app")
+          return s.patternAppKeyRow, s.patternAppKeyErr
+      }
+
+      func (s *stubRateLimitRuleQuerier) GetRateLimitPatternRuleFallback(ctx context.Context, arg gen.GetRateLimitPatternRuleFallbackParams) (gen.GetRateLimitPatternRuleFallbackRow, error) {
+          _ = ctx
+          s.seenServices = append(s.seenServices, arg.Service)
+          s.calls = append(s.calls, "pattern_fallback")
+          return s.patternFallbackRow, s.patternFallbackErr
+      }
+      {{ end}}
+
+      func (s stubRateLimitRuleFinder) FindRule(ctx context.Context, service, phase, method, path, appKey string) (*RateLimitRuleRecord, error) {
+          _ = ctx
+          if s.onFind != nil {
+              s.onFind(service, phase, method, path, appKey)
+          }
+          _ = service
+          _ = phase
+          _ = method
+          _ = path
+          _ = appKey
+          return s.record, s.err
+      }
+
+      func TestRateLimitRuleHookReturnsNotFoundWhenFinderNil(t *testing.T) {
+          hook := NewRateLimitRuleHook(nil)
+          rule, found, err := hook.ResolveRateLimitRule(context.Background(), ratelimit.Lookup{Service: "order-api", Phase: "pre_auth", Method: "GET", Path: "/orders"})
+          if err != nil || found || rule != nil {
+              t.Fatalf("got rule=%v found=%v err=%v, want nil false nil", rule, found, err)
+          }
+      }
+
+      func TestRateLimitRuleHookMapsRepositoryRecord(t *testing.T) {
+          hook := NewRateLimitRuleHook(stubRateLimitRuleFinder{record: &RateLimitRuleRecord{
+              Enabled:          true,
+              KeyBy:            []string{"ak_path"},
+              Strategy:         "fixed_window",
+              WindowSeconds:    60,
+              MaxRequests:      9,
+              ClientTTLSeconds: 90,
+          }})
+          rule, found, err := hook.ResolveRateLimitRule(context.Background(), ratelimit.Lookup{Service: "order-api", Phase: "post_auth", Method: "GET", Path: "/orders", AppKey: "app-1"})
+          if err != nil || !found || rule == nil {
+              t.Fatalf("got rule=%v found=%v err=%v, want mapped rule", rule, found, err)
+          }
+          if rule.MaxRequests != 9 || rule.WindowSeconds != 60 || len(rule.KeyBy) != 1 || rule.KeyBy[0] != "ak_path" {
+              t.Fatalf("unexpected mapped rule: %+v", rule)
+          }
+      }
+
+      func TestRateLimitRuleHookPropagatesRepositoryError(t *testing.T) {
+          hook := NewRateLimitRuleHook(stubRateLimitRuleFinder{err: errors.New("boom")})
+          rule, found, err := hook.ResolveRateLimitRule(context.Background(), ratelimit.Lookup{Service: "order-api", Phase: "pre_auth", Method: "GET", Path: "/orders"})
+          if err == nil || found || rule != nil {
+              t.Fatalf("got rule=%v found=%v err=%v, want nil false error", rule, found, err)
+          }
+      }
+
+      func TestRateLimitRuleHookForwardsServiceToFinder(t *testing.T) {
+          gotService := ""
+          hook := NewRateLimitRuleHook(stubRateLimitRuleFinder{onFind: func(service, phase, method, path, appKey string) {
+              gotService = service
+              _ = phase
+              _ = method
+              _ = path
+              _ = appKey
+          }})
+
+          _, _, _ = hook.ResolveRateLimitRule(context.Background(), ratelimit.Lookup{Service: "order-api", Phase: "pre_auth", Method: "GET", Path: "/orders"})
+          if gotService != "order-api" {
+              t.Fatalf("service = %q, want order-api", gotService)
+          }
+      }
+
+      func TestNormalizeRateLimitLookup(t *testing.T) {
+          lookup, ok := normalizeRateLimitLookup(" order-api ", " POST_AUTH ", " get ", " /orders ", " app-1 ")
+          if !ok {
+              t.Fatal("expected normalized lookup to be valid")
+          }
+          if lookup.Service != "order-api" || lookup.Phase != "post_auth" || lookup.Method != "GET" || lookup.Path != "/orders" || lookup.AppKey != "app-1" {
+              t.Fatalf("unexpected normalized lookup: %+v", lookup)
+          }
+      }
+
+      func TestNormalizeRateLimitLookupRejectsBlankRequiredFields(t *testing.T) {
+          if _, ok := normalizeRateLimitLookup("", "pre_auth", "GET", "/orders", "app-1"); ok {
+              t.Fatal("expected blank service to be rejected")
+          }
+          if _, ok := normalizeRateLimitLookup("order-api", "", "GET", "/orders", "app-1"); ok {
+              t.Fatal("expected blank phase to be rejected")
+          }
+          if _, ok := normalizeRateLimitLookup("order-api", "pre_auth", "", "/orders", "app-1"); ok {
+              t.Fatal("expected blank method to be rejected")
+          }
+          if _, ok := normalizeRateLimitLookup("order-api", "pre_auth", "GET", "", "app-1"); ok {
+              t.Fatal("expected blank path to be rejected")
+          }
+      }
+
+      func TestMapRateLimitRuleRecordCopiesKeyBySlice(t *testing.T) {
+          record := &RateLimitRuleRecord{
+              Enabled: true,
+              KeyBy:   []string{"ip"},
+          }
+          cfg := mapRateLimitRuleRecord(record)
+          if cfg == nil {
+              t.Fatal("expected config to be mapped")
+          }
+          record.KeyBy[0] = "mutated"
+          if cfg.KeyBy[0] != "ip" {
+              t.Fatalf("expected mapped key_by to be copied, got %v", cfg.KeyBy)
+          }
+      }
+
+      {{ if .WithDatabase}}
+      func TestRateLimitRuleRepositoryPrefersFallbackExactBeforePattern(t *testing.T) {
+          q := &stubRateLimitRuleQuerier{
+              exactAppKeyErr:   pgx.ErrNoRows,
+              exactFallbackRow: gen.GetRateLimitExactRuleFallbackRow{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 20, RequestsPerSecond: 20, Burst: 20, ClientTtlSeconds: 300},
+              patternAppKeyRow: gen.GetRateLimitPatternRuleByAppKeyRow{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5, RequestsPerSecond: 5, Burst: 10, ClientTtlSeconds: 300},
+          }
+          repo := &RateLimitRuleRepository{q: q}
+
+          rule, err := repo.FindRule(context.Background(), "order-api", "post_auth", "GET", "/v1/orders", "app-1")
+          if err != nil {
+              t.Fatalf("FindRule error: %v", err)
+          }
+          if rule == nil || rule.MaxRequests != 20 {
+              t.Fatalf("unexpected rule: %+v", rule)
+          }
+          if got := q.calls; len(got) != 2 || got[0] != "exact_app" || got[1] != "exact_fallback" {
+              t.Fatalf("unexpected query order: %v", got)
+          }
+          for _, service := range q.seenServices {
+              if service != "order-api" {
+                  t.Fatalf("unexpected service namespace: %v", q.seenServices)
+              }
+          }
+      }
+
+      func TestRateLimitRuleRepositoryFallsBackToPatternLookup(t *testing.T) {
+          q := &stubRateLimitRuleQuerier{
+              exactAppKeyErr:     pgx.ErrNoRows,
+              exactFallbackErr:   pgx.ErrNoRows,
+              patternAppKeyRow:   gen.GetRateLimitPatternRuleByAppKeyRow{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 8, RequestsPerSecond: 8, Burst: 16, ClientTtlSeconds: 300},
+              patternFallbackErr: pgx.ErrNoRows,
+          }
+          repo := &RateLimitRuleRepository{q: q}
+
+          rule, err := repo.FindRule(context.Background(), "order-api", "post_auth", "GET", "/v1/orders/123", "app-1")
+          if err != nil {
+              t.Fatalf("FindRule error: %v", err)
+          }
+          if rule == nil || rule.MaxRequests != 8 {
+              t.Fatalf("unexpected rule: %+v", rule)
+          }
+          if got := q.calls; len(got) != 3 || got[0] != "exact_app" || got[1] != "exact_fallback" || got[2] != "pattern_app" {
+              t.Fatalf("unexpected query order: %v", got)
+          }
+      }
+
+      func TestRateLimitRuleRepositoryReturnsNilWhenNoRuleMatches(t *testing.T) {
+          q := &stubRateLimitRuleQuerier{
+              exactFallbackErr:   pgx.ErrNoRows,
+              patternFallbackErr: pgx.ErrNoRows,
+          }
+          repo := &RateLimitRuleRepository{q: q}
+
+          rule, err := repo.FindRule(context.Background(), "order-api", "pre_auth", "GET", "/v1/unknown", "")
+          if err != nil {
+              t.Fatalf("FindRule error: %v", err)
+          }
+          if rule != nil {
+              t.Fatalf("expected nil rule, got %+v", rule)
+          }
+          if got := q.calls; len(got) != 2 || got[0] != "exact_fallback" || got[1] != "pattern_fallback" {
+              t.Fatalf("unexpected query order: %v", got)
+          }
+      }
+      {{ end}}
 
   # ── pkg/middleware: rate limit ─────────────────────────────────────────────
   - path: internal/pkg/middleware/rate_limit.go
@@ -4529,6 +5353,7 @@ layouts:
                   return
               }
               resolved, err := resolver.Resolve(ctx, ratelimit.Lookup{
+                  Service:  rateLimitService(cfg),
                   Phase:    phase,
                   AppKey:   rateLimitAppKey(c, cfg),
                   Method:   string(c.Method()),
@@ -4830,6 +5655,10 @@ layouts:
           return strings.TrimSpace(c.Request.Header.Get(cfg.AppKeyHeader))
       }
 
+      func rateLimitService(cfg conf.RateLimitConfig) string {
+          return strings.TrimSpace(cfg.GRPC.ServiceName)
+      }
+
       func rateLimitUserUUID(c *app.RequestContext) string {
           claims, hasClaims := GetClaims(c)
           if hasClaims {
@@ -4946,7 +5775,7 @@ layouts:
       }
 
       func TestRateLimitUsesMostSpecificLocalRule(t *testing.T) {
-          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {PathPrefix: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}, {AppKey: "app-1", Path: "/orders", Rule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}} }}
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {MatchKind: "prefix", PathPattern: "/orders", Priority: 10, Rule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}, {AppKey: "app-1", MatchKind: "exact", Path: "/orders", Priority: 20, Rule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}} }}
           cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", PreAuth: phase}
           mw := RateLimit("pre_auth", cfg, phase, nil)
 
@@ -5956,6 +6785,211 @@ layouts:
       -- name: Ping :one
       SELECT 1::int AS ok;
 
+  - path: internal/db/query/rate_limit_rule.sql
+    delims: ["", ""]
+    body: |-
+      -- Exact rule for a specific app_key.
+      -- name: GetRateLimitExactRuleByAppKey :one
+      SELECT
+          enabled,
+          key_by,
+          strategy,
+          window_seconds,
+          max_requests,
+          requests_per_second,
+          burst,
+          client_ttl_seconds
+      FROM rate_limit_rules
+      WHERE service = $1
+        AND phase = $2
+        AND method = $3
+        AND match_kind = 'exact'
+        AND path = $4
+        AND app_key = $5
+      ORDER BY priority DESC, updated_at DESC, id DESC
+      LIMIT 1;
+
+      -- Exact fallback rule when app_key is absent or no app-specific override exists.
+      -- name: GetRateLimitExactRuleFallback :one
+      SELECT
+          enabled,
+          key_by,
+          strategy,
+          window_seconds,
+          max_requests,
+          requests_per_second,
+          burst,
+          client_ttl_seconds
+      FROM rate_limit_rules
+      WHERE service = $1
+        AND phase = $2
+        AND method = $3
+        AND match_kind = 'exact'
+        AND path = $4
+        AND app_key IS NULL
+      ORDER BY priority DESC, updated_at DESC, id DESC
+      LIMIT 1;
+
+      -- Pattern rule for a specific app_key. Exact rules are evaluated first in repository code.
+      -- Ordering policy for pattern rules:
+      --   1. higher priority first
+      --   2. matcher class rank: prefix > glob > regex
+      --   3. higher specificity score first
+      --      - prefix: longer prefix wins
+      --      - glob: more literal characters wins
+      --      - regex: more literal-ish characters wins
+      --   4. raw pattern length, then updated_at/id as stable tie-breakers
+      -- name: GetRateLimitPatternRuleByAppKey :one
+      SELECT
+          enabled,
+          key_by,
+          strategy,
+          window_seconds,
+          max_requests,
+          requests_per_second,
+          burst,
+          client_ttl_seconds
+      FROM rate_limit_rules
+      WHERE service = $1
+        AND phase = $2
+        AND method = $3
+        AND app_key = $5
+        AND (
+              (match_kind = 'prefix' AND $4 LIKE path_pattern || '%')
+           OR (match_kind = 'glob' AND $4 LIKE REPLACE(REPLACE(REPLACE(REPLACE(path_pattern, E'\\', E'\\\\'), '%', E'\\%'), '_', E'\\_'), '*', '%') ESCAPE E'\\')
+           OR (match_kind = 'regex' AND $4 ~ path_pattern)
+        )
+      ORDER BY
+          priority DESC,
+          CASE match_kind
+              WHEN 'prefix' THEN 3
+              WHEN 'glob' THEN 2
+              WHEN 'regex' THEN 1
+              ELSE 0
+          END DESC,
+          CASE match_kind
+              WHEN 'prefix' THEN CHAR_LENGTH(path_pattern)
+              WHEN 'glob' THEN CHAR_LENGTH(REPLACE(path_pattern, '*', ''))
+              WHEN 'regex' THEN CHAR_LENGTH(REGEXP_REPLACE(path_pattern, '[^A-Za-z0-9/_-]+', '', 'g'))
+              ELSE 0
+          END DESC,
+          CHAR_LENGTH(path_pattern) DESC,
+          updated_at DESC,
+          id DESC
+      LIMIT 1;
+
+      -- Pattern fallback rule when app_key is absent or no app-specific override exists.
+      -- name: GetRateLimitPatternRuleFallback :one
+      SELECT
+          enabled,
+          key_by,
+          strategy,
+          window_seconds,
+          max_requests,
+          requests_per_second,
+          burst,
+          client_ttl_seconds
+      FROM rate_limit_rules
+      WHERE service = $1
+        AND phase = $2
+        AND method = $3
+        AND app_key IS NULL
+        AND (
+              (match_kind = 'prefix' AND $4 LIKE path_pattern || '%')
+           OR (match_kind = 'glob' AND $4 LIKE REPLACE(REPLACE(REPLACE(REPLACE(path_pattern, E'\\', E'\\\\'), '%', E'\\%'), '_', E'\\_'), '*', '%') ESCAPE E'\\')
+           OR (match_kind = 'regex' AND $4 ~ path_pattern)
+        )
+      ORDER BY
+          priority DESC,
+          CASE match_kind
+              WHEN 'prefix' THEN 3
+              WHEN 'glob' THEN 2
+              WHEN 'regex' THEN 1
+              ELSE 0
+          END DESC,
+          CASE match_kind
+              WHEN 'prefix' THEN CHAR_LENGTH(path_pattern)
+              WHEN 'glob' THEN CHAR_LENGTH(REPLACE(path_pattern, '*', ''))
+              WHEN 'regex' THEN CHAR_LENGTH(REGEXP_REPLACE(path_pattern, '[^A-Za-z0-9/_-]+', '', 'g'))
+              ELSE 0
+          END DESC,
+          CHAR_LENGTH(path_pattern) DESC,
+          updated_at DESC,
+          id DESC
+      LIMIT 1;
+
+  - path: internal/db/schema/000002_rate_limit_rules.sql
+    delims: ["", ""]
+    body: |-
+      CREATE TABLE IF NOT EXISTS rate_limit_rules (
+          id BIGSERIAL PRIMARY KEY,
+          service TEXT NOT NULL,
+          phase TEXT NOT NULL,
+          method TEXT NOT NULL,
+          match_kind TEXT NOT NULL DEFAULT 'exact',
+          path TEXT,
+          path_pattern TEXT,
+          app_key TEXT,
+          priority INTEGER NOT NULL DEFAULT 100,
+          enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          key_by TEXT[] NOT NULL DEFAULT ARRAY['ip']::text[],
+          strategy TEXT NOT NULL DEFAULT 'fixed_window',
+          window_seconds INTEGER NOT NULL DEFAULT 60,
+          max_requests INTEGER NOT NULL DEFAULT 100,
+          requests_per_second DOUBLE PRECISION NOT NULL DEFAULT 100,
+          burst INTEGER NOT NULL DEFAULT 200,
+          client_ttl_seconds INTEGER NOT NULL DEFAULT 300,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CONSTRAINT rate_limit_rules_strategy_check CHECK (strategy IN ('fixed_window', 'token_bucket')),
+          CONSTRAINT rate_limit_rules_window_seconds_check CHECK (window_seconds > 0),
+          CONSTRAINT rate_limit_rules_max_requests_check CHECK (max_requests > 0),
+          CONSTRAINT rate_limit_rules_rps_check CHECK (requests_per_second > 0),
+          CONSTRAINT rate_limit_rules_burst_check CHECK (burst > 0),
+          CONSTRAINT rate_limit_rules_client_ttl_seconds_check CHECK (client_ttl_seconds > 0),
+          CONSTRAINT rate_limit_rules_match_kind_check CHECK (match_kind IN ('exact', 'prefix', 'glob', 'regex')),
+          CONSTRAINT rate_limit_rules_priority_check CHECK (priority >= 0),
+          CONSTRAINT rate_limit_rules_path_shape_check CHECK (
+              (match_kind = 'exact' AND path IS NOT NULL AND path_pattern IS NULL)
+              OR
+              (match_kind IN ('prefix', 'glob', 'regex') AND path IS NULL AND path_pattern IS NOT NULL)
+          )
+      );
+
+      COMMENT ON TABLE rate_limit_rules IS 'Default dynamic rate-limit rules for Hertz monolith scaffolds, with exact/prefix/glob/regex support.';
+      COMMENT ON COLUMN rate_limit_rules.service IS 'Rule namespace / service identifier used to isolate lookups across services.';
+      COMMENT ON COLUMN rate_limit_rules.phase IS 'Execution stage label, typically pre_auth or post_auth.';
+      COMMENT ON COLUMN rate_limit_rules.method IS 'Normalized HTTP method used for rule lookup.';
+      COMMENT ON COLUMN rate_limit_rules.match_kind IS 'Match mode used during lookup: exact, prefix, glob, or regex.';
+      COMMENT ON COLUMN rate_limit_rules.path IS 'Exact request path; used only when match_kind=exact.';
+      COMMENT ON COLUMN rate_limit_rules.path_pattern IS 'Pattern path; used for prefix, glob, or regex matching.';
+      COMMENT ON COLUMN rate_limit_rules.app_key IS 'Optional app-specific override dimension; NULL means fallback rule.';
+      COMMENT ON COLUMN rate_limit_rules.priority IS 'Higher priority wins among matching pattern rules.';
+      COMMENT ON COLUMN rate_limit_rules.enabled IS 'Whether this dynamic rule is enabled.';
+      COMMENT ON COLUMN rate_limit_rules.key_by IS 'Runtime enforcement dimensions, such as ip, ak_path, or ak_user_uuid.';
+      COMMENT ON COLUMN rate_limit_rules.strategy IS 'Supported strategies in the template: fixed_window or token_bucket.';
+      COMMENT ON COLUMN rate_limit_rules.window_seconds IS 'Window size for fixed-window enforcement.';
+      COMMENT ON COLUMN rate_limit_rules.max_requests IS 'Maximum requests allowed within the fixed window.';
+      COMMENT ON COLUMN rate_limit_rules.requests_per_second IS 'Steady refill rate for token-bucket style enforcement.';
+      COMMENT ON COLUMN rate_limit_rules.burst IS 'Maximum burst size for token-bucket style enforcement.';
+      COMMENT ON COLUMN rate_limit_rules.client_ttl_seconds IS 'Suggested local limiter state TTL for this rule.';
+
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_rate_limit_rules_exact
+          ON rate_limit_rules (service, phase, method, path, app_key)
+          WHERE app_key IS NOT NULL AND match_kind = 'exact';
+
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_rate_limit_rules_fallback
+          ON rate_limit_rules (service, phase, method, path)
+          WHERE app_key IS NULL AND match_kind = 'exact';
+
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_rate_limit_rules_pattern_app
+          ON rate_limit_rules (service, phase, method, match_kind, path_pattern, app_key, priority)
+          WHERE app_key IS NOT NULL AND match_kind <> 'exact';
+
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_rate_limit_rules_pattern_fallback
+          ON rate_limit_rules (service, phase, method, match_kind, path_pattern, priority)
+          WHERE app_key IS NULL AND match_kind <> 'exact';
+
   - path: internal/db/migrations/000001_init.sql
     delims: ["", ""]
     body: |-
@@ -5966,6 +7000,142 @@ layouts:
       -- +goose Down
       -- Keep down migrations explicit and reviewed before production use.
       SELECT 1;
+
+  - path: internal/db/migrations/000002_rate_limit_rules.sql
+    delims: ["", ""]
+    body: |-
+      -- +goose Up
+      CREATE TABLE IF NOT EXISTS rate_limit_rules (
+          id BIGSERIAL PRIMARY KEY,
+          service TEXT NOT NULL,
+          phase TEXT NOT NULL,
+          method TEXT NOT NULL,
+          match_kind TEXT NOT NULL DEFAULT 'exact',
+          path TEXT,
+          path_pattern TEXT,
+          app_key TEXT,
+          priority INTEGER NOT NULL DEFAULT 100,
+          enabled BOOLEAN NOT NULL DEFAULT TRUE,
+          key_by TEXT[] NOT NULL DEFAULT ARRAY['ip']::text[],
+          strategy TEXT NOT NULL DEFAULT 'fixed_window',
+          window_seconds INTEGER NOT NULL DEFAULT 60,
+          max_requests INTEGER NOT NULL DEFAULT 100,
+          requests_per_second DOUBLE PRECISION NOT NULL DEFAULT 100,
+          burst INTEGER NOT NULL DEFAULT 200,
+          client_ttl_seconds INTEGER NOT NULL DEFAULT 300,
+          created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+          CONSTRAINT rate_limit_rules_strategy_check CHECK (strategy IN ('fixed_window', 'token_bucket')),
+          CONSTRAINT rate_limit_rules_window_seconds_check CHECK (window_seconds > 0),
+          CONSTRAINT rate_limit_rules_max_requests_check CHECK (max_requests > 0),
+          CONSTRAINT rate_limit_rules_rps_check CHECK (requests_per_second > 0),
+          CONSTRAINT rate_limit_rules_burst_check CHECK (burst > 0),
+          CONSTRAINT rate_limit_rules_client_ttl_seconds_check CHECK (client_ttl_seconds > 0),
+          CONSTRAINT rate_limit_rules_match_kind_check CHECK (match_kind IN ('exact', 'prefix', 'glob', 'regex')),
+          CONSTRAINT rate_limit_rules_priority_check CHECK (priority >= 0),
+          CONSTRAINT rate_limit_rules_path_shape_check CHECK (
+              (match_kind = 'exact' AND path IS NOT NULL AND path_pattern IS NULL)
+              OR
+              (match_kind IN ('prefix', 'glob', 'regex') AND path IS NULL AND path_pattern IS NOT NULL)
+          )
+      );
+
+      COMMENT ON TABLE rate_limit_rules IS 'Default dynamic rate-limit rules for Hertz monolith scaffolds, with exact/prefix/glob/regex support.';
+      COMMENT ON COLUMN rate_limit_rules.service IS 'Rule namespace / service identifier used to isolate lookups across services.';
+      COMMENT ON COLUMN rate_limit_rules.phase IS 'Execution stage label, typically pre_auth or post_auth.';
+      COMMENT ON COLUMN rate_limit_rules.method IS 'Normalized HTTP method used for rule lookup.';
+      COMMENT ON COLUMN rate_limit_rules.match_kind IS 'Match mode used during lookup: exact, prefix, glob, or regex.';
+      COMMENT ON COLUMN rate_limit_rules.path IS 'Exact request path; used only when match_kind=exact.';
+      COMMENT ON COLUMN rate_limit_rules.path_pattern IS 'Pattern path; used for prefix, glob, or regex matching.';
+      COMMENT ON COLUMN rate_limit_rules.app_key IS 'Optional app-specific override dimension; NULL means fallback rule.';
+      COMMENT ON COLUMN rate_limit_rules.priority IS 'Higher priority wins among matching pattern rules.';
+      COMMENT ON COLUMN rate_limit_rules.enabled IS 'Whether this dynamic rule is enabled.';
+      COMMENT ON COLUMN rate_limit_rules.key_by IS 'Runtime enforcement dimensions, such as ip, ak_path, or ak_user_uuid.';
+      COMMENT ON COLUMN rate_limit_rules.strategy IS 'Supported strategies in the template: fixed_window or token_bucket.';
+      COMMENT ON COLUMN rate_limit_rules.window_seconds IS 'Window size for fixed-window enforcement.';
+      COMMENT ON COLUMN rate_limit_rules.max_requests IS 'Maximum requests allowed within the fixed window.';
+      COMMENT ON COLUMN rate_limit_rules.requests_per_second IS 'Steady refill rate for token-bucket style enforcement.';
+      COMMENT ON COLUMN rate_limit_rules.burst IS 'Maximum burst size for token-bucket style enforcement.';
+      COMMENT ON COLUMN rate_limit_rules.client_ttl_seconds IS 'Suggested local limiter state TTL for this rule.';
+
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_rate_limit_rules_exact
+          ON rate_limit_rules (service, phase, method, path, app_key)
+          WHERE app_key IS NOT NULL AND match_kind = 'exact';
+
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_rate_limit_rules_fallback
+          ON rate_limit_rules (service, phase, method, path)
+          WHERE app_key IS NULL AND match_kind = 'exact';
+
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_rate_limit_rules_pattern_app
+          ON rate_limit_rules (service, phase, method, match_kind, path_pattern, app_key, priority)
+          WHERE app_key IS NOT NULL AND match_kind <> 'exact';
+
+      CREATE UNIQUE INDEX IF NOT EXISTS ux_rate_limit_rules_pattern_fallback
+          ON rate_limit_rules (service, phase, method, match_kind, path_pattern, priority)
+          WHERE app_key IS NULL AND match_kind <> 'exact';
+
+      -- +goose Down
+      DROP INDEX IF EXISTS ux_rate_limit_rules_exact;
+      DROP INDEX IF EXISTS ux_rate_limit_rules_fallback;
+      DROP INDEX IF EXISTS ux_rate_limit_rules_pattern_app;
+      DROP INDEX IF EXISTS ux_rate_limit_rules_pattern_fallback;
+      DROP TABLE IF EXISTS rate_limit_rules;
+
+  - path: internal/db/seed/rate_limit_rules.example.sql
+    delims: ["", ""]
+    body: |-
+      -- Example seed data for the generated rate_limit_rules table.
+      -- Run manually in development or copy into your own bootstrap workflow.
+
+      -- Anonymous / invalid request fallback rule before auth.
+      INSERT INTO rate_limit_rules (
+          service, phase, method, match_kind, path, path_pattern, app_key, priority,
+          enabled, key_by, strategy, window_seconds, max_requests,
+          requests_per_second, burst, client_ttl_seconds
+      ) VALUES (
+          'order-api', 'pre_auth', 'POST', 'exact', '/v1/orders', NULL, NULL, 100,
+          TRUE, ARRAY['ip'], 'fixed_window', 60, 120, 120, 120, 300
+      );
+
+      -- App-specific exact rule after auth.
+      INSERT INTO rate_limit_rules (
+          service, phase, method, match_kind, path, path_pattern, app_key, priority,
+          enabled, key_by, strategy, window_seconds, max_requests,
+          requests_per_second, burst, client_ttl_seconds
+      ) VALUES (
+          'order-api', 'post_auth', 'POST', 'exact', '/v1/orders', NULL, 'demo-app', 200,
+          TRUE, ARRAY['ak_path'], 'fixed_window', 60, 30, 30, 60, 300
+      );
+
+      -- Fallback prefix rule for nested order resources.
+      INSERT INTO rate_limit_rules (
+          service, phase, method, match_kind, path, path_pattern, app_key, priority,
+          enabled, key_by, strategy, window_seconds, max_requests,
+          requests_per_second, burst, client_ttl_seconds
+      ) VALUES (
+          'order-api', 'post_auth', 'GET', 'prefix', NULL, '/v1/orders/', NULL, 50,
+          TRUE, ARRAY['ak_user_uuid'], 'fixed_window', 60, 100, 100, 100, 300
+      );
+
+      -- App-specific glob rule that overrides the fallback prefix rule.
+      INSERT INTO rate_limit_rules (
+          service, phase, method, match_kind, path, path_pattern, app_key, priority,
+          enabled, key_by, strategy, window_seconds, max_requests,
+          requests_per_second, burst, client_ttl_seconds
+      ) VALUES (
+          'order-api', 'post_auth', 'GET', 'glob', NULL, '/v1/orders/*/items', 'demo-app', 150,
+          TRUE, ARRAY['ak_path'], 'fixed_window', 60, 40, 40, 80, 300
+      );
+
+      -- Regex rule for detail-style order paths; use sparingly because regex is harder to index and maintain.
+      INSERT INTO rate_limit_rules (
+          service, phase, method, match_kind, path, path_pattern, app_key, priority,
+          enabled, key_by, strategy, window_seconds, max_requests,
+          requests_per_second, burst, client_ttl_seconds
+      ) VALUES (
+          'order-api', 'post_auth', 'GET', 'regex', NULL, '^/v1/orders/[0-9]+$', NULL, 120,
+          TRUE, ARRAY['ak_user_uuid'], 'fixed_window', 60, 25, 25, 50, 300
+      );
 
   - path: internal/db/sqlc.yaml
     delims: ["", ""]
@@ -6030,11 +7200,15 @@ layouts:
           swaggerFiles "github.com/swaggo/files"
           "github.com/samber/do/v2"
 
+      {{ if .WithDatabase}}
+          "{{.GoModule}}/internal/base/data"
+      {{ end}}
           "{{.GoModule}}/internal/base/conf"
           "{{.GoModule}}/internal/docs"
           "{{.GoModule}}/internal/handler/health"
           "{{.GoModule}}/internal/pkg/middleware"
           "{{.GoModule}}/internal/pkg/ratelimit"
+          "{{.GoModule}}/internal/repository"
           "{{.GoModule}}/internal/router"
       )
 
@@ -6095,22 +7269,28 @@ layouts:
       // Optional dynamic rate-limit rule source wiring:
       //  1. source.type=config   -> leave Options empty; resolver only uses local config fallback rules.
       //  2. source.type=grpc     -> inject a ratelimit.GRPCClient or ratelimit.ResolveFunc.
-      //  3. source.type=database -> inject a ratelimit.DatabaseHook or ratelimit.ResolveFunc.
+      //  3. source.type=database -> by default the generated repository skeleton is wired below;
+      //                              for DB-backed services it uses sqlc via internal/base/data.
       //
       // Example:
-      // var rlOpts ratelimit.Options
       // if cfg.RateLimit.Source.Type == "grpc" {
       //     rlOpts.GRPC = ratelimit.ResolveFunc(func(ctx context.Context, lookup ratelimit.Lookup) (*conf.RateLimitRuleConfig, bool, error) {
       //         return yourDynamicRuleGRPCClient.ResolveRateLimitRule(ctx, lookup)
       //     })
       // }
-      // if cfg.RateLimit.Source.Type == "database" {
-      //     rlOpts.Database = ratelimit.ResolveFunc(func(ctx context.Context, lookup ratelimit.Lookup) (*conf.RateLimitRuleConfig, bool, error) {
-      //         return yourDynamicRuleRepository.ResolveRateLimitRule(ctx, lookup)
-      //     })
-      // }
-      // resolver := ratelimit.NewResolver(cfg.RateLimit, rlOpts)
-          resolver := ratelimit.NewResolver(cfg.RateLimit, ratelimit.Options{})
+      var rlOpts ratelimit.Options
+      {{ if .WithDatabase}}
+      if strings.EqualFold(strings.TrimSpace(cfg.RateLimit.Source.Type), "database") {
+          rlOpts.Database = repository.NewRateLimitRuleHook(
+              repository.NewRateLimitRuleRepository(do.MustInvoke[*data.Data](injector)),
+          )
+      }
+      {{ else}}
+      if strings.EqualFold(strings.TrimSpace(cfg.RateLimit.Source.Type), "database") {
+          rlOpts.Database = repository.NewRateLimitRuleHook(repository.NewRateLimitRuleRepository())
+      }
+      {{ end}}
+          resolver := ratelimit.NewResolver(cfg.RateLimit, rlOpts)
           if cfg.RateLimit.Enabled && cfg.RateLimit.PreAuth.Enabled {
               h.Use(middleware.RateLimit("pre_auth", cfg.RateLimit, cfg.RateLimit.PreAuth, resolver))
           }
