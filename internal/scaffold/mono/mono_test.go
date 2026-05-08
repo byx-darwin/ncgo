@@ -566,6 +566,8 @@ func TestGenerateHertzTemplateIncludesChineseConfigComments(t *testing.T) {
 		"# 运维建议：pool_size 需结合单实例并发、Redis 实例连接上限和副本数综合评估",
 		"# Swagger / OpenAPI 文档配置",
 		"# 是否启用 Swagger UI；建议仅在开发/测试环境开启",
+		"# 配置中心：用于在本地文件之上叠加远程配置；默认关闭",
+		"# provider 需与 conf.RegisterConfigCenterLoader 注册名一致",
 		"# 当 key_by 包含 ak / ak_user_uuid 等维度时，从该请求头读取 app key",
 		"# 开发环境静态密钥；生产环境建议改为配置中心或密钥管理系统",
 		"# 运维建议：不要把真实生产密钥直接写入仓库或镜像",
@@ -573,9 +575,38 @@ func TestGenerateHertzTemplateIncludesChineseConfigComments(t *testing.T) {
 		"# token 签发者；校验时需与 token 中 iss 对齐",
 		"# 运维建议：有效期越长，泄漏后的风险窗口越大；需结合登录态策略权衡",
 		"# token 有效期，单位秒",
+		"# 结构化日志配置（与 ncgo add infra logging 生成的 optional 兼容）",
+		"# 发布/灰度配置（与 ncgo add infra canary 生成的 optional 兼容）",
+		"# 规则中心提供方：config 仅使用本地规则文件；nacos / polaris 通过配置中心加载灰度规则",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("hertz config comments missing %q", want)
+		}
+	}
+}
+
+func TestGenerateHertzTemplateIncludesConfigCenterAndOptionalConfigModels(t *testing.T) {
+	opts := baseOpts(t)
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(res.Dir, "template", "layout.yaml"))
+	if err != nil {
+		t.Fatalf("read hertz layout: %v", err)
+	}
+	s := string(body)
+	for _, want := range []string{
+		"ConfigCenter ConfigCenterConfig",
+		"Logging      LoggingConfig",
+		"Release      ReleaseConfig",
+		"type ConfigCenterLoader func(ConfigCenterConfig) ([]byte, error)",
+		"func RegisterConfigCenterLoader(provider string, loader ConfigCenterLoader)",
+		"func mergeConfigCenter(cfg *Config) error",
+		"type ReleaseRulesConfig struct",
+	} {
+		if !strings.Contains(s, want) {
+			t.Errorf("hertz config model missing %q", want)
 		}
 	}
 }

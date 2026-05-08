@@ -118,6 +118,28 @@ layouts:
       # 是否开启调试模式；通常会影响日志级别、错误细节和本地开发体验
       # 生产环境通常应关闭
       debug: true
+      # 配置中心：用于在本地文件之上叠加远程配置；默认关闭
+      config_center:
+        # 总开关；开启后会在读取本地 conf.yaml 后尝试加载远程配置
+        enabled: false
+        # provider 需与 conf.RegisterConfigCenterLoader 注册名一致
+        provider: "" # nacos | polaris | custom
+        # 远程配置格式；默认按 YAML 解析，也可切换为 JSON
+        data_type: yaml # yaml | json
+        # 拉取远程配置的超时，单位毫秒
+        timeout_milliseconds: 2000
+        # 配置中心异常时是否直接失败；false 表示保留本地配置继续启动
+        fail_fast: false
+        # 是否允许配置中心返回空内容；true 时保留本地配置
+        allow_empty: false
+        nacos:
+          namespace_id: ""
+          group_name: DEFAULT_GROUP
+          data_id: "{{.ServiceName}}.yaml"
+        polaris:
+          namespace: ""
+          group: ncgo-config
+          file_name: "{{.ServiceName}}.yaml"
       # HTTP 服务配置
       server:
         # 服务名：用于日志、指标、链路追踪、错误归属等
@@ -423,6 +445,98 @@ layouts:
           # token 有效期，单位秒
           # 运维建议：有效期越长，泄漏后的风险窗口越大；需结合登录态策略权衡
           expires_seconds: 7200
+      # 结构化日志配置（与 ncgo add infra logging 生成的 optional 兼容）
+      logging:
+        # 总开关；关闭时保留默认基础日志行为
+        enabled: false
+        # 输出模式：console / file / both / none
+        mode: console
+        # 输出格式：json 更适合机器采集，text 更适合本地排查
+        format: json
+        # 默认日志级别
+        level: info # debug | info | warn | error
+        # 是否记录源码位置；生产环境开启后会增加少量开销
+        add_source: true
+        console:
+          enabled: true
+        file:
+          enabled: false
+          dir: logs
+          filename: app.log
+          max_size_mb: 100
+          max_backups: 10
+          max_age_days: 30
+          compress: true
+        categories:
+          access:
+            enabled: true
+            file: access.log
+            level: info
+          error:
+            enabled: true
+            file: error.log
+            level: error
+          biz:
+            enabled: true
+            file: biz.log
+            level: warn
+          rpc:
+            enabled: true
+            file: rpc.log
+            level: info
+          db:
+            enabled: true
+            file: db.log
+            level: warn
+          panic:
+            enabled: true
+            file: panic.log
+            level: error
+          audit:
+            enabled: true
+            file: audit.log
+            level: info
+          security:
+            enabled: true
+            file: security.log
+            level: warn
+      # 发布/灰度配置（与 ncgo add infra canary 生成的 optional 兼容）
+      release:
+        # 总开关；开启后可由 wiring 后的 canary middleware / selector 消费
+        enabled: false
+        info:
+          # 发布轨道；通常为 stable / canary
+          track: stable
+          # 构建元信息；未配置时可由环境变量或 CI 注入
+          git_sha: ""
+          build_time: ""
+          env: ""
+        discovery:
+          # 服务发现提供方；按需选择 nacos / polaris
+          provider: "" # nacos | polaris
+          nacos:
+            namespace_id: ""
+            group_name: DEFAULT_GROUP
+            cluster_name: DEFAULT
+            service_name: {{.ServiceName}}
+          polaris:
+            namespace: ""
+            service: {{.ServiceName}}
+        rules:
+          # 规则中心提供方：config 仅使用本地规则文件；nacos / polaris 通过配置中心加载灰度规则
+          provider: config # config | nacos | polaris
+          # 规则源异常时是否放行；true 表示回退 stable / 本地兜底
+          fail_open: true
+          # provider=config 时可指定本地规则文件；为空表示由业务方自行接入
+          local_file: ""
+          nacos:
+            namespace_id: ""
+            group_name: NCGO_CANARY
+            data_id: "{{.ServiceName}}.canary.yaml"
+          polaris:
+            namespace: ""
+            group: ncgo-canary
+            file_name: "{{.ServiceName}}.canary.yaml"
 
   # ── .hz marker ───────────────────────────────────────────────────────────
   - path: .hz
@@ -465,19 +579,50 @@ layouts:
           current *Config
           once    sync.Once
           initErr error
+
+          configCenterMu      sync.RWMutex
+          configCenterLoaders = map[string]ConfigCenterLoader{}
       )
 
       type Config struct {
-          Env    string       `json:"env" yaml:"env"`
-          Debug  bool         `json:"debug" yaml:"debug"`
-          Server ServerConfig `json:"server" yaml:"server"`
-          Swagger SwaggerConfig `json:"swagger" yaml:"swagger"`
-          Security SecurityConfig `json:"security" yaml:"security"`
-          CORS   CORSConfig   `json:"cors" yaml:"cors"`
-          RateLimit RateLimitConfig `json:"rate_limit" yaml:"rate_limit"`
-          Idempotency IdempotencyConfig `json:"idempotency" yaml:"idempotency"`
-          Auth   AuthConfig   `json:"auth" yaml:"auth"`
+          Env          string             `json:"env" yaml:"env"`
+          Debug        bool               `json:"debug" yaml:"debug"`
+          ConfigCenter ConfigCenterConfig `json:"config_center" yaml:"config_center"`
+          Server       ServerConfig       `json:"server" yaml:"server"`
+          Swagger      SwaggerConfig      `json:"swagger" yaml:"swagger"`
+          Security     SecurityConfig     `json:"security" yaml:"security"`
+          CORS         CORSConfig         `json:"cors" yaml:"cors"`
+          RateLimit    RateLimitConfig    `json:"rate_limit" yaml:"rate_limit"`
+          Idempotency  IdempotencyConfig  `json:"idempotency" yaml:"idempotency"`
+          Auth         AuthConfig         `json:"auth" yaml:"auth"`
+          Logging      LoggingConfig      `json:"logging" yaml:"logging"`
+          Release      ReleaseConfig      `json:"release" yaml:"release"`
       }
+
+      type ConfigCenterConfig struct {
+          Enabled             bool                      `json:"enabled" yaml:"enabled"`
+          Provider            string                    `json:"provider" yaml:"provider"`
+          DataType            string                    `json:"data_type" yaml:"data_type"`
+          TimeoutMilliseconds int                       `json:"timeout_milliseconds" yaml:"timeout_milliseconds"`
+          FailFast            bool                      `json:"fail_fast" yaml:"fail_fast"`
+          AllowEmpty          bool                      `json:"allow_empty" yaml:"allow_empty"`
+          Nacos               ConfigCenterNacosConfig   `json:"nacos" yaml:"nacos"`
+          Polaris             ConfigCenterPolarisConfig `json:"polaris" yaml:"polaris"`
+      }
+
+      type ConfigCenterNacosConfig struct {
+          NamespaceID string `json:"namespace_id" yaml:"namespace_id"`
+          GroupName   string `json:"group_name" yaml:"group_name"`
+          DataID      string `json:"data_id" yaml:"data_id"`
+      }
+
+      type ConfigCenterPolarisConfig struct {
+          Namespace string `json:"namespace" yaml:"namespace"`
+          Group     string `json:"group" yaml:"group"`
+          FileName  string `json:"file_name" yaml:"file_name"`
+      }
+
+      type ConfigCenterLoader func(ConfigCenterConfig) ([]byte, error)
 
       type ServerConfig struct {
           Name                    string `json:"name" yaml:"name"`
@@ -669,6 +814,109 @@ layouts:
           ExpiresSeconds int64  `json:"expires_seconds" yaml:"expires_seconds"`
       }
 
+      type LoggingConfig struct {
+          Enabled    bool                           `json:"enabled" yaml:"enabled"`
+          Mode       string                         `json:"mode" yaml:"mode"`
+          Format     string                         `json:"format" yaml:"format"`
+          Level      string                         `json:"level" yaml:"level"`
+          AddSource  bool                           `json:"add_source" yaml:"add_source"`
+          Console    LoggingConsoleConfig           `json:"console" yaml:"console"`
+          File       LoggingFileConfig              `json:"file" yaml:"file"`
+          Categories map[string]LoggingCategoryConfig `json:"categories" yaml:"categories"`
+      }
+
+      type LoggingConsoleConfig struct {
+          Enabled bool `json:"enabled" yaml:"enabled"`
+      }
+
+      type LoggingFileConfig struct {
+          Enabled    bool   `json:"enabled" yaml:"enabled"`
+          Dir        string `json:"dir" yaml:"dir"`
+          Filename   string `json:"filename" yaml:"filename"`
+          MaxSizeMB  int    `json:"max_size_mb" yaml:"max_size_mb"`
+          MaxBackups int    `json:"max_backups" yaml:"max_backups"`
+          MaxAgeDays int    `json:"max_age_days" yaml:"max_age_days"`
+          Compress   bool   `json:"compress" yaml:"compress"`
+      }
+
+      type LoggingCategoryConfig struct {
+          Enabled bool   `json:"enabled" yaml:"enabled"`
+          File    string `json:"file" yaml:"file"`
+          Level   string `json:"level" yaml:"level"`
+      }
+
+      type ReleaseConfig struct {
+          Enabled   bool                   `json:"enabled" yaml:"enabled"`
+          Info      ReleaseInfoConfig      `json:"info" yaml:"info"`
+          Discovery ReleaseDiscoveryConfig `json:"discovery" yaml:"discovery"`
+          Rules     ReleaseRulesConfig     `json:"rules" yaml:"rules"`
+      }
+
+      type ReleaseInfoConfig struct {
+          Track     string `json:"track" yaml:"track"`
+          GitSHA    string `json:"git_sha" yaml:"git_sha"`
+          BuildTime string `json:"build_time" yaml:"build_time"`
+          Env       string `json:"env" yaml:"env"`
+      }
+
+      type ReleaseDiscoveryConfig struct {
+          Provider string                        `json:"provider" yaml:"provider"`
+          Nacos    ReleaseNacosDiscoveryConfig   `json:"nacos" yaml:"nacos"`
+          Polaris  ReleasePolarisDiscoveryConfig `json:"polaris" yaml:"polaris"`
+      }
+
+      type ReleaseNacosDiscoveryConfig struct {
+          NamespaceID string `json:"namespace_id" yaml:"namespace_id"`
+          GroupName   string `json:"group_name" yaml:"group_name"`
+          ClusterName string `json:"cluster_name" yaml:"cluster_name"`
+          ServiceName string `json:"service_name" yaml:"service_name"`
+      }
+
+      type ReleasePolarisDiscoveryConfig struct {
+          Namespace string `json:"namespace" yaml:"namespace"`
+          Service   string `json:"service" yaml:"service"`
+      }
+
+      type ReleaseRulesConfig struct {
+          Provider  string                   `json:"provider" yaml:"provider"`
+          FailOpen  bool                     `json:"fail_open" yaml:"fail_open"`
+          LocalFile string                   `json:"local_file" yaml:"local_file"`
+          Nacos     ReleaseNacosRuleConfig   `json:"nacos" yaml:"nacos"`
+          Polaris   ReleasePolarisRuleConfig `json:"polaris" yaml:"polaris"`
+      }
+
+      type ReleaseNacosRuleConfig struct {
+          NamespaceID string `json:"namespace_id" yaml:"namespace_id"`
+          GroupName   string `json:"group_name" yaml:"group_name"`
+          DataID      string `json:"data_id" yaml:"data_id"`
+      }
+
+      type ReleasePolarisRuleConfig struct {
+          Namespace string `json:"namespace" yaml:"namespace"`
+          Group     string `json:"group" yaml:"group"`
+          FileName  string `json:"file_name" yaml:"file_name"`
+      }
+
+      func RegisterConfigCenterLoader(provider string, loader ConfigCenterLoader) {
+          provider = normalizeConfigProvider(provider)
+          if provider == "" || loader == nil {
+              return
+          }
+          configCenterMu.Lock()
+          defer configCenterMu.Unlock()
+          configCenterLoaders[provider] = loader
+      }
+
+      func UnregisterConfigCenterLoader(provider string) {
+          provider = normalizeConfigProvider(provider)
+          if provider == "" {
+              return
+          }
+          configCenterMu.Lock()
+          defer configCenterMu.Unlock()
+          delete(configCenterLoaders, provider)
+      }
+
       func Init() error {
           once.Do(func() { current, initErr = Load("") })
           return initErr
@@ -692,15 +940,18 @@ layouts:
           }
           content, err := os.ReadFile(path)
           if err != nil {
-              if os.IsNotExist(err) && !configPathFromEnv {
-                  return cfg, nil
+              if !os.IsNotExist(err) || configPathFromEnv {
+                  return nil, oops.In("config").Code(10308).
+                      Public("config_invalid").With("path", path).Wrap(err)
               }
-              return nil, oops.In("config").Code(10308).
-                  Public("config_invalid").With("path", path).Wrap(err)
+          } else {
+              if err := yaml.Unmarshal(content, cfg); err != nil {
+                  return nil, oops.In("config").Code(10308).
+                      Public("config_invalid").With("path", path).Wrap(err)
+              }
           }
-          if err := yaml.Unmarshal(content, cfg); err != nil {
-              return nil, oops.In("config").Code(10308).
-                  Public("config_invalid").With("path", path).Wrap(err)
+          if err := mergeConfigCenter(cfg); err != nil {
+              return nil, err
           }
           if err := cfg.Validate(); err != nil {
               return nil, err
@@ -712,6 +963,16 @@ layouts:
           return &Config{
               Env:   Env(),
               Debug: Env() != "prod",
+              ConfigCenter: ConfigCenterConfig{
+                  DataType:            "yaml",
+                  TimeoutMilliseconds: 2000,
+                  Nacos: ConfigCenterNacosConfig{
+                      GroupName: "DEFAULT_GROUP",
+                  },
+                  Polaris: ConfigCenterPolarisConfig{
+                      Group: "ncgo-config",
+                  },
+              },
               Server: ServerConfig{
                   Addr:                    ":8080",
                   Version:                 "v1",
@@ -836,6 +1097,46 @@ layouts:
                       ExpiresSeconds: 7200,
                   },
               },
+              Logging: LoggingConfig{
+                  Mode:      "console",
+                  Format:    "json",
+                  Level:     "info",
+                  AddSource: true,
+                  Console:   LoggingConsoleConfig{Enabled: true},
+                  File: LoggingFileConfig{
+                      Dir: "logs", Filename: "app.log", MaxSizeMB: 100,
+                      MaxBackups: 10, MaxAgeDays: 30, Compress: true,
+                  },
+                  Categories: map[string]LoggingCategoryConfig{
+                      "access":   {Enabled: true, File: "access.log", Level: "info"},
+                      "error":    {Enabled: true, File: "error.log", Level: "error"},
+                      "biz":      {Enabled: true, File: "biz.log", Level: "warn"},
+                      "rpc":      {Enabled: true, File: "rpc.log", Level: "info"},
+                      "db":       {Enabled: true, File: "db.log", Level: "warn"},
+                      "panic":    {Enabled: true, File: "panic.log", Level: "error"},
+                      "audit":    {Enabled: true, File: "audit.log", Level: "info"},
+                      "security": {Enabled: true, File: "security.log", Level: "warn"},
+                  },
+              },
+              Release: ReleaseConfig{
+                  Info: ReleaseInfoConfig{Track: "stable"},
+                  Rules: ReleaseRulesConfig{
+                      Provider: "config",
+                      FailOpen: true,
+                      Nacos: ReleaseNacosRuleConfig{
+                          GroupName: "NCGO_CANARY",
+                      },
+                      Polaris: ReleasePolarisRuleConfig{
+                          Group: "ncgo-canary",
+                      },
+                  },
+                  Discovery: ReleaseDiscoveryConfig{
+                      Nacos: ReleaseNacosDiscoveryConfig{
+                          GroupName:   "DEFAULT_GROUP",
+                          ClusterName: "DEFAULT",
+                      },
+                  },
+              },
           }
       }
 
@@ -848,6 +1149,9 @@ layouts:
           }
           if c.Server.ReadTimeoutSeconds < 0 || c.Server.WriteTimeoutSeconds < 0 || c.Server.IdleTimeoutSeconds < 0 || c.Server.KeepAliveTimeoutSeconds < 0 || c.Server.RequestTimeoutSeconds < 0 {
               return oops.In("config").Code(10308).Public("config_invalid").New("server timeout seconds must not be negative")
+          }
+          if err := validateConfigCenter(c.ConfigCenter); err != nil {
+              return err
           }
           if c.Swagger.Enabled {
               if !strings.HasPrefix(strings.TrimSpace(c.Swagger.Path), "/") {
@@ -934,7 +1238,50 @@ layouts:
                   return oops.In("config").Code(10308).Public("config_invalid").New("idempotency.max_body_bytes must not be negative")
               }
           }
+          if err := validateLogging(c.Logging); err != nil {
+              return err
+          }
+          if err := validateRelease(c.Release); err != nil {
+              return err
+          }
           return nil
+      }
+
+      func mergeConfigCenter(cfg *Config) error {
+          if cfg == nil || !cfg.ConfigCenter.Enabled {
+              return nil
+          }
+          provider := normalizeConfigProvider(cfg.ConfigCenter.Provider)
+          loader := lookupConfigCenterLoader(provider)
+          if loader == nil {
+              if cfg.ConfigCenter.FailFast {
+                  return oops.In("config").Code(10308).Public("config_invalid").New("config_center loader is not registered")
+              }
+              return nil
+          }
+          payload, err := loader(cfg.ConfigCenter)
+          if err != nil {
+              if cfg.ConfigCenter.FailFast {
+                  return oops.In("config").Code(10308).Public("config_invalid").Wrap(err)
+              }
+              return nil
+          }
+          if strings.TrimSpace(string(payload)) == "" {
+              if cfg.ConfigCenter.AllowEmpty {
+                  return nil
+              }
+              return oops.In("config").Code(10308).Public("config_invalid").New("config_center returned empty payload")
+          }
+          if err := yaml.Unmarshal(payload, cfg); err != nil {
+              return oops.In("config").Code(10308).Public("config_invalid").Wrap(err)
+          }
+          return nil
+      }
+
+      func lookupConfigCenterLoader(provider string) ConfigCenterLoader {
+          configCenterMu.RLock()
+          defer configCenterMu.RUnlock()
+          return configCenterLoaders[provider]
       }
 
       func validateRateLimitPhase(name string, phase RateLimitPhaseConfig) error {
@@ -1078,6 +1425,95 @@ layouts:
               return oops.In("config").Code(10308).Public("config_invalid").New(name + ".strategy must be token_bucket or fixed_window")
           }
           return nil
+      }
+
+      func validateConfigCenter(cfg ConfigCenterConfig) error {
+          if !cfg.Enabled {
+              return nil
+          }
+          switch normalizeConfigProvider(cfg.Provider) {
+          case "nacos":
+              if strings.TrimSpace(cfg.Nacos.DataID) == "" {
+                  return oops.In("config").Code(10308).Public("config_invalid").New("config_center.nacos.data_id is empty")
+              }
+          case "polaris":
+              if strings.TrimSpace(cfg.Polaris.FileName) == "" {
+                  return oops.In("config").Code(10308).Public("config_invalid").New("config_center.polaris.file_name is empty")
+              }
+          case "custom":
+          default:
+              return oops.In("config").Code(10308).Public("config_invalid").New("config_center.provider must be nacos, polaris, or custom")
+          }
+          switch strings.ToLower(strings.TrimSpace(cfg.DataType)) {
+          case "", "yaml", "json":
+          default:
+              return oops.In("config").Code(10308).Public("config_invalid").New("config_center.data_type must be yaml or json")
+          }
+          if cfg.TimeoutMilliseconds <= 0 {
+              return oops.In("config").Code(10308).Public("config_invalid").New("config_center.timeout_milliseconds must be positive")
+          }
+          return nil
+      }
+
+      func validateLogging(cfg LoggingConfig) error {
+          switch strings.ToLower(strings.TrimSpace(cfg.Mode)) {
+          case "", "console", "file", "both", "none":
+          default:
+              return oops.In("config").Code(10308).Public("config_invalid").New("logging.mode must be console, file, both, or none")
+          }
+          switch strings.ToLower(strings.TrimSpace(cfg.Format)) {
+          case "", "json", "text":
+          default:
+              return oops.In("config").Code(10308).Public("config_invalid").New("logging.format must be json or text")
+          }
+          if err := validateLogLevel("logging.level", cfg.Level); err != nil {
+              return err
+          }
+          if cfg.File.MaxSizeMB < 0 || cfg.File.MaxBackups < 0 || cfg.File.MaxAgeDays < 0 {
+              return oops.In("config").Code(10308).Public("config_invalid").New("logging.file rotate settings must not be negative")
+          }
+          for name, category := range cfg.Categories {
+              if strings.TrimSpace(name) == "" {
+                  return oops.In("config").Code(10308).Public("config_invalid").New("logging.categories key is empty")
+              }
+              if err := validateLogLevel("logging.categories."+name+".level", category.Level); err != nil {
+                  return err
+              }
+          }
+          return nil
+      }
+
+      func validateLogLevel(name, level string) error {
+          switch strings.ToLower(strings.TrimSpace(level)) {
+          case "", "debug", "info", "warn", "error":
+              return nil
+          default:
+              return oops.In("config").Code(10308).Public("config_invalid").New(name + " must be debug, info, warn, or error")
+          }
+      }
+
+      func validateRelease(cfg ReleaseConfig) error {
+          switch normalizeConfigProvider(cfg.Discovery.Provider) {
+          case "", "nacos", "polaris":
+          default:
+              return oops.In("config").Code(10308).Public("config_invalid").New("release.discovery.provider must be nacos or polaris")
+          }
+          switch normalizeConfigProvider(cfg.Rules.Provider) {
+          case "", "config", "nacos", "polaris":
+          default:
+              return oops.In("config").Code(10308).Public("config_invalid").New("release.rules.provider must be config, nacos, or polaris")
+          }
+          if normalizeConfigProvider(cfg.Rules.Provider) == "nacos" && strings.TrimSpace(cfg.Rules.Nacos.DataID) == "" {
+              return oops.In("config").Code(10308).Public("config_invalid").New("release.rules.nacos.data_id is empty")
+          }
+          if normalizeConfigProvider(cfg.Rules.Provider) == "polaris" && strings.TrimSpace(cfg.Rules.Polaris.FileName) == "" {
+              return oops.In("config").Code(10308).Public("config_invalid").New("release.rules.polaris.file_name is empty")
+          }
+          return nil
+      }
+
+      func normalizeConfigProvider(value string) string {
+          return strings.ToLower(strings.TrimSpace(value))
       }
 
       func hasWildcard(values []string) bool {
@@ -4882,8 +5318,8 @@ layouts:
               Service: lookup.Service,
               Phase:  lookup.Phase,
               Method: lookup.Method,
-              Path:   lookup.Path,
-              AppKey: lookup.AppKey,
+              Path:   stringPtr(lookup.Path),
+              AppKey: stringPtr(lookup.AppKey),
           })
           if err != nil {
               return nil, err
@@ -4896,7 +5332,7 @@ layouts:
               Service: lookup.Service,
               Phase:  lookup.Phase,
               Method: lookup.Method,
-              Path:   lookup.Path,
+              Path:   stringPtr(lookup.Path),
           })
           if err != nil {
               return nil, err
@@ -4906,11 +5342,11 @@ layouts:
 
       func (r *RateLimitRuleRepository) findPatternRuleByAppKey(ctx context.Context, lookup normalizedRateLimitLookup) (*RateLimitRuleRecord, error) {
           row, err := r.q.GetRateLimitPatternRuleByAppKey(ctx, gen.GetRateLimitPatternRuleByAppKeyParams{
-              Service: lookup.Service,
-              Phase:  lookup.Phase,
-              Method: lookup.Method,
-              Path:   lookup.Path,
-              AppKey: lookup.AppKey,
+              Service:     lookup.Service,
+              Phase:       lookup.Phase,
+              Method:      lookup.Method,
+              PathPattern: stringPtr(lookup.Path),
+              AppKey:      stringPtr(lookup.AppKey),
           })
           if err != nil {
               return nil, err
@@ -4920,15 +5356,19 @@ layouts:
 
       func (r *RateLimitRuleRepository) findPatternRuleFallback(ctx context.Context, lookup normalizedRateLimitLookup) (*RateLimitRuleRecord, error) {
           row, err := r.q.GetRateLimitPatternRuleFallback(ctx, gen.GetRateLimitPatternRuleFallbackParams{
-              Service: lookup.Service,
-              Phase:  lookup.Phase,
-              Method: lookup.Method,
-              Path:   lookup.Path,
+              Service:     lookup.Service,
+              Phase:       lookup.Phase,
+              Method:      lookup.Method,
+              PathPattern: stringPtr(lookup.Path),
           })
           if err != nil {
               return nil, err
           }
           return rateLimitRuleRecordFromPatternFallbackRow(row), nil
+      }
+
+      func stringPtr(value string) *string {
+          return &value
       }
 
       func rateLimitRuleRecordFromExactAppKeyRow(row gen.GetRateLimitExactRuleByAppKeyRow) *RateLimitRuleRecord {
