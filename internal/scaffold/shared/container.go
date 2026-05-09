@@ -316,11 +316,18 @@ func renderPostgresCompose(b *strings.Builder) {
 	b.WriteString("    environment:\n")
 	b.WriteString("      POSTGRES_DB: app\n")
 	b.WriteString("      POSTGRES_USER: postgres\n")
-	b.WriteString("      POSTGRES_PASSWORD: postgres\n")
+	b.WriteString("      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres}\n")
 	b.WriteString("    ports:\n")
 	b.WriteString("      - \"5432:5432\"\n")
 	b.WriteString("    volumes:\n")
 	b.WriteString("      - postgres-data:/var/lib/postgresql/data\n")
+	b.WriteString("    healthcheck:\n")
+	b.WriteString("      test: [\"CMD-SHELL\", \"pg_isready -U postgres\"]\n")
+	b.WriteString("      interval: 10s\n")
+	b.WriteString("      timeout: 5s\n")
+	b.WriteString("      retries: 5\n")
+	b.WriteString("      start_period: 10s\n")
+	b.WriteString("    restart: unless-stopped\n")
 }
 
 func renderRedisCompose(b *strings.Builder) {
@@ -331,6 +338,12 @@ func renderRedisCompose(b *strings.Builder) {
 	b.WriteString("      - \"6379:6379\"\n")
 	b.WriteString("    volumes:\n")
 	b.WriteString("      - redis-data:/data\n")
+	b.WriteString("    healthcheck:\n")
+	b.WriteString("      test: [\"CMD\", \"redis-cli\", \"ping\"]\n")
+	b.WriteString("      interval: 10s\n")
+	b.WriteString("      timeout: 3s\n")
+	b.WriteString("      retries: 3\n")
+	b.WriteString("    restart: unless-stopped\n")
 }
 
 func renderKafkaCompose(b *strings.Builder) {

@@ -115,7 +115,7 @@ func TestGenerateWithDatabaseComposeIncludesPostgres(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read compose.yaml: %v", err)
 	}
-	for _, want := range []string{"postgres:", "DATABASE_URL: postgres://postgres:postgres@postgres:5432/demo?sslmode=disable", "5432:5432"} {
+	for _, want := range []string{"postgres:", "DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/demo?sslmode=disable", "5432:5432"} {
 		if !strings.Contains(string(composeBody), want) {
 			t.Fatalf("database compose missing %q\n---\n%s", want, composeBody)
 		}
