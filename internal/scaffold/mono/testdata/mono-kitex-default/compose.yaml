@@ -10,3 +10,9 @@ services:
       GO_ENV: docker
     ports:
       - "8888:8888"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"

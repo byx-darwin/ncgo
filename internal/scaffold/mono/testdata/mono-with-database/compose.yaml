@@ -11,11 +11,18 @@ services:
       dockerfile: Dockerfile
     environment:
       GO_ENV: docker
-      DATABASE_URL: postgres://postgres:postgres@postgres:5432/demo?sslmode=disable
+      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/demo?sslmode=disable
     depends_on:
-      - postgres
+      postgres:
+        condition: service_healthy
     ports:
       - "8080:8080"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   postgres:
     image: postgres:16-alpine
     environment:

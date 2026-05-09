@@ -290,17 +290,23 @@ func renderAppCompose(b *strings.Builder, app composeApp) error {
 	b.WriteString("    environment:\n")
 	b.WriteString("      GO_ENV: docker\n")
 	if app.WithDatabase {
-		fmt.Fprintf(b, "      DATABASE_URL: postgres://postgres:postgres@postgres:5432/%s?sslmode=disable\n", app.Name)
+		fmt.Fprintf(b, "      DATABASE_URL: postgres://postgres:${POSTGRES_PASSWORD:-postgres}@postgres:5432/%s?sslmode=disable\n", app.Name)
 	}
 	deps := dependencyServiceNames(features)
 	if len(deps) > 0 {
 		b.WriteString("    depends_on:\n")
 		for _, dep := range deps {
-			fmt.Fprintf(b, "      - %s\n", dep)
+			fmt.Fprintf(b, "      %s:\n        condition: service_healthy\n", dep)
 		}
 	}
 	b.WriteString("    ports:\n")
 	fmt.Fprintf(b, "      - \"%d:%d\"\n", app.HostPort, containerPort)
+	b.WriteString("    restart: unless-stopped\n")
+	b.WriteString("    logging:\n")
+	b.WriteString("      driver: json-file\n")
+	b.WriteString("      options:\n")
+	b.WriteString("        max-size: \"10m\"\n")
+	b.WriteString("        max-file: \"3\"\n")
 	return nil
 }
 

@@ -13,6 +13,12 @@ services:
       GO_ENV: docker
     ports:
       - "8080:8080"
+    restart: unless-stopped
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
   nacos:
     image: nacos/nacos-server:v2.5.2
     profiles:
