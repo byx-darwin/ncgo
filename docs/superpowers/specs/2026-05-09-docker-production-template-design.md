@@ -12,7 +12,7 @@ ncgo 当前生成的 Dockerfile 和 compose.yaml 仅适用于本地开发环境�
 2. 提供增强版 compose.yaml（healthcheck、restart、日志限制、环境变量参数化）
 3. 在 Makefile 中添加 Docker 操作统一入口
 
-**范围**：PostgreSQL、Redis、Nacos（配置中心仅保留 Nacos）。Kafka/ES/ClickHouse/etcd/Polaris 暂不改动。
+**范围**：PostgreSQL、Redis、Polaris（配置中心，仅 micro 微服务 workspace 生成）。Kafka/ES/ClickHouse/etcd/Nacos 暂不改动。
 
 ## 架构
 
@@ -31,7 +31,7 @@ ncgo 当前生成的 Dockerfile 和 compose.yaml 仅适用于本地开发环境�
 | 新增项 | 说明 |
 |--------|------|
 | build args | `APP_NAME`、`PROFILE` 传入 Dockerfile |
-| healthcheck | 应用服务、PostgreSQL、Redis、Nacos |
+| healthcheck | 应用服务、PostgreSQL、Redis、Polaris |
 | depends_on condition | `condition: service_healthy` |
 | restart 策略 | `unless-stopped` |
 | 日志限制 | `json-file` + `max-size: 10m` + `max-file: 3` |
@@ -53,7 +53,8 @@ ncgo 当前生成的 Dockerfile 和 compose.yaml 仅适用于本地开发环境�
 
 | 文件 | 变更 |
 |------|------|
-| `internal/scaffold/shared/container.go` | Dockerfile 模板增强、compose.yaml 健康检查/restart/日志限制 |
+| `internal/scaffold/micro/micro.go` | Micro workspace compose 添加 Polaris healthcheck/restart |
+| `internal/scaffold/shared/container.go` | 单服务 compose 不生成配置中心 healthcheck/restart |
 | `internal/assets/_data/hertz/layout.yaml` | Hertz Makefile 添加 Docker targets |
 | `internal/assets/_data/kitex/kitex-template/makefile.yaml` | Kitex Makefile 添加 Docker targets |
 | `internal/scaffold/mono/testdata/` | 更新 golden test fixtures |
@@ -62,3 +63,4 @@ ncgo 当前生成的 Dockerfile 和 compose.yaml 仅适用于本地开发环境�
 
 - Makefile 模板变更需同步更新 golden tests
 - Dockerfile 变更可能影响现有使用 `compose up` 的用户（增加 build args 兼容）
+- Polaris healthcheck/restart 仅在 micro workspace compose 中生成，单服务 compose 不生成
