@@ -14,7 +14,7 @@ body: |
   MIGRATIONS_DIR ?= internal/db/migrations
   DATABASE_URL ?=
 
-  .PHONY: build run dev update generate sqlc migrate-up migrate-down migrate-status migrate-create lint test clean install-tools tidy
+  .PHONY: build run dev update generate sqlc migrate-up migrate-down migrate-status migrate-create lint test clean install-tools tidy docker-build docker-up docker-down docker-logs docker-shell docker-start docker-rebuild
 
   # ── Build ────────────────────────────────────────────────────────────────
   build: ; @echo "Building $(APP_NAME)..."; mkdir -p output/bin; go build -o output/bin/$(APP_NAME) .; echo "Build complete → output/bin/$(APP_NAME)"
@@ -55,6 +55,23 @@ body: |
 
   # ── Install tools ────────────────────────────────────────────────────────
   install-tools: ; @echo "Installing development tools..."; go install github.com/cloudwego/kitex/tool/cmd/kitex@latest; go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest; go install github.com/pressly/goose/v3/cmd/goose@latest; go install github.com/air-verse/air@latest; go install golang.org/x/tools/cmd/goimports@latest; echo "Install complete"
+
+  # ── Docker ────────────────────────────────────────────────────────────────
+  IMAGE_TAG ?= latest
+
+  docker-build: ; @docker build -t $(APP_NAME):$(IMAGE_TAG) .
+
+  docker-up: ; @docker compose up -d
+
+  docker-down: ; @docker compose down
+
+  docker-logs: ; @docker compose logs -f $(APP_NAME)
+
+  docker-shell: ; @docker compose exec $(APP_NAME) sh
+
+  docker-start: docker-build docker-up ; @echo "Docker services started"
+
+  docker-rebuild: docker-down docker-build docker-up ; @echo "Docker services rebuilt and restarted"
 
   # ── Cleanup ──────────────────────────────────────────────────────────────
   clean: ; @rm -rf output/
