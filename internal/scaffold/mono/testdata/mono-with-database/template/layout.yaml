@@ -8341,7 +8341,7 @@ layouts:
       GOOSE_DBSTRING ?= $(DATABASE_URL)
       GOOSE_MIGRATION_DIR ?= internal/db/migrations
 
-      .PHONY: build run dev i18n-sync i18n-report i18n-check i18n-check-release i18n update swagger generate sqlc migrate-create migrate-up migrate-down migrate-status lint test check tidy clean install-tools
+      .PHONY: build run dev i18n-sync i18n-report i18n-check i18n-check-release i18n update swagger generate sqlc migrate-create migrate-up migrate-down migrate-status lint test check tidy clean install-tools docker-build docker-up docker-down docker-logs docker-shell docker-start docker-rebuild
 
       # ── Build ──────────────────────────────────────────────────────────────
       build: ; @echo "Building $(APP_NAME)..."; mkdir -p output/bin; go build -o output/bin/$(APP_NAME) .; echo "Build complete → output/bin/$(APP_NAME)"
@@ -8392,6 +8392,23 @@ layouts:
 
       # ── Install tools ──────────────────────────────────────────────────────
       install-tools: ; @echo "Installing development tools..."; go install github.com/cloudwego/hertz/cmd/hz@latest; go install github.com/hertz-contrib/swagger-generate/protoc-gen-http-swagger@latest; go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest; go install github.com/pressly/goose/v3/cmd/goose@latest; go install github.com/air-verse/air@latest; go install golang.org/x/tools/cmd/goimports@latest; command -v protoc > /dev/null 2>&1 || echo "Warning: protoc is required for make swagger"; echo "Install complete"
+
+      # ── Docker ─────────────────────────────────────────────────────────────
+      IMAGE_TAG ?= latest
+
+      docker-build: ; @docker build -t $(APP_NAME):$(IMAGE_TAG) .
+
+      docker-up: ; @docker compose up -d
+
+      docker-down: ; @docker compose down
+
+      docker-logs: ; @docker compose logs -f $(APP_NAME)
+
+      docker-shell: ; @docker compose exec $(APP_NAME) sh
+
+      docker-start: docker-build docker-up ; @echo "Docker services started"
+
+      docker-rebuild: docker-down docker-build docker-up ; @echo "Docker services rebuilt and restarted"
 
       # ── Cleanup ────────────────────────────────────────────────────────────
       clean: ; @rm -rf output/
