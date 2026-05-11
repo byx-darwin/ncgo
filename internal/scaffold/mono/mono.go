@@ -50,6 +50,7 @@ type Options struct {
 	NoGenerate    bool        // when true, skip the generator (hz/kitex) invocation
 	Runner        exec.Runner // injected exec; nil means exec.NewDefault()
 	Now           time.Time   // injected clock for golden tests; zero means time.Now().UTC()
+	Preset        string      // preset name (e.g., "rule-center")
 }
 
 // Result describes what Generate produced.
@@ -81,6 +82,12 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	idl := opts.IDL
 	if idl == "" {
 		idl = defaultIDL(opts)
+	}
+	// Rule-center preset overrides default IDL to use rule-center.proto.
+	if opts.Preset == "rule-center" {
+		if idl == "" || strings.HasSuffix(idl, "svc.proto") {
+			idl = filepath.ToSlash(filepath.Join("idl", "rule-center.proto"))
+		}
 	}
 	if err := writeTemplate(dir, opts); err != nil {
 		return nil, err

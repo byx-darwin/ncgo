@@ -96,6 +96,7 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 		AssetsVersion: opts.AssetsVersion,
 		NCGOVersion:   opts.NCGOVersion,
 		NoGenerate:    opts.NoGenerate,
+		Preset:        opts.Preset,
 		Runner:        opts.Runner,
 		Now:           opts.Now,
 	})
@@ -134,6 +135,9 @@ func validate(opts Options) error {
 	}
 	if opts.NCGOVersion == "" {
 		return errors.New("rpc: NCGOVersion is required")
+	}
+	if opts.Preset != "" && opts.Preset != "rule-center" {
+		return fmt.Errorf("rpc: preset %q is not valid (want \"rule-center\")", opts.Preset)
 	}
 	return nil
 }

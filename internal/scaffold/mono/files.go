@@ -87,7 +87,7 @@ extend google.protobuf.MessageOptions {
 // reads its variables inline so no extra file is needed.
 func writeTemplate(dir string, opts Options) error {
 	if defaultKind(opts.Kind) == manifest.KindKitex {
-		return writeKitexTemplate(dir)
+		return writeKitexTemplate(dir, opts.Preset)
 	}
 	return writeHertzTemplate(dir, opts)
 }
@@ -120,8 +120,9 @@ func writeHertzTemplate(dir string, opts Options) error {
 // writeKitexTemplate copies every embedded kitex-template/*.yaml verbatim
 // into <dir>/template/kitex-template/ so that both `kitex` (during
 // scaffold) and the generated Makefile's `update` target can consume
-// them at the same path.
-func writeKitexTemplate(dir string) error {
+// them at the same path. When a preset is specified, it also writes
+// preset-specific layout and extra files.
+func writeKitexTemplate(dir string, preset string) error {
 	tplDir := filepath.Join(dir, "template", "kitex-template")
 	if err := os.MkdirAll(tplDir, 0o755); err != nil {
 		return fmt.Errorf("scaffold: mkdir %s: %w", tplDir, err)
@@ -144,14 +145,24 @@ func writeKitexTemplate(dir string) error {
 			return fmt.Errorf("scaffold: write %s: %w", name, err)
 		}
 	}
-	for _, extra := range []struct {
+	extras := []struct {
 		asset string
 		path  string
 	}{
 		{asset: "kitex/sqlc.yaml", path: "internal/db/sqlc.yaml"},
 		{asset: "kitex/query/health.sql", path: "internal/db/query/health.sql"},
 		{asset: "kitex/schema/000001_placeholder.sql", path: "internal/db/schema/000001_placeholder.sql"},
-	} {
+	}
+	// Rule-center preset adds additional schema and query files.
+	if preset == "rule-center" {
+		extras = append(extras,
+			struct{ asset, path string }{
+				asset: "kitex/schema/000002_rate_limit_rules.sql",
+				path:  "internal/db/schema/000002_rate_limit_rules.sql",
+			},
+		)
+	}
+	for _, extra := range extras {
 		b, err := fs.ReadFile(srcFS, extra.asset)
 		if err != nil {
 			return fmt.Errorf("scaffold: read embedded %s: %w", extra.asset, err)
@@ -162,6 +173,20 @@ func writeKitexTemplate(dir string) error {
 		}
 		if err := os.WriteFile(full, b, 0o644); err != nil {
 			return fmt.Errorf("scaffold: write %s: %w", full, err)
+		}
+	}
+	// Write preset-specific layout.yaml if specified.
+	if preset == "rule-center" {
+		layoutDir := filepath.Join(dir, "template")
+		if err := os.MkdirAll(layoutDir, 0o755); err != nil {
+			return fmt.Errorf("scaffold: mkdir %s: %w", layoutDir, err)
+		}
+		b, err := fs.ReadFile(srcFS, "kitex/layout-rulecenter.yaml")
+		if err != nil {
+			return fmt.Errorf("scaffold: read embedded kitex/layout-rulecenter.yaml: %w", err)
+		}
+		if err := os.WriteFile(filepath.Join(layoutDir, "layout.yaml"), b, 0o644); err != nil {
+			return fmt.Errorf("scaffold: write layout.yaml: %w", err)
 		}
 	}
 	return nil

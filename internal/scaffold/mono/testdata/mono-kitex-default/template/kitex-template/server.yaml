@@ -76,6 +76,10 @@ body: |-
               // ncgo:wire:canary:server-traffic
               interceptor.AccessLog(),
               interceptor.Recovery(),
+              // Optional rate-limit wiring (after `ncgo add infra rate-limit`):
+              // import "{{.Module}}/internal/base/middleware"
+              // middleware.RateLimit(cfg.RateLimit),
+              // ncgo:wire:ratelimit:server-middleware
               interceptor.CallerAllowlist(
                   cfg.Auth.CallerAllowlist.Enabled,
                   cfg.Auth.CallerAllowlist.Header,
