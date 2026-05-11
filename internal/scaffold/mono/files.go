@@ -137,6 +137,10 @@ func writeKitexTemplate(dir string, preset string) error {
 			continue
 		}
 		name := e.Name()
+		// Rule-center template files are only copied when preset is "rule-center".
+		if preset != "rule-center" && strings.HasPrefix(name, "ratelimit_") {
+			continue
+		}
 		b, err := fs.ReadFile(srcFS, "kitex/kitex-template/"+name)
 		if err != nil {
 			return fmt.Errorf("scaffold: read embedded kitex/kitex-template/%s: %w", name, err)
