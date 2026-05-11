@@ -1,8 +1,11 @@
 package cli
 
 import (
+	"bufio"
+	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime/debug"
@@ -11,7 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/byx-darwin/ncgo/internal/assets"
-	"github.com/byx-darwin/ncgo/internal/exec"
+	goexec "github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scaffold/micro"
 	"github.com/byx-darwin/ncgo/internal/scaffold/mono"
@@ -186,6 +189,9 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 	default:
 		return fmt.Errorf("--db %q is invalid (postgres|none)", opts.db)
 	}
+	if err := preflightTools(cmd.Context(), opts.kind, opts.noGenerate, cmd.OutOrStdout(), cmd.InOrStdin()); err != nil {
+		return err
+	}
 	dir := opts.dir
 	if dir == "" {
 		dir = filepath.Join(".", name)
@@ -203,10 +209,10 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 		NoGenerate:    opts.noGenerate,
 	})
 	if err != nil {
-		var nf *exec.NotFoundError
+		var nf *goexec.NotFoundError
 		if errors.As(err, &nf) {
 			fmt.Fprintf(cmd.ErrOrStderr(), "scaffold prepared at %s but %s is not on PATH.\n", dirOrEmpty(res), nf.Name)
-			fmt.Fprintf(cmd.ErrOrStderr(), "install: %s\n", exec.InstallHint(nf.Name))
+			fmt.Fprintf(cmd.ErrOrStderr(), "install: %s\n", goexec.InstallHint(nf.Name))
 			fmt.Fprintln(cmd.ErrOrStderr(), "or rerun with --no-generate to skip the generator step.")
 		}
 		return err
@@ -264,4 +270,92 @@ func dirOrEmpty(r *mono.Result) string {
 		return ""
 	}
 	return r.Dir
+}
+
+// toolPreflight describes a missing generator tool.
+type toolPreflight struct {
+	name       string
+	minVersion string
+	installCmd string
+}
+
+// preflightTools checks whether the required generator tools are on PATH.
+// If any are missing, it lists them and asks the user for confirmation to
+// auto-install. Returns nil when all tools are present (or user confirmed
+// and installation succeeded). Returns an error when the user declines or
+// installation fails.
+func preflightTools(ctx context.Context, kind string, noGenerate bool, w io.Writer, r io.Reader) error {
+	if noGenerate {
+		return nil
+	}
+	return preflightToolsWith(ctx, requiredTools(kind), w, r, goexec.Install)
+}
+
+// preflightToolsWith is the testable core of preflightTools that accepts
+// an injectable install function.
+func preflightToolsWith(ctx context.Context, missing []toolPreflight, w io.Writer, r io.Reader, install func(context.Context, string) error) error {
+	if len(missing) == 0 {
+		return nil
+	}
+
+	fmt.Fprintln(w, "The following generator tools are required but not found on PATH:")
+	for _, t := range missing {
+		fmt.Fprintf(w, "  • %s (>= %s) — %s\n", t.name, t.minVersion, t.installCmd)
+	}
+	fmt.Fprintln(w)
+	fmt.Fprintf(w, "Auto-install missing tools with 'go install'? [Y/n] ")
+
+	answer := readLine(r)
+	answer = strings.TrimSpace(strings.ToLower(answer))
+	if answer != "" && answer != "y" && answer != "yes" {
+		fmt.Fprintln(w, "Aborted. Please install the tools manually and rerun.")
+		return fmt.Errorf("user declined to install tools")
+	}
+
+	for _, t := range missing {
+		fmt.Fprintf(w, "Installing %s...\n", t.name)
+		if err := install(ctx, t.name); err != nil {
+			fmt.Fprintf(w, "Failed to install %s: %v\n", t.name, err)
+			fmt.Fprintf(w, "Please install manually: %s\n", t.installCmd)
+			return fmt.Errorf("install %s: %w", t.name, err)
+		}
+		fmt.Fprintf(w, "Successfully installed %s\n", t.name)
+	}
+
+	return nil
+}
+
+// requiredTools returns the list of missing generator tools for the given kind.
+func requiredTools(kind string) []toolPreflight {
+	var need []toolPreflight
+
+	switch kind {
+	case manifest.KindHertz, "":
+		if _, err := goexec.LookPath("hz"); err != nil {
+			need = append(need, toolPreflight{
+				name:       "hz",
+				minVersion: goexec.MinHzVersion,
+				installCmd: "go install " + goexec.InstallHint("hz"),
+			})
+		}
+	case manifest.KindKitex:
+		if _, err := goexec.LookPath("kitex"); err != nil {
+			need = append(need, toolPreflight{
+				name:       "kitex",
+				minVersion: goexec.MinKitexVersion,
+				installCmd: "go install " + goexec.InstallHint("kitex"),
+			})
+		}
+	}
+
+	return need
+}
+
+// readLine reads a single line from r, stripping the trailing newline.
+func readLine(r io.Reader) string {
+	scanner := bufio.NewScanner(r)
+	if scanner.Scan() {
+		return scanner.Text()
+	}
+	return ""
 }

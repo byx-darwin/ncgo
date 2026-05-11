@@ -1,6 +1,14 @@
 package cli
 
-import "testing"
+import (
+	"context"
+	"fmt"
+	"strings"
+	"testing"
+
+	goexec "github.com/byx-darwin/ncgo/internal/exec"
+	"github.com/byx-darwin/ncgo/internal/manifest"
+)
 
 func TestRootCmdIncludesProtolintCommand(t *testing.T) {
 	cmd, _, err := newRootCmd().Find([]string{"protolint"})
@@ -59,5 +67,94 @@ func TestResolveBuildInfoKeepsInjectedValues(t *testing.T) {
 	})
 	if buildVersion != "release-build" || buildTime != "2026-05-06T13:00:00Z" {
 		t.Fatalf("resolveBuildInfo kept = (%q, %q)", buildVersion, buildTime)
+	}
+}
+
+func TestPreflightSkippedWhenNoGenerate(t *testing.T) {
+	var out strings.Builder
+	err := preflightTools(context.Background(), manifest.KindHertz, true, &out, strings.NewReader("n"))
+	if err != nil {
+		t.Fatalf("preflightTools with noGenerate=true: %v", err)
+	}
+	if out.Len() > 0 {
+		t.Fatalf("expected no output with noGenerate=true, got: %s", out.String())
+	}
+}
+
+func TestPreflightUserDeclineReturnsError(t *testing.T) {
+	var out strings.Builder
+	missing := []toolPreflight{
+		{name: "hz", minVersion: goexec.MinHzVersion, installCmd: "go install " + goexec.InstallHint("hz")},
+	}
+	err := preflightToolsWith(context.Background(), missing, &out, strings.NewReader("n"), func(ctx context.Context, name string) error { return nil })
+	if err == nil {
+		t.Fatal("expected error when user declines")
+	}
+	if !strings.Contains(out.String(), "Aborted") {
+		t.Errorf("output should mention 'Aborted': %s", out.String())
+	}
+}
+
+func TestPreflightInstallFailureReturnsError(t *testing.T) {
+	var out strings.Builder
+	missing := []toolPreflight{
+		{name: "hz", minVersion: "v0.0.0", installCmd: "go install github.com/cloudwego/hertz/cmd/hz@latest"},
+	}
+	fakeErr := fmt.Errorf("network error")
+	fakeInstall := func(ctx context.Context, name string) error {
+		return fakeErr
+	}
+	err := preflightToolsWith(context.Background(), missing, &out, strings.NewReader("y"), fakeInstall)
+	if err == nil {
+		t.Fatal("expected error on install failure")
+	}
+	if !strings.Contains(err.Error(), "install hz") {
+		t.Errorf("error = %q, should mention 'install hz'", err.Error())
+	}
+	if !strings.Contains(out.String(), "Failed to install") {
+		t.Errorf("output should mention 'Failed to install': %s", out.String())
+	}
+	if !strings.Contains(out.String(), "go install github.com/cloudwego/hertz/cmd/hz@latest") {
+		t.Errorf("output should show manual install hint: %s", out.String())
+	}
+}
+
+func TestRequiredToolsReturnsMissingForHertzKind(t *testing.T) {
+	need := requiredTools(manifest.KindHertz)
+	if len(need) > 1 {
+		t.Fatalf("expected at most 1 missing tool for hertz, got %d", len(need))
+	}
+	if len(need) == 1 && need[0].name != "hz" {
+		t.Fatalf("expected missing tool to be hz, got %s", need[0].name)
+	}
+}
+
+func TestRequiredToolsReturnsMissingForKitexKind(t *testing.T) {
+	need := requiredTools(manifest.KindKitex)
+	if len(need) > 1 {
+		t.Fatalf("expected at most 1 missing tool for kitex, got %d", len(need))
+	}
+	if len(need) == 1 && need[0].name != "kitex" {
+		t.Fatalf("expected missing tool to be kitex, got %s", need[0].name)
+	}
+}
+
+func TestRequiredToolsEmptyKindDefaultsToHertz(t *testing.T) {
+	need := requiredTools("")
+	if len(need) > 1 {
+		t.Fatalf("expected at most 1 missing tool for empty kind, got %d", len(need))
+	}
+	if len(need) == 1 && need[0].name != "hz" {
+		t.Fatalf("expected missing tool to be hz for empty kind, got %s", need[0].name)
+	}
+}
+
+func TestRequiredToolsUsesInstallHint(t *testing.T) {
+	need := requiredTools(manifest.KindHertz)
+	if len(need) != 1 {
+		t.Skip("hz must be installed for this assertion")
+	}
+	if !strings.Contains(need[0].installCmd, goexec.InstallHint("hz")) {
+		t.Errorf("installCmd %q should contain InstallHint(%q)", need[0].installCmd, "hz")
 	}
 }
