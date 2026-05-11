@@ -55,7 +55,11 @@ func Install(ctx context.Context, name string) error {
 	cmd := osexec.CommandContext(ctx, "go", "install", path)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		return fmt.Errorf("exec: install %s: %w: %s", name, err, bytes.TrimSpace(out))
+		msg := bytes.TrimSpace(out)
+		if len(msg) > 0 {
+			return fmt.Errorf("exec: install %s: %w: %s", name, err, msg)
+		}
+		return fmt.Errorf("exec: install %s: %w", name, err)
 	}
 	return nil
 }

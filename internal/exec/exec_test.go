@@ -83,6 +83,22 @@ func TestInstallUnknownToolReturnsError(t *testing.T) {
 	}
 }
 
+func TestInstallErrorFormatTrailingColon(t *testing.T) {
+	// Install with a deliberately invalid module path.
+	// This will fail, and we verify the error message shape.
+	err := Install(context.Background(), "hz")
+	if err == nil {
+		// If hz was already installed and go install succeeds, skip.
+		t.Skip("hz installed successfully; cannot test failure format")
+	}
+	if strings.HasSuffix(err.Error(), ": ") {
+		t.Errorf("error has trailing ': ': %q", err.Error())
+	}
+	if !strings.Contains(err.Error(), "install hz") {
+		t.Errorf("error = %q, should mention 'install hz'", err.Error())
+	}
+}
+
 func TestRunRespectsContextCancel(t *testing.T) {
 	r := NewDefault()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)
