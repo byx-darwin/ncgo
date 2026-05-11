@@ -116,6 +116,7 @@ func projectChecks(ctx context.Context, root string) ([]Check, Scope) {
 		out = append(out, dataJSONCheck(root, m))
 		out = append(out, protoLintChecks(ctx, root, m)...)
 		out = append(out, scanLayers(root, m)...)
+		out = append(out, checkInfraFiles(root, m)...)
 		return out, ScopeService
 	}
 	w, wc := loadWorkspaceCheck(root)
