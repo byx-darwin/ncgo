@@ -291,9 +291,9 @@ func RateLimitMiddleware(cfg conf.RateLimitConfig) endpoint.Middleware {
 
 需确保 `ncgo add rpc rule-center` 生成的 manifest 中 `with_database=true`，且 workspace 级 manifest 或至少一个服务包含 `infra: [redis]`。
 
-### Files Changed
+### 变更文件清单
 
-| File | Change |
+| 文件 | 变更 |
 |------|--------|
 | `internal/assets/_data/kitex/kitex-template/ratelimit.yaml` | 新建：proto 定义 |
 | `internal/assets/_data/kitex/kitex-template/ratelimit_handler.yaml` | 新建：handler 实现 |
@@ -310,21 +310,21 @@ func RateLimitMiddleware(cfg conf.RateLimitConfig) endpoint.Middleware {
 | `internal/scaffold/shared/container.go` | 可能需要微调 vegeta 对 workspace 的支持 |
 | `internal/scaffold/mono/testdata/` | 更新 golden 快照 |
 
-### Error Handling
+### 错误处理
 
 - PostgreSQL 连接失败：提示检查 `docker compose up -d`
 - `rate_limit_rules` 表不存在：提示先运行 `make sqlc`
 - gRPC 规则中心未启动：seed 命令不依赖 gRPC 服务（直接写库），run 命令的 grpcurl 会报错并提示
 - grpcurl 不可用：提示安装或改用 docker compose 内置方式
 
-### Testing
+### 测试
 
-- **单元测试:** handler CRUD 逻辑（mock repository），限流中间件（mock resolver）
-- **Golden 测试:** `go test ./internal/scaffold/mono/... -update-golden`
-- **冒烟测试:** `./scripts/smoke.sh`
-- **E2E 验证:** grpcurl 调用 rule-center 验证规则返回
+- **单元测试：** handler CRUD 逻辑（mock repository），限流中间件（mock resolver）
+- **Golden 测试：** `go test ./internal/scaffold/mono/... -update-golden`
+- **冒烟测试：** `./scripts/smoke.sh`
+- **E2E 验证：** grpcurl 调用 rule-center 验证规则返回
 
-### Out of Scope
+### 不在本次范围内
 
 - 规则中心主动推送（pull 模型已满足需求）
 - 多实例规则中心高可用
