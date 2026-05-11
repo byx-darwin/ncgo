@@ -23,10 +23,17 @@ func TestBuildSeedSQLBasic(t *testing.T) {
 		t.Errorf("expected healthz rule, got:\n%s", sql)
 	}
 
-	// Should have exactly 2 INSERT value rows
+	// Should have exactly 3 INSERT value rows (pre_auth x2 + grpc x1)
 	rows := strings.Count(sql, "fixed_window")
-	if rows != 2 {
-		t.Errorf("expected 2 INSERT rows, found %d", rows)
+	if rows != 3 {
+		t.Errorf("expected 3 INSERT rows, found %d", rows)
+	}
+}
+
+func TestBuildSeedSQLContainsGRPCRule(t *testing.T) {
+	sql := buildSeedSQL("my-service", 10, 60)
+	if !strings.Contains(sql, "'my-service', 'grpc', '*', 'exact', '*', '*'") {
+		t.Errorf("expected grpc rule for my-service, got:\n%s", sql)
 	}
 }
 
