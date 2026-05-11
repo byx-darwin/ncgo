@@ -1263,3 +1263,143 @@ func mcpPlanContains(plan []any, kind, action string) bool {
 func contains(xs []string, want string) bool {
 	return slices.Contains(xs, want)
 }
+
+func TestServeToolCallNew(t *testing.T) {
+	dir := t.TempDir()
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_new", "arguments": map[string]any{"name": "demo", "module": "github.com/x/demo", "dir": dir, "noGenerate": true}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("new returned error: %s", resultText(result))
+	}
+	if result["mode"].(string) != manifest.ModeMono {
+		t.Fatalf("mode = %q, want %q", result["mode"], manifest.ModeMono)
+	}
+	if result["ranGenerate"].(bool) {
+		t.Fatalf("ranGenerate = true, want false (noGenerate set)")
+	}
+	content := resultText(result)
+	if !strings.Contains(content, "scaffolded") {
+		t.Fatalf("content missing 'scaffolded': %s", content)
+	}
+	if !strings.Contains(content, "next steps") {
+		t.Fatalf("content missing 'next steps': %s", content)
+	}
+}
+
+func TestServeToolCallNewMicro(t *testing.T) {
+	dir := t.TempDir()
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_new", "arguments": map[string]any{"name": "commerce", "module": "github.com/x/commerce", "mode": "micro", "dir": dir}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("new micro returned error: %s", resultText(result))
+	}
+	if result["mode"].(string) != manifest.ModeMicro {
+		t.Fatalf("mode = %q, want %q", result["mode"], manifest.ModeMicro)
+	}
+}
+
+func TestServeToolCallNewMissingModule(t *testing.T) {
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_new", "arguments": map[string]any{"name": "demo"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatalf("expected error for missing module")
+	}
+	if !strings.Contains(resultText(result), "module is required") {
+		t.Fatalf("content = %q, want 'module is required'", resultText(result))
+	}
+}
+
+func TestServeToolCallAddDomain(t *testing.T) {
+	root := seedMCPProject(t, manifest.KindHertz)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_add_domain", "arguments": map[string]any{"name": "device", "root": root}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("add domain returned error: %s", resultText(result))
+	}
+	if result["dryRun"].(bool) {
+		t.Fatalf("dryRun = true, want false")
+	}
+	if !result["updated"].(bool) {
+		t.Fatalf("updated = false, want true")
+	}
+	if got := len(result["writtenPaths"].([]any)); got != 3 {
+		t.Fatalf("writtenPaths len = %d, want 3", got)
+	}
+	content := resultText(result)
+	for _, want := range []string{"wrote ", "internal/usecase/device", "internal/repository/device", "internal/base/data/device_register"} {
+		if !strings.Contains(content, want) {
+			t.Fatalf("content missing %q:\n%s", want, content)
+		}
+	}
+}
+
+func TestServeToolCallAddDomainDryRun(t *testing.T) {
+	root := seedMCPProject(t, manifest.KindHertz)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_add_domain", "arguments": map[string]any{"name": "device", "root": root, "dryRun": true}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("add domain dryRun returned error: %s", resultText(result))
+	}
+	if !result["dryRun"].(bool) {
+		t.Fatalf("dryRun = false, want true")
+	}
+	content := resultText(result)
+	if !strings.Contains(content, "would write") {
+		t.Fatalf("content missing 'would write': %s", content)
+	}
+}

@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	"github.com/byx-darwin/ncgo/internal/ai"
+	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scaffold/infra"
 	"github.com/byx-darwin/ncgo/internal/scaffold/method"
 )
@@ -19,6 +20,8 @@ func (s *Server) tools() []tool {
 	return []tool{
 		{Name: "ncgo_version", Description: "Return ncgo, build, and embedded assets versions.", InputSchema: schemaObject(nil)},
 		{Name: "ncgo_doctor", Description: "Run ncgo doctor and return the structured report.", InputSchema: schemaObject(nil, rootField("Project root; empty skips project checks."), outputTextJSONSARIFField())},
+		{Name: "ncgo_new", Description: "Scaffold a new ncgo service or micro workspace.", InputSchema: schemaObject([]string{"name", "module"}, stringField("name", "Service name, e.g. \"user-api\""), stringField("module", "Go module path, e.g. \"github.com/acme/user-api\""), stringField("dir", "Target directory, default ./<name>"), enumField("mode", []string{manifest.ModeMono, manifest.ModeMicro}), enumField("kind", []string{manifest.KindHertz, manifest.KindKitex}), enumField("db", []string{"postgres", "none"}), stringArrayField("infra", "Infra add-ons (currently: redis)"), boolField("noGenerate", "Skip generator invocation"), outputTextJSONField())},
+		{Name: "ncgo_add_domain", Description: "Add a domain usecase/repository to an ncgo project.", InputSchema: schemaObject([]string{"name", "root"}, rootField("Project root containing .ncgo/manifest.yaml"), stringField("name", "Domain name, e.g. \"device\""), boolField("force", "Overwrite existing generated files"), boolField("dryRun", "Preview intended writes without modifying files"), outputTextJSONField())},
 		{Name: "ncgo_ai_init_claude", Description: "Bootstrap the hand-authored .claude starter set for a repository.", InputSchema: schemaObject([]string{"root"}, rootField("Repository root where .claude/ should be bootstrapped"), enumField("preset", []string{ai.InitPresetMinimal, ai.InitPresetTeam}), boolField("force", "Overwrite existing starter files"), boolField("dryRun", "Report without writing"), outputTextJSONField())},
 		{Name: "ncgo_ai_sync", Description: "Render AI context files for an ncgo service or micro workspace.", InputSchema: schemaObject([]string{"root"}, rootField("Service root with .ncgo/manifest.yaml or micro workspace root with ncgo.workspace"), enumField("lang", []string{ai.LangEN, ai.LangZhCN}), boolField("force", "Overwrite unmanaged files"), boolField("dryRun", "Report without writing"), outputTextJSONField())},
 		{Name: "ncgo_i18n_report", Description: "Read the generated i18n report for a project and return structured payload for agents.", InputSchema: schemaObject([]string{"root"}, rootField("Project root"), outputTextJSONField())},
@@ -37,6 +40,10 @@ func (s *Server) callTool(ctx context.Context, raw json.RawMessage) (map[string]
 	switch p.Name {
 	case "ncgo_version":
 		return textResult(versionText(s.NCGOVersion, s.AssetsVersion, s.BuildVersion, s.BuildTime), false), nil
+	case "ncgo_new":
+		return callNew(ctx, p.Arguments, s.NCGOVersion, s.AssetsVersion)
+	case "ncgo_add_domain":
+		return callAddDomain(p.Arguments)
 	case "ncgo_doctor":
 		return s.callDoctor(ctx, p.Arguments)
 	case "ncgo_ai_init_claude":
