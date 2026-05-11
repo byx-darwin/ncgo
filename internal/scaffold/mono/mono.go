@@ -95,6 +95,11 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if err := shared.WriteServiceContainerFiles(dir, defaultKind(opts.Kind)); err != nil {
 		return nil, err
 	}
+	if defaultKind(opts.Kind) == manifest.KindHertz && opts.WithDatabase {
+		if err := shared.WriteVegetaDockerfile(dir); err != nil {
+			return nil, err
+		}
+	}
 	if err := shared.WriteServiceDockerConfig(dir, m); err != nil {
 		return nil, err
 	}

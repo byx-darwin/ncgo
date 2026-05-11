@@ -52,6 +52,7 @@ type composeFeatures struct {
 	etcd     bool
 	nacos    bool
 	polaris  bool
+	vegeta   bool
 }
 
 // WriteServiceContainerFiles writes a generic multi-stage Dockerfile and
@@ -263,6 +264,9 @@ func renderComposeProject(projectName string, apps []composeApp) (string, error)
 	if features.polaris {
 		renderPolarisCompose(&b)
 	}
+	if features.vegeta {
+		renderVegetaCompose(&b)
+	}
 	volumes := composeVolumeNames(features)
 	if len(volumes) > 0 {
 		b.WriteString("volumes:\n")
@@ -414,6 +418,31 @@ func renderPolarisCompose(b *strings.Builder) {
 	b.WriteString("      - \"15010:15010\"\n")
 }
 
+func renderVegetaCompose(b *strings.Builder) {
+	b.WriteString("  vegeta:\n")
+	b.WriteString("    build:\n")
+	b.WriteString("      context: .\n")
+	b.WriteString("      dockerfile: Dockerfile.vegeta\n")
+	b.WriteString("    entrypoint: [\"/bin/sh\"]\n")
+}
+
+// WriteVegetaDockerfile writes a Dockerfile.vegeta template for building the
+// vegeta load testing tool. It is only called for Hertz services that have
+// postgres enabled (rate-limit E2E testing).
+func WriteVegetaDockerfile(dir string) error {
+	const content = `FROM golang:1.22 AS builder
+RUN go install github.com/tsenart/vegeta/v12@latest
+
+FROM alpine:3.20
+COPY --from=builder /go/bin/vegeta /usr/local/bin/vegeta
+ENTRYPOINT ["vegeta"]
+`
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile.vegeta"), []byte(content), 0o644); err != nil {
+		return fmt.Errorf("scaffold: write Dockerfile.vegeta: %w", err)
+	}
+	return nil
+}
+
 func renderServiceDockerConfig(m *manifest.Manifest) (string, error) {
 	if m == nil {
 		return "", fmt.Errorf("scaffold: render docker config: nil manifest")
@@ -484,6 +513,10 @@ func composeFeaturesForApp(app composeApp) composeFeatures {
 		features.nacos = true
 		features.polaris = true
 	}
+	// Vegeta is available for Hertz services with postgres (rate-limit E2E testing).
+	if app.Kind == manifest.KindHertz && app.WithDatabase {
+		features.vegeta = true
+	}
 	return features
 }
 
@@ -542,6 +575,7 @@ func (f *composeFeatures) merge(other composeFeatures) {
 	f.etcd = f.etcd || other.etcd
 	f.nacos = f.nacos || other.nacos
 	f.polaris = f.polaris || other.polaris
+	f.vegeta = f.vegeta || other.vegeta
 }
 
 func findWorkspaceForServiceRoot(root string) (string, *manifest.Workspace, string, error) {
