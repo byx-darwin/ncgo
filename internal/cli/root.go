@@ -335,7 +335,7 @@ func requiredTools(kind string) []toolPreflight {
 			need = append(need, toolPreflight{
 				name:       "hz",
 				minVersion: goexec.MinHzVersion,
-				installCmd: "go install " + goexec.InstallHint("hz"),
+				installCmd: goexec.InstallHint("hz"),
 			})
 		}
 	case manifest.KindKitex:
@@ -343,7 +343,7 @@ func requiredTools(kind string) []toolPreflight {
 			need = append(need, toolPreflight{
 				name:       "kitex",
 				minVersion: goexec.MinKitexVersion,
-				installCmd: "go install " + goexec.InstallHint("kitex"),
+				installCmd: goexec.InstallHint("kitex"),
 			})
 		}
 	}

@@ -84,7 +84,7 @@ func TestPreflightSkippedWhenNoGenerate(t *testing.T) {
 func TestPreflightUserDeclineReturnsError(t *testing.T) {
 	var out strings.Builder
 	missing := []toolPreflight{
-		{name: "hz", minVersion: goexec.MinHzVersion, installCmd: "go install " + goexec.InstallHint("hz")},
+		{name: "hz", minVersion: goexec.MinHzVersion, installCmd: goexec.InstallHint("hz")},
 	}
 	err := preflightToolsWith(context.Background(), missing, &out, strings.NewReader("n"), func(ctx context.Context, name string) error { return nil })
 	if err == nil {
@@ -98,7 +98,7 @@ func TestPreflightUserDeclineReturnsError(t *testing.T) {
 func TestPreflightInstallFailureReturnsError(t *testing.T) {
 	var out strings.Builder
 	missing := []toolPreflight{
-		{name: "hz", minVersion: "v0.0.0", installCmd: "go install github.com/cloudwego/hertz/cmd/hz@latest"},
+		{name: "hz", minVersion: "v0.0.0", installCmd: goexec.InstallHint("hz")},
 	}
 	fakeErr := fmt.Errorf("network error")
 	fakeInstall := func(ctx context.Context, name string) error {
@@ -114,7 +114,7 @@ func TestPreflightInstallFailureReturnsError(t *testing.T) {
 	if !strings.Contains(out.String(), "Failed to install") {
 		t.Errorf("output should mention 'Failed to install': %s", out.String())
 	}
-	if !strings.Contains(out.String(), "go install github.com/cloudwego/hertz/cmd/hz@latest") {
+	if !strings.Contains(out.String(), goexec.InstallHint("hz")) {
 		t.Errorf("output should show manual install hint: %s", out.String())
 	}
 }
@@ -154,7 +154,7 @@ func TestRequiredToolsUsesInstallHint(t *testing.T) {
 	if len(need) != 1 {
 		t.Skip("hz must be installed for this assertion")
 	}
-	if !strings.Contains(need[0].installCmd, goexec.InstallHint("hz")) {
-		t.Errorf("installCmd %q should contain InstallHint(%q)", need[0].installCmd, "hz")
+	if need[0].installCmd != goexec.InstallHint("hz") {
+		t.Errorf("installCmd %q should equal InstallHint(%q)", need[0].installCmd, "hz")
 	}
 }
