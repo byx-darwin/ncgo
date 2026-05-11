@@ -4,6 +4,7 @@ templates:
   - kitex-template/ratelimit_proto.yaml
   - kitex-template/ratelimit_handler.yaml
   - kitex-template/ratelimit_middleware.yaml
+  - kitex-template/ratelimit_sqlc_queries.yaml
   - kitex-template/conf.yaml
   - kitex-template/server.yaml
   - kitex-template/main.yaml
