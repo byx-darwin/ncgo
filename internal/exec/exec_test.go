@@ -73,6 +73,16 @@ func TestRunMissingBinary(t *testing.T) {
 	}
 }
 
+func TestInstallUnknownToolReturnsError(t *testing.T) {
+	err := Install(context.Background(), "definitely-not-a-tool")
+	if err == nil {
+		t.Fatalf("expected error for unknown tool")
+	}
+	if !strings.Contains(err.Error(), "no install path") {
+		t.Errorf("error = %q, want 'no install path'", err.Error())
+	}
+}
+
 func TestRunRespectsContextCancel(t *testing.T) {
 	r := NewDefault()
 	ctx, cancel := context.WithTimeout(context.Background(), 100*time.Millisecond)

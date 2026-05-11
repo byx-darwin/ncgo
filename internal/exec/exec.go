@@ -40,6 +40,26 @@ func InstallHint(name string) string {
 	return ""
 }
 
+var installPaths = map[string]string{
+	"hz":    "github.com/cloudwego/hertz/cmd/hz@latest",
+	"kitex": "github.com/cloudwego/kitex/tool/cmd/kitex@latest",
+}
+
+// Install runs `go install <path>@latest` for the named tool. It returns
+// an error with the command output if installation fails.
+func Install(ctx context.Context, name string) error {
+	path := installPaths[name]
+	if path == "" {
+		return fmt.Errorf("exec: no install path known for %q", name)
+	}
+	cmd := osexec.CommandContext(ctx, "go", "install", path)
+	out, err := cmd.CombinedOutput()
+	if err != nil {
+		return fmt.Errorf("exec: install %s: %w: %s", name, err, bytes.TrimSpace(out))
+	}
+	return nil
+}
+
 // Cmd describes a single external command invocation.
 type Cmd struct {
 	Name string   // binary name, looked up on PATH (e.g. "hz", "kitex")
