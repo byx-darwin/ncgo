@@ -7720,7 +7720,7 @@ layouts:
         AND phase = $2
         AND method = $3
         AND match_kind = 'exact'
-        AND path = $4
+        AND (path = $4 OR path = '*')
         AND app_key = $5
       ORDER BY priority DESC, updated_at DESC, id DESC
       LIMIT 1;
@@ -7741,7 +7741,7 @@ layouts:
         AND phase = $2
         AND method = $3
         AND match_kind = 'exact'
-        AND path = $4
+        AND (path = $4 OR path = '*')
         AND app_key IS NULL
       ORDER BY priority DESC, updated_at DESC, id DESC
       LIMIT 1;
@@ -7771,7 +7771,8 @@ layouts:
         AND method = $3
         AND app_key = $5
         AND (
-              (match_kind = 'prefix' AND $4 LIKE path_pattern || '%')
+              path_pattern = '*'
+           OR (match_kind = 'prefix' AND $4 LIKE path_pattern || '%')
            OR (match_kind = 'glob' AND $4 LIKE REPLACE(REPLACE(REPLACE(REPLACE(path_pattern, E'\\', E'\\\\'), '%', E'\\%'), '_', E'\\_'), '*', '%') ESCAPE E'\\')
            OR (match_kind = 'regex' AND $4 ~ path_pattern)
         )
@@ -7811,7 +7812,8 @@ layouts:
         AND method = $3
         AND app_key IS NULL
         AND (
-              (match_kind = 'prefix' AND $4 LIKE path_pattern || '%')
+              path_pattern = '*'
+           OR (match_kind = 'prefix' AND $4 LIKE path_pattern || '%')
            OR (match_kind = 'glob' AND $4 LIKE REPLACE(REPLACE(REPLACE(REPLACE(path_pattern, E'\\', E'\\\\'), '%', E'\\%'), '_', E'\\_'), '*', '%') ESCAPE E'\\')
            OR (match_kind = 'regex' AND $4 ~ path_pattern)
         )

@@ -480,6 +480,30 @@ func renderHertzDockerConfigBlocks(m *manifest.Manifest) []string {
 	if manifestHasInfra(m, infraClickHouse) {
 		blocks = append(blocks, "clickhouse:\n  addr:\n    - clickhouse:9000")
 	}
+	if m.Service.WithDatabase && manifestHasInfra(m, infraRedis) {
+		blocks = append(blocks, fmt.Sprintf(`rate_limit:
+  enabled: true
+  source:
+    type: database
+    cache_ttl_seconds: 60
+    fallback_on_error: true
+  database:
+    query_timeout_milliseconds: 200
+  backend: redis
+  fail_open: false
+  key_prefix: "%s:rate_limit"
+  pre_auth:
+    enabled: true
+    default_rule:
+      enabled: true
+      key_by:
+        - ip
+      strategy: fixed_window
+      window_seconds: 60
+      max_requests: 100
+      client_ttl_seconds: 300
+    rules: []`, m.Service.Name))
+	}
 	return blocks
 }
 

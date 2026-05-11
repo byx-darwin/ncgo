@@ -49,5 +49,10 @@ services:
       - "9000:9000"
       - "9090:9090"
       - "15010:15010"
+  vegeta:
+    build:
+      context: .
+      dockerfile: Dockerfile.vegeta
+    entrypoint: ["/bin/sh"]
 volumes:
   postgres-data:
