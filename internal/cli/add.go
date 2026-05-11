@@ -172,6 +172,7 @@ type addRPCOptions struct {
 	dryRun     bool
 	plan       bool
 	output     string
+	preset     string
 }
 
 func newAddRPCCmd() *cobra.Command {
@@ -195,6 +196,7 @@ func newAddRPCCmd() *cobra.Command {
 	f.BoolVar(&opts.dryRun, "dry-run", false, "Preview intended RPC service writes without modifying files")
 	f.BoolVar(&opts.plan, "plan", false, "Shorthand for --dry-run --output json")
 	f.StringVar(&opts.output, "output", "text", "Output format: text or json")
+	f.StringVar(&opts.preset, "preset", "", "Preset template to use (e.g., rule-center)")
 	return cmd
 }
 
@@ -215,6 +217,7 @@ func runAddRPC(cmd *cobra.Command, name string, opts *addRPCOptions) error {
 		NCGOVersion:   Version,
 		NoGenerate:    opts.noGenerate,
 		DryRun:        opts.dryRun,
+		Preset:        opts.preset,
 	})
 	if err != nil {
 		return err

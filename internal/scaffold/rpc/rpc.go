@@ -31,6 +31,7 @@ type Options struct {
 	NCGOVersion   string      // recorded into the service manifest
 	NoGenerate    bool        // skip kitex invocation
 	DryRun        bool        // report intended service writes without modifying files
+	Preset        string      // preset template name (e.g., "rule-center")
 	Runner        exec.Runner // injected exec; nil means mono default
 	Now           time.Time   // injected clock for tests
 }
