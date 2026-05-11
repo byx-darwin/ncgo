@@ -17,10 +17,14 @@ type RunOptions struct {
 	Rate     int
 	Duration string
 	Paths    []string
+	GRPC     bool // when true, use grpcurl instead of vegeta
 }
 
 // Run executes vegeta attacks against the running service.
 func Run(ctx context.Context, opts RunOptions) error {
+	if opts.GRPC {
+		return runGRPC(ctx, opts)
+	}
 	if opts.Root == "" {
 		opts.Root = "."
 	}
@@ -89,6 +93,19 @@ func runVegetaDocker(ctx context.Context, root, targets string, opts RunOptions)
 		"-duration="+opts.Duration,
 	)
 	cmd.Dir = root
+	cmd.Stdout = os.Stdout
+	cmd.Stderr = os.Stderr
+	return cmd.Run()
+}
+
+func runGRPC(ctx context.Context, opts RunOptions) error {
+	if _, err := exec.LookPath("grpcurl"); err != nil {
+		return fmt.Errorf("grpcurl not found: install it via `go install github.com/fullstorydev/grpcurl/cmd/grpcurl@latest`")
+	}
+	target := fmt.Sprintf("%s:%d", opts.Host, opts.Port)
+	cmd := exec.CommandContext(ctx, "grpcurl", "-plaintext", "-d",
+		`{"service":"test","phase":"grpc","path":"/test"}`,
+		target, "ratelimit.v1.RuleService.GetRule")
 	cmd.Stdout = os.Stdout
 	cmd.Stderr = os.Stderr
 	return cmd.Run()

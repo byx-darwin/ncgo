@@ -51,6 +51,7 @@ func newRateLimitRunCmd() *cobra.Command {
 	var root, host, duration string
 	var port, rate int
 	var paths []string
+	var grpc bool
 	cmd := &cobra.Command{
 		Use:   "run",
 		Short: "Execute vegeta attack against the running service",
@@ -62,6 +63,7 @@ func newRateLimitRunCmd() *cobra.Command {
 				Rate:     rate,
 				Duration: duration,
 				Paths:    paths,
+				GRPC:     grpc,
 			})
 		},
 	}
@@ -71,5 +73,6 @@ func newRateLimitRunCmd() *cobra.Command {
 	cmd.Flags().IntVar(&rate, "rate", 200, "Requests per second")
 	cmd.Flags().StringVar(&duration, "duration", "10s", "Attack duration")
 	cmd.Flags().StringSliceVar(&paths, "paths", nil, "Target paths (default: /healthz, /)")
+	cmd.Flags().BoolVar(&grpc, "grpc", false, "Use grpcurl to verify gRPC rule-center")
 	return cmd
 }
