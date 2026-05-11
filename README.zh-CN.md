@@ -71,8 +71,8 @@ v0.5 MVP 已完成：
 ## 要求
 
 - Go `1.25+`
-- 生成 Hertz 服务时需要 `hz >= v0.9.7`
-- 生成 Kitex 服务时需要 `kitex >= v0.16.1`
+- 生成 Hertz 服务时需要 `hz >= v0.9.7`（缺失时自动安装）
+- 生成 Kitex 服务时需要 `kitex >= v0.16.1`（缺失时自动安装）
 - Hertz 模板中的 `make swagger` 需要本机已安装 `protoc`，并且 `protoc-gen-http-swagger` 位于 `PATH`
 
 如果你暂时只想生成 manifest、IDL 占位和模板输入，可以先使用
@@ -358,7 +358,8 @@ ncgo version
 
 ### 找不到 `hz` 或 `kitex`
 
-先安装缺失的生成器，再重新执行命令：
+`ncgo new` 会自动检测缺失的生成器并提示你安装。在提示时输入 `Y` 即可自动安装，
+或输入 `n` 中止并手动安装：
 
 ```bash
 go install github.com/cloudwego/hertz/cmd/hz@latest

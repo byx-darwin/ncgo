@@ -77,8 +77,8 @@ Deferred optionals remain documented but intentionally not implemented yet:
 ## Requirements
 
 - Go `1.25+`
-- `hz >= v0.9.7` when generating Hertz services
-- `kitex >= v0.16.1` when generating Kitex services
+- `hz >= v0.9.7` when generating Hertz services (auto-installed on demand)
+- `kitex >= v0.16.1` when generating Kitex services (auto-installed on demand)
 - Hertz templates' `make swagger` target requires `protoc` and
   `protoc-gen-http-swagger` on `PATH`
 
@@ -472,7 +472,9 @@ ncgo version
 
 ### `hz` or `kitex` not found on PATH
 
-Install the missing generator and rerun the command:
+`ncgo new` will automatically detect missing generators and offer to
+install them for you. Answer `Y` at the prompt to auto-install, or type
+`n` to abort and install manually:
 
 ```bash
 go install github.com/cloudwego/hertz/cmd/hz@latest
