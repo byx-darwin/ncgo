@@ -65,8 +65,7 @@ func execSQLViaDockerCompose(ctx context.Context, root, dsn, sql string) error {
 		}
 		cmd := exec.CommandContext(ctx, psqlPath, dsn)
 		cmd.Stdin = strings.NewReader(sql)
-		cmd.Stdout = nil
-		cmd.Stderr = nil
+		cmd.Stderr = os.Stderr
 		if err := cmd.Run(); err != nil {
 			return fmt.Errorf("execute SQL via psql: %w", err)
 		}
@@ -88,8 +87,7 @@ func execSQLViaDockerCompose(ctx context.Context, root, dsn, sql string) error {
 	cmd := exec.CommandContext(ctx, dockerPath, "compose", "exec", "-T", "postgres", "psql", "-U", "postgres", "-d", "app")
 	cmd.Dir = composeDir
 	cmd.Stdin = strings.NewReader(sql)
-	cmd.Stdout = nil
-	cmd.Stderr = nil
+	cmd.Stderr = os.Stderr
 	if err := cmd.Run(); err != nil {
 		return fmt.Errorf("execute SQL via docker compose: %w\n\nHint: make sure postgres is running: docker compose up -d", err)
 	}
