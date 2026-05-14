@@ -279,8 +279,8 @@ import (
 	"google.golang.org/protobuf/reflect/protoreflect"
 )
 
-// ParseServiceInfo reads a proto file and extracts ServiceInfo for template rendering.
-func ParseServiceInfo(ctx context.Context, protoPath string, module string) (*ServiceInfo, error) {
+// ParseAllServices reads a proto file and extracts ServiceInfo for each service.
+func ParseAllServices(ctx context.Context, protoPath string, module string) ([]ServiceInfo, error) {
 	abs, err := filepath.Abs(protoPath)
 	if err != nil {
 		return nil, fmt.Errorf("resolve proto path: %w", err)
@@ -302,33 +302,44 @@ func ParseServiceInfo(ctx context.Context, protoPath string, module string) (*Se
 	}
 	fd := files[0]
 
-	if fd.Services().Len() == 0 {
-		return &ServiceInfo{
+	var result []ServiceInfo
+	for i := 0; i < fd.Services().Len(); i++ {
+		sd := fd.Services().Get(i)
+		si := ServiceInfo{
+			ServiceName: string(sd.Name()),
+			ImportPath:  module,
+			PkgRefName:  pkgRefName(module),
+		}
+		for j := 0; j < sd.Methods().Len(); j++ {
+			md := sd.Methods().Get(j)
+			si.Methods = append(si.Methods, MethodInfo{
+				Name: string(md.Name()),
+				Resp: MethodResp{
+					Type: protoTypeToGo(md.Output()),
+				},
+			})
+		}
+		result = append(result, si)
+	}
+
+	if len(result) == 0 {
+		result = append(result, ServiceInfo{
 			ServiceName: defaultServiceName(protoPath),
 			ImportPath:  module,
 			PkgRefName:  pkgRefName(module),
-		}, nil
-	}
-
-	sd := fd.Services().Get(0)
-	si := &ServiceInfo{
-		ServiceName: string(sd.Name()),
-		ImportPath:  module,
-		PkgRefName:  pkgRefName(module),
-	}
-
-	for i := 0; i < sd.Methods().Len(); i++ {
-		md := sd.Methods().Get(i)
-		si.Methods = append(si.Methods, MethodInfo{
-			Name: string(md.Name()),
-			Args: extractArgs(md),
-			Resp: MethodResp{
-				Type: protoTypeToGo(md.Output()),
-			},
 		})
 	}
 
-	return si, nil
+	return result, nil
+}
+
+// ParseServiceInfo returns the first service from ParseAllServices for backward compatibility.
+func ParseServiceInfo(ctx context.Context, protoPath string, module string) (*ServiceInfo, error) {
+	services, err := ParseAllServices(ctx, protoPath, module)
+	if err != nil {
+		return nil, err
+	}
+	return &services[0], nil
 }
 
 func defaultServiceName(protoPath string) string {
@@ -1099,12 +1110,12 @@ import (
 
 // ApplyOptions describes a template apply operation.
 type ApplyOptions struct {
-	Root        string      // project root (after hz new)
-	Module      string      // Go module path
-	ServiceName string      // service name
-	WithDatabase bool       // database enabled flag
-	Infra       []string    // infra add-ons
-	ServiceInfo *ServiceInfo // parsed from proto
+	Root        string         // project root (after hz new)
+	Module      string         // Go module path
+	ServiceName string         // service name
+	WithDatabase bool          // database enabled flag
+	Infra       []string       // infra add-ons
+	Services    []ServiceInfo  // parsed from proto (all services)
 }
 
 // ApplyResult describes what was applied.
@@ -1164,10 +1175,33 @@ func readTemplate(path string) (*TemplateFile, error) {
 }
 
 func applySingle(root string, tpl *TemplateFile, opts ApplyOptions, result *ApplyResult) error {
+	// If loop_service is true, generate one file per proto service.
+	if tpl.LoopService && len(opts.Services) > 0 {
+		for _, si := range opts.Services {
+			if err := applyForService(root, tpl, opts, si, result); err != nil {
+				return err
+			}
+		}
+		return nil
+	}
+
+	// Non-loop templates: render once with the first service (or empty ServiceInfo).
+	var si ServiceInfo
+	if len(opts.Services) > 0 {
+		si = opts.Services[0]
+	}
+	return applyForService(root, tpl, opts, si, result)
+}
+
+func applyForService(root string, tpl *TemplateFile, opts ApplyOptions, si ServiceInfo, result *ApplyResult) error {
+	// Resolve the actual target path — replace template variables in path.
+	targetPath := tpl.Path
+	targetPath = strings.ReplaceAll(targetPath, "{{ToLower .ServiceName}}", strings.ToLower(si.ServiceName))
+
 	rendered, err := Render(tpl.Body, RenderData{
 		Module:       opts.Module,
-		ServiceName:  opts.ServiceName,
-		ServiceInfo:  *opts.ServiceInfo,
+		ServiceName:  si.ServiceName,
+		ServiceInfo:  si,
 		WithDatabase: opts.WithDatabase,
 		Infra:        opts.Infra,
 	})
@@ -1175,7 +1209,7 @@ func applySingle(root string, tpl *TemplateFile, opts ApplyOptions, result *Appl
 		return err
 	}
 
-	targetPath := filepath.Join(root, tpl.Path)
+	targetPath = filepath.Join(root, targetPath)
 	return writeOrSkip(root, targetPath, rendered, tpl.UpdateBehavior.Type, result)
 }
 
@@ -1333,14 +1367,14 @@ Add the apply logic:
 ```go
 // Apply custom Hertz templates if they exist (post-hz overlay)
 if defaultKind(opts.Kind) == manifest.KindHertz {
-    si, _ := template.ParseServiceInfo(ctx, filepath.Join(dir, idl), opts.Module)
-    _, _ = template.Apply(template.ApplyOptions{
+    services, _ := scaffoldtemplate.ParseAllServices(ctx, filepath.Join(dir, idl), opts.Module)
+    _, _ = scaffoldtemplate.Apply(scaffoldtemplate.ApplyOptions{
         Root:         dir,
         Module:       opts.Module,
         ServiceName:  opts.Name,
         WithDatabase: opts.WithDatabase,
         Infra:        opts.Infra,
-        ServiceInfo:  si,
+        Services:     services,
     })
     // Errors from Apply are non-fatal: if no templates exist, it returns empty result.
 }

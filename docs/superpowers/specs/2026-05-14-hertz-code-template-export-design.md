@@ -8,8 +8,11 @@ Hertz 目前只有 `layout.yaml` / `package.yaml`（控制目录和包名），�
 
 ## Goal
 
-1. **`ncgo export templates`** — 从成熟 Hertz 项目提取模板
-2. **Hertz apply** — 新建时自动应用模板（`hz new` 后 overlay）
+**`ncgo export templates`** — 从成熟 Hertz 项目导出代码为 `.yaml` 模板格式
+（格式与 Kitex 模板一致，便于未来统一应用机制）
+
+> Hertz `hz` 工具原生不支持代码模板（只支持 layout/package 自定义），
+> Apply 流程通过 `ncgo new` 中的 `hz new` 后 overlay 实现。
 
 ## Scope
 
@@ -96,31 +99,33 @@ body: |-
 | `internal/router/<svc>/*.go` | cover | true |
 | `internal/pkg/**/*.go` | cover | false |
 
-### 3. Apply Flow
+### 2a. Apply Flow (Hertz post-hz new overlay)
 
-当前流程：
-```
-manifest → IDL → hz new → add infra → done
-```
+Hertz `hz new` 不支持代码模板，Apply 通过在 `hz new` 成功后 overlay 实现：
 
-改造后：
 ```
-manifest → IDL → hz new → apply hertz-templates → add infra → done
+改造前流程: manifest → IDL → hz new → addSelectedInfra → done
+改造后流程: manifest → IDL → hz new → applyTemplates → addSelectedInfra → done
 ```
 
 **应用时机：** 在 `hz new` 成功之后、`addSelectedInfra` 之前。
 
-**应用逻辑：**
+**步骤：**
 
-1. 检查 `template/hertz-template/*.yaml` 是否存在
-2. 遍历每个 yaml：
-   a. 解析 `path`（渲染 template 变量）
-   b. 检查 `update_behavior`：`skip` 时若目标已存在则跳过
-   c. 渲染 `body`（注入 `{{.Module}}`, `{{.ServiceName}}` 等）
-   d. 写入目标文件
-3. 如果 `loop_service: true`，对 proto 中每个 service 渲染一份
+1. 扫描 `template/hertz-template/*.yaml` 模板文件
+2. 解析每个模板的 `path`、`update_behavior`、`loop_service` 字段
+3. 如果 `loop_service: true`，从 proto 解析 service 列表，逐个 service 渲染
+4. 渲染模板 body，替换 `{{.Module}}`、`{{.ServiceName}}` 等变量
+5. 检查 `update_behavior.type`：
+   - `skip`：目标文件已存在则跳过
+   - `cover`：强制覆盖目标文件
+6. 将渲染结果写入目标路径
 
-### 4. Template Variable Substitution
+**与 Kitex 的区别：**
+- Kitex：通过 `kitex -template-dir` 原生消费 YAML 模板
+- Hertz：ncgo 自己消费 YAML 模板，overlay 到 `hz new` 生成的项目上
+
+### 3. Template Variable Substitution
 
 导出时的变量替换策略（Go 源码 → template 变量）：
 
@@ -139,11 +144,8 @@ userapiHandler → {{ToLower .ServiceName}}handler
 
 **ServiceInfo 变量（需要 proto 解析）：**
 
-在 **export** 阶段：从 proto IDL 文件中解析 `service` 定义，提取
+从 proto IDL 文件中解析 `service` 定义，提取
 method name / arg types / return types，构建 `ServiceInfo` 结构体。
-
-在 **apply** 阶段：proto 已被 `hz new` 消费，直接从 manifest 中已有的
-`service` 信息重建 ServiceInfo，用于渲染 `loop_service: true` 的模板。
 
 ```
 {{range .ServiceInfo.Methods}} → 循环 proto 中的 rpc 方法
@@ -152,7 +154,7 @@ method name / arg types / return types，构建 `ServiceInfo` 结构体。
 {{.Resp}} → 返回类型
 ```
 
-### 4a. `loop_service` 路径参数化
+### 3a. `loop_service` 路径参数化
 
 导出时，如果文件路径包含服务名（如 `internal/handler/userapi/handler.go`）：
 
@@ -160,32 +162,31 @@ method name / arg types / return types，构建 `ServiceInfo` 结构体。
 2. 将该段替换为 `{{ToLower .ServiceName}}`
 3. 设置 `loop_service: true`
 
-### 5. Implementation Plan Files
+### 4. Implementation Plan Files
 
 需要新增/修改的文件：
 
 | 文件 | 变更类型 | 说明 |
 |------|----------|------|
 | `internal/cli/export.go` | 新增 | `ncgo export templates` 命令 |
-| `internal/scaffold/template/export.go` | 新增 | 模板提取核心逻辑 |
-| `internal/scaffold/template/render.go` | 新增 | YAML 模板渲染引擎（复用 Kitex 现有引擎） |
+| `internal/scaffold/template/export.go` | 新增 | 模板提取核心逻辑（Hertz + Kitex 共用） |
+| `internal/scaffold/template/render.go` | 新增 | YAML 模板渲染引擎 |
+| `internal/scaffold/template/apply.go` | 新增 | Hertz post-hz new overlay 应用逻辑 |
 | `internal/scaffold/template/export_test.go` | 新增 | 单元测试 |
-| `internal/scaffold/mono/mono.go` | 修改 | Hertz `Generate()` 中添加模板应用步骤 |
-| `internal/scaffold/mono/files.go` | 修改 | 添加 `hertz-template/` 到模板写入逻辑 |
-| `internal/assets/_data/hertz/hertz-template/` | 新增 | 内置默认 Hertz 模板（可选） |
+| `internal/scaffold/mono/mono.go` | 修改 | 在 hz new 成功后调用 applyTemplates |
 
 ## Risks & Mitigations
 
 | 风险 | 缓解 |
 |------|------|
 | 变量替换遗漏（module path 出现在非常规位置） | 用 AST 解析 import + 字符串扫描双保险 |
-| 模板覆盖用户手写代码 | `update_behavior: skip` 保护已存在的文件 |
 | proto 解析失败导致 `loop_service` 无法工作 | 降级为单文件输出，不报错 |
-| Hertz overlay 与 hz 生成的文件冲突 | 按 scope 排除 `internal/pb/`，其余由模板决定最终内容 |
+| Apply 覆盖用户手写代码 | `update_behavior.skip` 对已有文件跳过，`cover` 仅用于明确可覆盖的文件 |
 
 ## Testing
 
 1. **单元测试**：`export_test.go` 验证 Go→YAML 转换正确性
-2. **集成测试**：端到端 export 流程
-3. **Golden 测试**：固定输入项目，验证输出模板快照
-4. **Smoke 测试**：Hertz 循环 `ncgo new` → 开发修改 → `export templates` → `ncgo new`
+2. **单元测试**：`apply_test.go` 验证 overlay 逻辑（skip/cover/loop_service）
+3. **集成测试**：端到端 export 流程
+4. **集成测试**：`ncgo new` → 验证 hz new 后模板正确 overlay
+5. **Golden 测试**：固定输入项目，验证输出模板快照
