@@ -1,0 +1,172 @@
+package template
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func TestHertzRules_Count(t *testing.T) {
+	rules := HertzRules()
+	if len(rules) < 8 {
+		t.Errorf("expected at least 8 hertz rules, got %d", len(rules))
+	}
+}
+
+func TestKitexRules_Count(t *testing.T) {
+	rules := KitexRules()
+	if len(rules) < 10 {
+		t.Errorf("expected at least 10 kitex rules, got %d", len(rules))
+	}
+}
+
+func TestIsExcluded(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"internal/pb/user.pb.go", true},
+		{"kitex_gen/user/service.go", true},
+		{"internal/handler/user/handler.go", false},
+		{"main.go", false},
+	}
+	for _, tt := range tests {
+		if got := isExcluded(tt.path); got != tt.want {
+			t.Errorf("isExcluded(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestGlobMatch(t *testing.T) {
+	tests := []struct {
+		pattern, path string
+		want          bool
+	}{
+		{"main.go", "main.go", true},
+		{"main.go", "main_test.go", false},
+		{"internal/handler/*", "internal/handler/user", true},    // * matches single segment
+		{"internal/handler/*", "internal/handler/user/handler.go", false}, // * doesn't cross segments
+		{"internal/pkg/**/*.go", "internal/pkg/interceptor/auth.go", true},
+		{"internal/pkg/**/*.go", "internal/pkg/rpcerror/error.go", true},
+		{"internal/pkg/**/*.go", "internal/other/file.go", false},
+		{"*.go", "file.go", true},
+		{"*.go", "file.txt", false},
+	}
+	for _, tt := range tests {
+		if got := globMatch(tt.pattern, tt.path); got != tt.want {
+			t.Errorf("globMatch(%q, %q) = %v, want %v", tt.pattern, tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestReplaceServiceName(t *testing.T) {
+	body := `type UserApiImpl struct {}
+func (u *UserApiImpl) Ping() {}`
+	got := replaceServiceName(body, "UserApi")
+	if !strings.Contains(got, "{{.ServiceName}}Impl") {
+		t.Errorf("expected {{.ServiceName}}Impl in:\n%s", got)
+	}
+	if strings.Contains(got, "UserApiImpl") {
+		t.Errorf("should not contain original UserApiImpl in:\n%s", got)
+	}
+}
+
+func TestReplaceServiceName_ImportPath(t *testing.T) {
+	body := `import "github.com/acme/test/internal/handler/userapi"`
+	got := replaceServiceName(body, "UserApi")
+	// The import path substitution for userapi in path segments is handled
+	// by templatePath, not replaceServiceName (which focuses on PascalCase types).
+	// This test just verifies no crash on mixed content.
+	if got == "" {
+		t.Error("expected non-empty output")
+	}
+}
+
+func TestTemplatePath_LoopService(t *testing.T) {
+	got := templatePath("internal/handler/userapi/handler.go", FileRule{LoopService: true}, "userapi")
+	want := "internal/handler/{{ToLower .ServiceName}}/handler.go"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestTemplatePath_NoLoop(t *testing.T) {
+	got := templatePath("main.go", FileRule{LoopService: false}, "userapi")
+	want := "main.go"
+	if got != want {
+		t.Errorf("got %q, want %q", got, want)
+	}
+}
+
+func TestYamlFileName(t *testing.T) {
+	tests := []struct {
+		path, want string
+	}{
+		{"main.go", "main_go.yaml"},
+		{"internal/handler/userapi/handler.go", "internal_handler_userapi_handler_go.yaml"},
+		{"Makefile", "Makefile.yaml"},
+	}
+	for _, tt := range tests {
+		if got := yamlFileName(tt.path); got != tt.want {
+			t.Errorf("yamlFileName(%q) = %q, want %q", tt.path, got, tt.want)
+		}
+	}
+}
+
+func TestServiceNameLower(t *testing.T) {
+	tests := []struct {
+		in, want string
+	}{
+		{"UserApi", "userapi"},
+		{"User-Api", "userapi"},
+		{"UserService", "userservice"},
+	}
+	for _, tt := range tests {
+		if got := serviceNameLower(tt.in); got != tt.want {
+			t.Errorf("serviceNameLower(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
+func TestExport_MinimalHertz(t *testing.T) {
+	dir := t.TempDir()
+
+	mainGo := filepath.Join(dir, "main.go")
+	if err := os.WriteFile(mainGo, []byte(`package main
+
+import "github.com/acme/test/internal/handler/userapi"
+
+func main() {
+	_ = userapi.Ping()
+}
+`), 0644); err != nil {
+		t.Fatal(err)
+	}
+
+	result, err := Export(ExportOptions{
+		Root:        dir,
+		Kind:        "hertz",
+		Module:      "github.com/acme/test",
+		ServiceName: "UserApi",
+	})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if result.OutputDir != "template/hertz-template" {
+		t.Errorf("got output dir %q, want %q", result.OutputDir, "template/hertz-template")
+	}
+	if len(result.Templates) == 0 {
+		t.Error("expected at least one template")
+	}
+
+	mainTpl := filepath.Join(dir, "template", "hertz-template", "main_go.yaml")
+	if _, err := os.Stat(mainTpl); err != nil {
+		t.Errorf("expected main template at %s: %v", mainTpl, err)
+		return
+	}
+	content, _ := os.ReadFile(mainTpl)
+	if !strings.Contains(string(content), "{{.Module}}") {
+		t.Errorf("expected {{.Module}} in main template:\n%s", string(content))
+	}
+}
