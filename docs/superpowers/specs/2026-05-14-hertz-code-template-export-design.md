@@ -28,19 +28,16 @@ Hertz 目前只有 `layout.yaml` / `package.yaml`（控制目录和包名），
 - `internal/handler/<service>/*.go`（按 service 循环）
 - `internal/usecase/<service>/*.go`（按 service 循环）
 - `internal/repository/<service>/*.go`（按 service 循环）
+- `internal/router/<service>/*.go`（按 service 循环）
 - `internal/pkg/interceptor/*.go`
 - `internal/pkg/rpcerror/*.go`
 - `internal/pkg/i18n/*.go`
 - `internal/base/logging/*.go`（如果已添加 logging infra）
 - `Makefile`
 
-**排除（hz 生成的文件，由 proto 驱动自动刷新）：**
+**排除（仅 protobuf 生成的 Go 代码）：**
 
-- `internal/pb/`（protobuf Go 代码）
-- `internal/router/`（hz 生成的路由注册）
-- `internal/base/logging/`（由 `ncgo add infra logging` 添加）
-- `internal/pkg/release/canary.go`（由 `ncgo add infra canary` 添加）
-- 其他 `hz new` / `hz update` 输出的文件（`pb/`, `router/` 等）
+- `internal/pb/`（protobuf Go 代码，由 `hz new` / `hz update` 生成，随 proto 自动刷新）
 
 ## Architecture
 
@@ -101,6 +98,7 @@ body: |-
 | `internal/handler/<svc>/*.go` | skip | true |
 | `internal/usecase/<svc>/*.go` | skip | true |
 | `internal/repository/<svc>/*.go` | skip | true |
+| `internal/router/<svc>/*.go` | cover | true |
 | `internal/pkg/**/*.go` | cover | false |
 
 ### 3. Apply Flow: `ncgo new --kind hertz`
