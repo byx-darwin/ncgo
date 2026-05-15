@@ -34,6 +34,7 @@ import (
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	scaffoldinfra "github.com/byx-darwin/ncgo/internal/scaffold/infra"
 	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
+	scaffoldtemplate "github.com/byx-darwin/ncgo/internal/scaffold/template"
 )
 
 // Options describes a `ncgo new --mode mono` invocation.
@@ -127,6 +128,20 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if _, err := runGenerator(ctx, r, dir, opts, idl); err != nil {
 		return res, err
 	}
+
+	// Apply custom Hertz templates if they exist (post-hz overlay)
+	if defaultKind(opts.Kind) == manifest.KindHertz {
+		services, _ := scaffoldtemplate.ParseAllServices(ctx, filepath.Join(dir, idl), opts.Module)
+		_, _ = scaffoldtemplate.Apply(scaffoldtemplate.ApplyOptions{
+			Root:         dir,
+			Module:       opts.Module,
+			ServiceName:  opts.Name,
+			WithDatabase: opts.WithDatabase,
+			Infra:        opts.Infra,
+			Services:     services,
+		})
+	}
+
 	if err := addSelectedInfra(dir, opts.Infra); err != nil {
 		return res, err
 	}
