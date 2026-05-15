@@ -625,3 +625,24 @@ protolint: ok (files=1 rpcs=4 diagnostics=5 errors=0 warnings=5 rules=3)
 ```
 
 这个示例遵循上面 §0 的通用 MCP contract：`content[0].text` 承载由 `output` 选择的文本格式，`ok` / `summary` / `diagnostics` 作为同级字段保留给 Agent 直接消费。这里 `isError=false`，因为 warning-only 不会阻断运行。
+
+## 6. 从成熟项目导出代码模板
+
+当你的 Hertz 或 Kitex 项目稳定后——中间件、配置结构、分层约定——可以将这些文件导出为可复用的 `.yaml` 模板：
+
+```bash
+# 从 Hertz 项目导出
+ncgo export templates
+
+# 从 Kitex 项目导出（指定 kind）
+ncgo export templates --kind kitex
+```
+
+这会扫描 `internal/` 下的 ncgo 托管 `.go` 文件，将模块路径替换为 `{{.Module}}`，服务名替换为 `{{.ServiceName}}`，并写入 `template/<kind>-template/` 目录。
+
+导出的模板：
+
+- **Kitex**：可直接用于 `kitex -template-dir template/kitex-template`
+- **Hertz**：由 `ncgo new` 在 `hz new` 之后自动作为 overlay 应用
+
+排除路径：`internal/pb/`（hz 生成的 protobuf 代码）和 `kitex_gen/`（kitex 生成的 RPC stub）。

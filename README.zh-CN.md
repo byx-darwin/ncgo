@@ -123,6 +123,7 @@ make dev
 | `ncgo doctor` | 检查宿主机工具、项目元数据与默认 proto 契约问题 |
 | `ncgo upgrade` | 更新 ncgo/assets 元数据 |
 | `ncgo extract domain` | 规划或执行 mono-to-micro 迁移 |
+| `ncgo export templates` | 从已有 ncgo 项目导出代码模板 |
 | `ncgo mcp serve` | 通过 MCP stdio 暴露部分 ncgo 能力 |
 
 ## 典型使用路径

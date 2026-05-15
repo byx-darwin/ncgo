@@ -132,6 +132,7 @@ below.
 | `ncgo doctor` | Diagnose host tools, project metadata, and default proto contract issues |
 | `ncgo upgrade` | Update ncgo/assets metadata |
 | `ncgo extract domain` | Plan or apply mono-to-micro extraction |
+| `ncgo export templates` | Export code templates from an existing ncgo project |
 | `ncgo mcp serve` | Expose selected ncgo operations over MCP stdio |
 
 ## Typical Workflows

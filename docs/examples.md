@@ -692,3 +692,28 @@ This example follows the common MCP contract from §0: `content[0].text` carries
 the output-selected text payload, while `ok`, `summary`, and `diagnostics`
 remain available as sibling fields. `isError` is `false` here because warnings
 never block the run.
+
+## 6. Export code templates from a mature project
+
+Once your Hertz or Kitex project stabilises — middleware, config structs, layer
+conventions — you can export those files as reusable `.yaml` templates:
+
+```bash
+# Export from an existing Hertz project
+ncgo export templates
+
+# Export from a Kitex project (explicit kind)
+ncgo export templates --kind kitex
+```
+
+This scans ncgo-managed `.go` files under `internal/`, replaces module paths
+with `{{.Module}}` and service names with `{{.ServiceName}}`, and writes YAML
+templates to `template/<kind>-template/`.
+
+The exported templates are:
+
+- **Kitex**: directly usable via `kitex -template-dir template/kitex-template`
+- **Hertz**: automatically applied by `ncgo new` as a post-`hz new` overlay
+
+Excluded paths: `internal/pb/` (hz-generated protobuf code) and `kitex_gen/`
+(kitex-generated RPC stubs).
