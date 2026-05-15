@@ -422,7 +422,7 @@ func writeStandaloneDocs(opts Options, res *Result, profile string) error {
 				continue
 			}
 		} else if !errors.Is(err, fs.ErrNotExist) {
-			return fmt.Errorf("ai sync: stat %s: %w", spec.RelPath, err)
+			return fmt.Errorf("ai sync: check %s: %w", spec.RelPath, err)
 		}
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 			return fmt.Errorf("ai sync: mkdir %s: %w", filepath.Dir(full), err)
