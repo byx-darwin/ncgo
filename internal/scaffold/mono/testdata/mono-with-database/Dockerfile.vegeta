@@ -1,5 +1,6 @@
-FROM golang:1.22 AS builder
-RUN go install github.com/tsenart/vegeta/v12@latest
+FROM golang:1.22-alpine AS builder
+ENV GOPROXY=https://goproxy.cn,direct
+RUN CGO_ENABLED=0 go install github.com/tsenart/vegeta/v12@latest
 
 FROM alpine:3.20
 COPY --from=builder /go/bin/vegeta /usr/local/bin/vegeta

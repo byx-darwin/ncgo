@@ -1,6 +1,7 @@
 {
   "*": {
     "GoModule": "github.com/x/demo",
+    "RuleCenterAddr": "",
     "ServiceName": "demo",
     "WithDatabase": true
   }
