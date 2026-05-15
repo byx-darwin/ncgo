@@ -114,6 +114,23 @@ func writeHertzTemplate(dir string, opts Options) error {
 	if err := os.WriteFile(filepath.Join(tplDir, "data.json"), data, 0o644); err != nil {
 		return fmt.Errorf("scaffold: write data.json: %w", err)
 	}
+	// Generate rule center client when address is provided
+	if opts.RuleCenterAddr != "" {
+		b, err := fs.ReadFile(srcFS, "hertz/optional/rule_center_client.go")
+		if err != nil {
+			return fmt.Errorf("scaffold: read embedded hertz/optional/rule_center_client.go: %w", err)
+		}
+		// Render {{.GoModule}} placeholder
+		rendered := strings.ReplaceAll(string(b), "{{.GoModule}}", opts.Module)
+		targetDir := filepath.Join(dir, "internal", "pkg", "middleware")
+		if err := os.MkdirAll(targetDir, 0o755); err != nil {
+			return fmt.Errorf("scaffold: mkdir %s: %w", targetDir, err)
+		}
+		target := filepath.Join(targetDir, "rule_center_client.go")
+		if err := os.WriteFile(target, []byte(rendered), 0o644); err != nil {
+			return fmt.Errorf("scaffold: write rule_center_client.go: %w", err)
+		}
+	}
 	return nil
 }
 
