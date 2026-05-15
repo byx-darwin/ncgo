@@ -138,6 +138,7 @@ type newOptions struct {
 	kind       string
 	db         string
 	infra      []string
+	preset     string
 	idl        string
 	dir        string
 	noGenerate bool
@@ -160,6 +161,7 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&opts.kind, "kind", manifest.KindHertz, "Mono service kind: hertz | kitex")
 	f.StringVar(&opts.db, "db", "none", "Mono database: postgres | none")
 	f.StringSliceVar(&opts.infra, "infra", nil, "Mono infra add-ons to scaffold at creation time (currently: redis)")
+	f.StringVar(&opts.preset, "preset", "", "Mono preset name: rule-center (Kitex with rate-limiting)")
 	f.StringVar(&opts.idl, "idl", "", "Mono IDL path, default idl/app/<name>.proto (hertz) or idl/<service>.proto (kitex)")
 	f.StringVar(&opts.dir, "dir", "", "Target directory, default ./<name>")
 	f.BoolVar(&opts.noGenerate, "no-generate", false, "Mono only: skip the generator invocation; only write manifest + template/ + idl placeholder")
@@ -205,6 +207,7 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 		Dir:           dir,
 		WithDatabase:  opts.db == "postgres",
 		Infra:         opts.infra,
+		Preset:        opts.preset,
 		IDL:           opts.idl,
 		AssetsVersion: assets.Version(),
 		NCGOVersion:   Version,
