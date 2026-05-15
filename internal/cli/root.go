@@ -133,15 +133,16 @@ func nonEmpty(value, fallback string) string {
 }
 
 type newOptions struct {
-	module     string
-	mode       string
-	kind       string
-	db         string
-	infra      []string
-	preset     string
-	idl        string
-	dir        string
-	noGenerate bool
+	module         string
+	mode           string
+	kind           string
+	db             string
+	infra          []string
+	preset         string
+	idl            string
+	dir            string
+	noGenerate     bool
+	ruleCenterAddr string // rule-center gRPC address (e.g., rule-center:8888)
 }
 
 func newNewCmd() *cobra.Command {
@@ -165,6 +166,7 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&opts.idl, "idl", "", "Mono IDL path, default idl/app/<name>.proto (hertz) or idl/<service>.proto (kitex)")
 	f.StringVar(&opts.dir, "dir", "", "Target directory, default ./<name>")
 	f.BoolVar(&opts.noGenerate, "no-generate", false, "Mono only: skip the generator invocation; only write manifest + template/ + idl placeholder")
+	f.StringVar(&opts.ruleCenterAddr, "rule-center-addr", "", "Rule-center gRPC address for rate-limit rule queries (e.g., localhost:8888)")
 	return cmd
 }
 
@@ -201,17 +203,18 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 		dir = filepath.Join(".", name)
 	}
 	res, err := mono.Generate(cmd.Context(), mono.Options{
-		Name:          name,
-		Module:        opts.module,
-		Kind:          opts.kind,
-		Dir:           dir,
-		WithDatabase:  opts.db == "postgres",
-		Infra:         opts.infra,
-		Preset:        opts.preset,
-		IDL:           opts.idl,
-		AssetsVersion: assets.Version(),
-		NCGOVersion:   Version,
-		NoGenerate:    opts.noGenerate,
+		Name:           name,
+		Module:         opts.module,
+		Kind:           opts.kind,
+		Dir:            dir,
+		WithDatabase:   opts.db == "postgres",
+		Infra:          opts.infra,
+		Preset:         opts.preset,
+		IDL:            opts.idl,
+		RuleCenterAddr: opts.ruleCenterAddr,
+		AssetsVersion:  assets.Version(),
+		NCGOVersion:    Version,
+		NoGenerate:     opts.noGenerate,
 	})
 	if err != nil {
 		var nf *goexec.NotFoundError

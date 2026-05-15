@@ -51,7 +51,8 @@ type Options struct {
 	NoGenerate    bool        // when true, skip the generator (hz/kitex) invocation
 	Runner        exec.Runner // injected exec; nil means exec.NewDefault()
 	Now           time.Time   // injected clock for golden tests; zero means time.Now().UTC()
-	Preset        string      // preset name (e.g., "rule-center")
+	Preset         string      // preset name (e.g., "rule-center")
+	RuleCenterAddr string      // rule-center gRPC address; when set, Hertz scaffolds rule_center_client.go
 }
 
 // Result describes what Generate produced.
