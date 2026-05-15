@@ -41,15 +41,17 @@ type newResult struct {
 
 func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersion string) (map[string]any, error) {
 	var args struct {
-		Name       string   `json:"name"`
-		Module     string   `json:"module"`
-		Dir        string   `json:"dir"`
-		Mode       string   `json:"mode"`
-		Kind       string   `json:"kind"`
-		DB         string   `json:"db"`
-		Infra      []string `json:"infra"`
-		NoGenerate bool     `json:"noGenerate"`
-		Output     string   `json:"output"`
+		Name           string   `json:"name"`
+		Module         string   `json:"module"`
+		Dir            string   `json:"dir"`
+		Mode           string   `json:"mode"`
+		Kind           string   `json:"kind"`
+		DB             string   `json:"db"`
+		Infra          []string `json:"infra"`
+		NoGenerate     bool     `json:"noGenerate"`
+		Preset         string   `json:"preset"`
+		RuleCenterAddr string   `json:"ruleCenterAddr"`
+		Output         string   `json:"output"`
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
@@ -76,7 +78,7 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 	}
 	switch args.Mode {
 	case manifest.ModeMono:
-		res, err = runNewMono(ctx, args.Name, args.Module, dir, args.Kind, args.DB, args.Infra, args.NoGenerate, ncgoVersion, assetsVersion)
+		res, err = runNewMono(ctx, args.Name, args.Module, dir, args.Kind, args.DB, args.Infra, args.NoGenerate, args.Preset, args.RuleCenterAddr, ncgoVersion, assetsVersion)
 	case manifest.ModeMicro:
 		res, err = runNewMicro(args.Name, args.Module, dir, ncgoVersion, assetsVersion)
 	default:
@@ -96,7 +98,7 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 	return out, nil
 }
 
-func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra []string, noGenerate bool, ncgoVersion, assetsVersion string) (*newResult, error) {
+func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra []string, noGenerate bool, preset, ruleCenterAddr, ncgoVersion, assetsVersion string) (*newResult, error) {
 	if kind == "" {
 		kind = manifest.KindHertz
 	}
@@ -104,15 +106,17 @@ func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra [
 		db = "none"
 	}
 	res, err := mono.Generate(ctx, mono.Options{
-		Name:          name,
-		Module:        module,
-		Kind:          kind,
-		Dir:           dir,
-		WithDatabase:  db == "postgres",
-		Infra:         infra,
-		AssetsVersion: assetsVersion,
-		NCGOVersion:   ncgoVersion,
-		NoGenerate:    noGenerate,
+		Name:           name,
+		Module:         module,
+		Kind:           kind,
+		Dir:            dir,
+		WithDatabase:   db == "postgres",
+		Infra:          infra,
+		Preset:         preset,
+		RuleCenterAddr: ruleCenterAddr,
+		AssetsVersion:  assetsVersion,
+		NCGOVersion:    ncgoVersion,
+		NoGenerate:     noGenerate,
 	})
 	if err != nil {
 		return nil, err

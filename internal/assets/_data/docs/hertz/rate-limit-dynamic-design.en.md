@@ -287,7 +287,77 @@ The gRPC response must be able to clearly express:
 The gRPC expression layer should also stay as close as possible to the same
 matcher model used by `config / database`.
 
-### 7.1 Recommended gRPC Request/Response Fields
+### 7.2 Rule-Center (`source.type = rule_center`)
+
+`rule_center` is a concrete instantiation of the gRPC rule source, designed for
+multi-service environments where rate-limit rules are managed centrally in a
+standalone Kitex gRPC service rather than per-service.
+
+#### How It Differs from `source.type = grpc`
+
+| Dimension | `grpc` (generic) | `rule_center` (concrete) |
+|---|---|---|
+| Proto contract | Project-defined | ncgo-generated (`ratelimit.v1.RuleService`) |
+| Server side | Project implements | ncgo-generated Kitex scaffold (`--preset rule-center`) |
+| Client file | Project writes | ncgo-generated (`rule_center_client.go`) |
+| Config block | `grpc.target` | `rule_center.address` / `rule_center.query_timeout_milliseconds` |
+| CLI entry | Manual setup | `ncgo new --rule-center-addr` / `ncgo add rule-center` |
+
+Under the hood, `rule_center` uses the same `GRPCClient` interface and flows
+through the same resolver cache layer as the generic `grpc` source.
+
+#### Configuration
+
+```yaml
+rate_limit:
+  enabled: true
+  source:
+    type: rule_center
+    cache_ttl_seconds: 60
+    fallback_on_error: true
+  rule_center:
+    address: "rule-center:8888"
+    query_timeout_milliseconds: 200
+  backend: redis
+```
+
+#### Query Flow (Identical to gRPC Source)
+
+1. Check local memory cache (valid within `cache_ttl_seconds`).
+2. Cache hit → return cached rule.
+3. Cache miss → gRPC `GetRule` to rule-center, write result to cache.
+4. gRPC failure + `fallback_on_error: true` → use stale cached rule.
+5. gRPC failure + no cache → pass or reject based on `fail_open`.
+
+#### CLI Commands
+
+```bash
+# Create the rule-center Kitex service
+ncgo new rule-center --module github.com/acme/rule-center \
+  --kind kitex --db postgres --preset rule-center
+
+# Create a Hertz service wired to the rule-center
+ncgo new user-api --module github.com/acme/user-api \
+  --kind hertz --db postgres --rule-center-addr rule-center:8888
+
+# Add rule-center support to an existing Hertz service
+ncgo add rule-center --root ./user-api --addr rule-center:8888
+```
+
+#### Generated Files
+
+When `--rule-center-addr` is provided, ncgo generates:
+
+- `internal/pkg/middleware/rule_center_client.go` — gRPC client implementing
+  `ratelimit.GRPCClient`, connected to the rule-center address
+- `conf/dev/conf.yaml` — `source.type` set to `rule_center` with the
+  `rule_center` config block populated
+
+The `rule_center_client.go` template is marked optional in the embedded asset
+tree (`internal/assets/_data/hertz/optional/rule_center_client.go`). It uses
+`{{.GoModule}}` placeholders that are rendered at generation time.
+
+### 7.3 Recommended gRPC Request/Response Fields
 
 `GetRuleRequest` should usually include at least:
 

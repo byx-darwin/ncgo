@@ -344,6 +344,7 @@ write. Data clients drop under
 | `hertz/data.json` | Render-time variables for `layout.yaml` (`GoModule`, `ServiceName`, `WithDatabase`) | `hz new --customize_layout_data_path` |
 | `hertz/sqlc.yaml` | Reference sqlc config copied into projects with `--db postgres` | `mono` scaffolder |
 | `hertz/optional/{redis,kafka,es,clickhouse}.go`, `optional/observability_otel.go` | Drop-in Go files for `ncgo add infra <kind>` | `internal/scaffold/infra` |
+| `hertz/optional/rule_center_client.go` | gRPC client for rule-center rate-limit rule queries; generated when `--rule-center-addr` is set | `internal/scaffold/rulecenter`, `mono` |
 
 ## 5. `data.json` Contract
 
@@ -386,6 +387,38 @@ Flag-to-file mapping:
 | `--customize_layout_data_path` | `hertz/data.json` (rendered) | Template variables |
 | `--customize_package` | `hertz/package.yaml` | Per-IDL handler / usecase stubs |
 
+## 3.7 Rule-Center Client
+
+When `ncgo new` is invoked with `--rule-center-addr <address>` on a Hertz
+service, the scaffolder generates a gRPC client that connects to a rule-center
+Kitex service for remote rate-limit rule queries.
+
+- Template source: `internal/assets/_data/hertz/optional/rule_center_client.go`
+- Output path: `internal/pkg/middleware/rule_center_client.go`
+- Interface: implements `ratelimit.GRPCClient` (`ResolveRateLimitRule`)
+- Dependency: `google.golang.org/grpc` + `google.golang.org/grpc/credentials/insecure`
+- Config: sets `rate_limit.source.type = rule_center` and populates the
+  `rule_center` block in `conf/dev/conf.yaml`
+
+The generated client is wired into the resolver at startup via
+`rlOpts.RuleCenter = middleware.NewRuleCenterClient(cfg.RateLimit.RuleCenter.Address)`.
+
+For an existing service, the same client can be added with:
+
+```bash
+ncgo add rule-center --root ./user-api --addr rule-center:8888
+```
+
+The rule-center server side is generated via a separate Kitex scaffold:
+
+```bash
+ncgo new rule-center --module github.com/acme/rule-center \
+  --kind kitex --db postgres --preset rule-center
+```
+
+This produces `idl/rule-center.proto`, handler, usecase, repository, sqlc
+schema, and query files under `internal/assets/_data/kitex/kitex-template/`.
+
 ## 7. Optional Infra
 
 Each `optional/*.go` file is copy material for `infra.Add`. Most are written as-is;
@@ -425,7 +458,7 @@ review-mode rules stay in nc-skills-golang.
 ## 9. References
 
 - `docs/prd.md` §3 (Decisions), §5 (Manifest), §9 (Repository Layout)
-- `docs/hertz/rate-limit-dynamic-design.en.md` — dedicated dynamic rate-limit design
+- `docs/hertz/rate-limit-dynamic-design.en.md` — dedicated dynamic rate-limit design (includes `rule_center` source)
 - `internal/assets/assets.go` — embed wiring
 - `internal/scaffold/mono/files.go` — hertz consumer
 - `internal/scaffold/infra/infra.go` — optional consumer

@@ -266,7 +266,76 @@ gRPC 返回必须能明确表达:
 
 建议 gRPC 的接口表达层也尽量与 `config / database` 使用同一套 matcher 字段。
 
-### 7.1 推荐的 gRPC 请求/响应字段
+### 7.2 规则中心（`source.type = rule_center`）
+
+`rule_center` 是 gRPC 规则源的一种具体实例化方式,面向多服务环境,限流规则由独立的
+Kitex gRPC 服务集中管理,而不是每个服务各自实现。
+
+#### 与 `source.type = grpc` 的区别
+
+| 维度 | `grpc`（通用） | `rule_center`（具体） |
+|---|---|---|
+| Proto 契约 | 项目自定义 | ncgo 自动生成（`ratelimit.v1.RuleService`） |
+| 服务端 | 项目自行实现 | ncgo 自动生成 Kitex 脚手架（`--preset rule-center`） |
+| 客户端文件 | 项目手写 | ncgo 自动生成（`rule_center_client.go`） |
+| 配置块 | `grpc.target` | `rule_center.address` / `rule_center.query_timeout_milliseconds` |
+| CLI 入口 | 手动搭建 | `ncgo new --rule-center-addr` / `ncgo add rule-center` |
+
+底层 `rule_center` 复用同一个 `GRPCClient` 接口,与通用 `grpc` 规则源走同一条
+resolver 缓存链路。
+
+#### 配置
+
+```yaml
+rate_limit:
+  enabled: true
+  source:
+    type: rule_center
+    cache_ttl_seconds: 60
+    fallback_on_error: true
+  rule_center:
+    address: "rule-center:8888"
+    query_timeout_milliseconds: 200
+  backend: redis
+```
+
+#### 查询流程（与 gRPC 规则源一致）
+
+1. 检查本地内存缓存（`cache_ttl_seconds` 内有效）。
+2. 缓存命中 → 返回缓存规则。
+3. 缓存未命中 → 向规则中心发起 gRPC `GetRule`,将结果写入缓存。
+4. gRPC 失败 + `fallback_on_error: true` → 使用旧缓存规则。
+5. gRPC 失败 + 无缓存 → 根据 `fail_open` 决定是否放行。
+
+#### CLI 命令
+
+```bash
+# 创建规则中心 Kitex 服务
+ncgo new rule-center --module github.com/acme/rule-center \
+  --kind kitex --db postgres --preset rule-center
+
+# 创建连接到规则中心的 Hertz 服务
+ncgo new user-api --module github.com/acme/user-api \
+  --kind hertz --db postgres --rule-center-addr rule-center:8888
+
+# 为已有 Hertz 服务添加规则中心支持
+ncgo add rule-center --root ./user-api --addr rule-center:8888
+```
+
+#### 生成的文件
+
+提供 `--rule-center-addr` 时,ncgo 会生成:
+
+- `internal/pkg/middleware/rule_center_client.go` — 实现 `ratelimit.GRPCClient`
+  的 gRPC 客户端,连接到规则中心地址
+- `conf/dev/conf.yaml` — `source.type` 设为 `rule_center`,并填充 `rule_center`
+  配置块
+
+`rule_center_client.go` 模板在嵌入资产树中标记为可选
+（`internal/assets/_data/hertz/optional/rule_center_client.go`）,使用
+`{{.GoModule}}` 占位符在生成时渲染。
+
+### 7.3 推荐的 gRPC 请求/响应字段
 
 `GetRuleRequest` 建议至少包含:
 

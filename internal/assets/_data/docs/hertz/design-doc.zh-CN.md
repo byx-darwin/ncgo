@@ -250,7 +250,40 @@ override，或显式独立接线，才会创建单独连接池。
 - `cmd/server/main.go` 只做 `conf.Init()` + `server.Run()`;Agent 增加
   接线一律落到 `internal/base/server/server.go`。
 
-### 3.6 可选基础设施片段
+### 3.6 规则中心客户端
+
+在 Hertz 服务上执行 `ncgo new` 并传入 `--rule-center-addr <address>` 时,
+脚手架会生成一个 gRPC 客户端,用于连接规则中心 Kitex 服务以查询远程限流规则。
+
+- 模板来源: `internal/assets/_data/hertz/optional/rule_center_client.go`
+- 输出路径: `internal/pkg/middleware/rule_center_client.go`
+- 接口: 实现 `ratelimit.GRPCClient`（`ResolveRateLimitRule`）
+- 依赖: `google.golang.org/grpc` + `google.golang.org/grpc/credentials/insecure`
+- 配置: 设置 `rate_limit.source.type = rule_center` 并在
+  `conf/dev/conf.yaml` 中填充 `rule_center` 配置块
+
+生成的客户端在启动时通过
+`rlOpts.RuleCenter = middleware.NewRuleCenterClient(cfg.RateLimit.RuleCenter.Address)`
+接入 resolver。
+
+对于已有服务,可以使用以下命令添加规则中心客户端:
+
+```bash
+ncgo add rule-center --root ./user-api --addr rule-center:8888
+```
+
+规则中心服务端通过独立的 Kitex 脚手架生成:
+
+```bash
+ncgo new rule-center --module github.com/acme/rule-center \
+  --kind kitex --db postgres --preset rule-center
+```
+
+这会在 `internal/assets/_data/kitex/kitex-template/` 下产出
+`idl/rule-center.proto`、handler、usecase、repository、sqlc schema 和
+query 文件。
+
+### 3.7 可选基础设施片段
 
 `ncgo add infra <kind>` 从
 `internal/assets/_data/hertz/optional/<kind>.go` 或 common
@@ -324,6 +357,7 @@ override，或显式独立接线，才会创建单独连接池。
 | `hertz/data.json` | `layout.yaml` 渲染时变量(`GoModule`、`ServiceName`、`WithDatabase`) | `hz new --customize_layout_data_path` |
 | `hertz/sqlc.yaml` | `--db postgres` 时复制到项目里的 sqlc 配置参考 | `mono` 脚手架 |
 | `hertz/optional/{redis,kafka,es,clickhouse}.go`、`optional/observability_otel.go` | `ncgo add infra <kind>` 的 drop-in 文件 | `internal/scaffold/infra` |
+| `hertz/optional/rule_center_client.go` | `--rule-center-addr` 或 `ncgo add rule-center` 生成的 gRPC 客户端 | `mono` 脚手架 |
 
 ## 5. `data.json` 契约
 
