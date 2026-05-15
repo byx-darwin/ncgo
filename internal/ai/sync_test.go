@@ -94,8 +94,14 @@ func TestSyncWritesAllTargets(t *testing.T) {
 		t.Fatalf("workspace metadata = %+v, want nil for standalone service", res.Workspace)
 	}
 	wantPaths := []string{"AGENTS.md", "CLAUDE.md", ".cursor/rules/ncgo.mdc", ".claude/generated/project-context.md"}
-	if len(res.Written) != len(wantPaths) {
-		t.Fatalf("Written = %v, want %v", res.Written, wantPaths)
+	standalonePaths := []string{
+		"docs/ncgo/hertz/design-doc.en.md",
+		"docs/ncgo/hertz/rate-limit-dynamic-design.en.md",
+		"docs/ncgo/kitex/design-doc.en.md",
+	}
+	allWantPaths := append(wantPaths, standalonePaths...)
+	if len(res.Written) != len(allWantPaths) {
+		t.Fatalf("Written = %v, want %v", res.Written, allWantPaths)
 	}
 	for _, p := range wantPaths {
 		full := filepath.Join(root, p)
@@ -354,8 +360,14 @@ func TestSyncWorkspaceWritesAllTargets(t *testing.T) {
 		t.Fatalf("workspace metadata = %+v, want root metadata with serviceCount=2", res.Workspace)
 	}
 	wantPaths := []string{"AGENTS.md", "CLAUDE.md", ".cursor/rules/ncgo.mdc", ".claude/generated/project-context.md"}
-	if len(res.Written) != len(wantPaths) {
-		t.Fatalf("Written = %v, want %v", res.Written, wantPaths)
+	standalonePaths := []string{
+		"docs/ncgo/micro/design-doc.en.md",
+		"docs/ncgo/hertz/design-doc.en.md",
+		"docs/ncgo/kitex/design-doc.en.md",
+	}
+	allWantPaths := append(wantPaths, standalonePaths...)
+	if len(res.Written) != len(allWantPaths) {
+		t.Fatalf("Written = %v, want %v", res.Written, allWantPaths)
 	}
 	if len(res.Notes) != 2 {
 		t.Fatalf("Notes = %v, want 2 workspace notes", res.Notes)
@@ -455,5 +467,30 @@ func TestSyncWorkspaceFailsWhenListedServiceManifestIsMissing(t *testing.T) {
 	}
 	if !strings.Contains(err.Error(), "load workspace service user-rpc") {
 		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func TestSyncWritesStandaloneDocs(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	_, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	p := filepath.Join(root, "docs", "ncgo", "hertz", "design-doc.en.md")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read %s: %v", p, err)
+	}
+	body := string(b)
+	if !strings.Contains(body, "Hertz Template Design Doc") {
+		t.Errorf("standalone design-doc missing title; got %d bytes", len(body))
+	}
+	if strings.Contains(body, "docs/hertz/") || strings.Contains(body, "../hertz/") {
+		t.Errorf("standalone design-doc still contains original doc links, not rewritten")
+	}
+	kp := filepath.Join(root, "docs", "ncgo", "kitex", "design-doc.en.md")
+	if _, err := os.Stat(kp); os.IsNotExist(err) {
+		t.Errorf("cross-profile kitex/design-doc.en.md not generated for hertz project")
 	}
 }

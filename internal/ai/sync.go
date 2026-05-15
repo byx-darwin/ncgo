@@ -17,6 +17,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
@@ -132,6 +133,10 @@ func Sync(opts Options) (*Result, error) {
 		if err := writeTarget(opts, t, inputs, res); err != nil {
 			return res, err
 		}
+	}
+	profile := resolveProfile(source)
+	if err := writeStandaloneDocs(opts, res, profile); err != nil {
+		return res, err
 	}
 	return res, nil
 }
@@ -387,4 +392,109 @@ func writeTarget(opts Options, t target, inputs renderInputs, res *Result) error
 	}
 	res.Written = append(res.Written, t.RelPath)
 	return nil
+}
+
+// docSpec describes one standalone design-doc file to materialize.
+type docSpec struct {
+	AssetPath string // path inside embedded assets, e.g. "docs/hertz/design-doc.en.md"
+	RelPath   string // relative output path from project root, e.g. "docs/ncgo/hertz/design-doc.en.md"
+}
+
+// writeStandaloneDocs generates standalone design-doc files to docs/ncgo/
+// in the user project, with cross-link rewriting.
+func writeStandaloneDocs(opts Options, res *Result, profile string) error {
+	if opts.DryRun {
+		return nil
+	}
+	for _, spec := range listDocSpecs(profile, opts.Lang) {
+		b, err := fs.ReadFile(assets.FS(), spec.AssetPath)
+		if err != nil {
+			return fmt.Errorf("ai sync: read embedded %s: %w", spec.AssetPath, err)
+		}
+		content := rewriteDocLinks(string(b))
+		full := filepath.Join(opts.Root, spec.RelPath)
+		if existing, err := os.ReadFile(full); err == nil {
+			if !isManaged(existing) && !opts.Force {
+				res.Skipped = append(res.Skipped, Skip{
+					Path:   spec.RelPath,
+					Reason: "exists without ncgo:managed marker; pass --force to overwrite",
+				})
+				continue
+			}
+		} else if !errors.Is(err, fs.ErrNotExist) {
+			return fmt.Errorf("ai sync: stat %s: %w", spec.RelPath, err)
+		}
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return fmt.Errorf("ai sync: mkdir %s: %w", filepath.Dir(full), err)
+		}
+		if err := os.WriteFile(full, []byte(content), 0o644); err != nil {
+			return fmt.Errorf("ai sync: write %s: %w", full, err)
+		}
+		res.Written = append(res.Written, spec.RelPath)
+	}
+	return nil
+}
+
+// listDocSpecs returns the set of docSpec entries to materialize for a given
+// profile and language, including the primary doc and cross-profile docs.
+func listDocSpecs(profile, lang string) []docSpec {
+	specs := []docSpec{
+		{
+			AssetPath: "docs/" + profile + "/design-doc." + lang + ".md",
+			RelPath:   "docs/ncgo/" + profile + "/design-doc." + lang + ".md",
+		},
+	}
+	if profile == manifest.KindHertz {
+		specs = append(specs, docSpec{
+			AssetPath: "docs/hertz/rate-limit-dynamic-design." + lang + ".md",
+			RelPath:   "docs/ncgo/hertz/rate-limit-dynamic-design." + lang + ".md",
+		})
+	}
+	for _, p := range crossProfiles(profile) {
+		specs = append(specs, docSpec{
+			AssetPath: "docs/" + p + "/design-doc." + lang + ".md",
+			RelPath:   "docs/ncgo/" + p + "/design-doc." + lang + ".md",
+		})
+	}
+	return specs
+}
+
+// crossProfiles returns the set of profiles that should get a cross-linked
+// design doc for the given primary profile.
+func crossProfiles(profile string) []string {
+	switch profile {
+	case manifest.KindHertz:
+		return []string{manifest.KindKitex}
+	case manifest.KindKitex:
+		return []string{manifest.KindHertz}
+	case manifest.ModeMicro:
+		return []string{manifest.KindHertz, manifest.KindKitex}
+	default:
+		return nil
+	}
+}
+
+// rewriteDocLinks rewrites absolute and relative doc cross-links so that they
+// point to the same-level sibling directories under docs/ncgo/.
+func rewriteDocLinks(content string) string {
+	for _, origProfile := range []string{"hertz", "kitex", "micro"} {
+		oldAbs := "docs/" + origProfile + "/"
+		newAbs := "./" + origProfile + "/"
+		content = strings.ReplaceAll(content, oldAbs, newAbs)
+
+		oldRel := "../" + origProfile + "/"
+		newRel := "./" + origProfile + "/"
+		content = strings.ReplaceAll(content, oldRel, newRel)
+	}
+	return content
+}
+
+// resolveProfile determines the profile string from the sync source.
+func resolveProfile(source syncSource) string {
+	switch source.Scope {
+	case syncScopeService:
+		return source.Service.Service.Kind
+	default:
+		return manifest.ModeMicro
+	}
 }
