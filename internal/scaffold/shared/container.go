@@ -62,7 +62,7 @@ func WriteServiceContainerFiles(dir, kind string) error {
 	if err != nil {
 		return err
 	}
-	dockerfile := fmt.Sprintf(`FROM golang:1.22 AS builder
+	dockerfile := fmt.Sprintf(`FROM golang:1.22-alpine AS builder
 WORKDIR /src
 
 ENV CGO_ENABLED=0 GOOS=linux
@@ -306,11 +306,12 @@ func renderAppCompose(b *strings.Builder, app composeApp) error {
 
 func renderPostgresCompose(b *strings.Builder) {
 	b.WriteString("  postgres:\n")
-	b.WriteString("    image: postgres:16-alpine\n")
+	b.WriteString("    image: postgres:alpine\n")
 	b.WriteString("    environment:\n")
 	b.WriteString("      POSTGRES_DB: app\n")
 	b.WriteString("      POSTGRES_USER: postgres\n")
 	b.WriteString("      POSTGRES_PASSWORD: postgres\n")
+	b.WriteString("      PGDATA: /var/lib/postgresql/data/pgdata\n")
 	b.WriteString("    ports:\n")
 	b.WriteString("      - \"5432:5432\"\n")
 	b.WriteString("    volumes:\n")
@@ -430,8 +431,9 @@ func renderVegetaCompose(b *strings.Builder) {
 // vegeta load testing tool. It is only called for Hertz services that have
 // postgres enabled (rate-limit E2E testing).
 func WriteVegetaDockerfile(dir string) error {
-	const content = `FROM golang:1.22 AS builder
-RUN go install github.com/tsenart/vegeta/v12@latest
+	const content = `FROM golang:1.22-alpine AS builder
+ENV GOPROXY=https://goproxy.cn,direct
+RUN CGO_ENABLED=0 go install github.com/tsenart/vegeta/v12@latest
 
 FROM alpine:3.20
 COPY --from=builder /go/bin/vegeta /usr/local/bin/vegeta
@@ -488,6 +490,9 @@ func renderHertzDockerConfigBlocks(m *manifest.Manifest) []string {
     cache_ttl_seconds: 60
     fallback_on_error: true
   database:
+    query_timeout_milliseconds: 200
+  rule_center:
+    address: "${RULE_CENTER_ADDR:}"
     query_timeout_milliseconds: 200
   backend: redis
   fail_open: false
