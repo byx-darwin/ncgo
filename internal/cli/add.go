@@ -27,6 +27,7 @@ func newAddCmd() *cobra.Command {
 	cmd.AddCommand(newAddRPCCmd())
 	cmd.AddCommand(newAddBFFCmd())
 	cmd.AddCommand(newAddMethodCmd())
+	cmd.AddCommand(newAddRuleCenterCmd())
 	return cmd
 }
 
