@@ -65,6 +65,13 @@ ncgo mcp serve
   - inputs: `root`, `spec=<domain>.<Method>`, `in=usecase`
   - output: text
   - stable result shape: insertion summary in `content[0].text`
+- `ncgo_add_rule_center`
+  - inputs: `root`, `addr`, optional `force`, `dryRun`, `output=text|json`
+  - stable top-level fields: `dryRun`, `writtenPaths`, `nextSteps`
+- `ncgo_new`
+  - inputs: `name`, `module`, optional `dir`, `mode`, `kind`, `db`,
+    `infra`, `noGenerate`, `preset`, `ruleCenterAddr`, `output=text|json`
+  - stable top-level fields: `dir`, `mode`, `nextSteps`, `ranGenerate`
 
 The workflow sections below reference these contracts instead of restating the
 same transport rules each time.
@@ -421,6 +428,25 @@ stable `root` / `scope` / `summary` / `checks` / `ok` fields.
 Best for: incrementally growing an existing project without regenerating the
 whole service.
 
+### Standalone reference docs
+
+`ncgo ai sync` also generates standalone documentation files under `docs/ncgo/`:
+
+```bash
+# English (default)
+ncgo ai sync --root ./user-api
+
+# Chinese
+ncgo ai sync --root ./user-api --lang zh-CN
+```
+
+This produces:
+- `docs/ncgo/hertz/design-doc.en.md` — Hertz architecture design doc
+- `docs/ncgo/hertz/rate-limit-dynamic-design.en.md` — Dynamic rate-limit design doc
+- `docs/ncgo/kitex/design-doc.en.md` — Kitex counterpart (for cross-references)
+
+Cross-profile links are automatically rewritten to local relative paths.
+
 ## 5. i18n translation workflow in a generated project
 
 Assume you already generated a Hertz service and want to add or refresh
@@ -717,3 +743,94 @@ The exported templates are:
 
 Excluded paths: `internal/pb/` (hz-generated protobuf code) and `kitex_gen/`
 (kitex-generated RPC stubs).
+
+## 7. Rule-center rate-limit integration
+
+When multiple Hertz services need to share rate-limit rules, create a standalone
+Kitex gRPC rule-center service, then wire each Hertz service to query it.
+
+### Step 1: Create the rule-center Kitex service
+
+```bash
+ncgo new rule-center \
+  --module github.com/acme/rule-center \
+  --kind kitex --db postgres --preset rule-center
+cd rule-center
+make sqlc
+go mod tidy
+make dev
+```
+
+The rule-center service includes:
+
+- `idl/rule-center.proto` — `GetRule` RPC for querying rate-limit rules
+- `internal/handler/rulecenter/` — gRPC handler
+- `internal/usecase/rulecenter/` — business logic
+- `internal/repository/rulecenter/` — PostgreSQL data access
+- `schema/` + `query/` — sqlc schema and queries
+
+### Step 2: Create a Hertz service with rule-center enabled
+
+```bash
+ncgo new user-api \
+  --module github.com/acme/user-api \
+  --kind hertz --db postgres \
+  --rule-center-addr rule-center:8888
+cd user-api
+```
+
+When `--rule-center-addr` is provided, ncgo:
+
+- Sets `rate_limit.source.type` to `rule_center` in `conf/dev/conf.yaml`
+- Generates `internal/pkg/middleware/rule_center_client.go`
+- Adds a `rule_center` config block with the specified address
+
+### Step 3: Connect to an existing Hertz service
+
+If you already have a Hertz service and want to add rule-center later:
+
+```bash
+ncgo add rule-center --root ./user-api --addr rule-center:8888
+```
+
+This modifies the existing `conf/dev/conf.yaml` and generates the client file.
+Add `--force` to overwrite an existing client file, or `--dry-run` to preview
+without writing.
+
+### Configuration reference
+
+```yaml
+rate_limit:
+  enabled: true
+  source:
+    type: rule_center              # switch to remote rule-center
+    cache_ttl_seconds: 60          # local cache TTL
+    fallback_on_error: true        # use cached rules on gRPC failure
+  rule_center:                     # rule-center connection settings
+    address: "rule-center:8888"    # gRPC address
+    query_timeout_milliseconds: 200
+  backend: redis                   # rate-limit counters still use Redis
+  fail_open: false
+```
+
+### Query flow
+
+1. Check local memory cache (valid within `cache_ttl_seconds`)
+2. Cache hit → return cached rule
+3. Cache miss → gRPC `GetRule` to rule-center, write result to cache
+4. gRPC failure + `fallback_on_error: true` → use stale cached rule
+5. gRPC failure + no cache → pass or reject based on `fail_open`
+
+### Via MCP
+
+After starting `ncgo mcp serve`, agents can call:
+
+- `ncgo_new` with `preset: "rule-center"` and `kind: "kitex"` to scaffold the
+  rule-center service
+- `ncgo_new` with `ruleCenterAddr: "rule-center:8888"` to create a Hertz
+  service wired to the rule-center
+- `ncgo_add_rule_center` with `addr: "rule-center:8888"` to add rule-center
+  support to an existing Hertz service
+
+Best for: multi-service environments where rate-limit rules should be managed
+centrally and updated without restarting individual services.

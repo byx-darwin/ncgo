@@ -52,6 +52,13 @@ ncgo mcp serve
   - 输入：`root`、`spec=<domain>.<Method>`、`in=usecase`
   - output：text
   - 稳定结果形态：`content[0].text` 中返回插入摘要
+- `ncgo_add_rule_center`
+  - 输入：`root`、`addr`，以及可选的 `force`、`dryRun`、`output=text|json`
+  - 稳定顶层字段：`dryRun`、`writtenPaths`、`nextSteps`
+- `ncgo_new`
+  - 输入：`name`、`module`，以及可选的 `dir`、`mode`、`kind`、`db`、
+    `infra`、`noGenerate`、`preset`、`ruleCenterAddr`、`output=text|json`
+  - 稳定顶层字段：`dir`、`mode`、`nextSteps`、`ranGenerate`
 
 后面的 workflow 会直接引用这份 contract，不再在每个场景里重复解释同一套传输约定。
 
@@ -381,6 +388,25 @@ ncgo ai sync --root . --output json
 
 适合：已经有 ncgo 项目，只想按需逐步增强，而不是重新生成整个服务。
 
+### 独立参考文档
+
+`ncgo ai sync` 同时生成独立文档到 `docs/ncgo/` 目录：
+
+```bash
+# 英文（默认）
+ncgo ai sync --root ./user-api
+
+# 中文
+ncgo ai sync --root ./user-api --lang zh-CN
+```
+
+产出文件：
+- `docs/ncgo/hertz/design-doc.en.md` — Hertz 架构设计文档
+- `docs/ncgo/hertz/rate-limit-dynamic-design.en.md` — 动态限流设计文档
+- `docs/ncgo/kitex/design-doc.en.md` — Kitex 对应文档（用于交叉引用）
+
+跨 profile 的链接会自动改写为本地相对路径。
+
 ## 5. 生成项目中的 i18n 补译工作流
 
 假设你已经生成了一个 Hertz 服务，并希望把新文案补到 `it-IT`。
@@ -646,3 +672,89 @@ ncgo export templates --kind kitex
 - **Hertz**：由 `ncgo new` 在 `hz new` 之后自动作为 overlay 应用
 
 排除路径：`internal/pb/`（hz 生成的 protobuf 代码）和 `kitex_gen/`（kitex 生成的 RPC stub）。
+
+## 7. 规则中心限流集成
+
+当多个 Hertz 服务需要共享限流规则时，可以创建一个独立的 Kitex gRPC
+规则中心服务，然后将每个 Hertz 服务接入查询。
+
+### 第一步：创建 rule-center Kitex 服务
+
+```bash
+ncgo new rule-center \
+  --module github.com/acme/rule-center \
+  --kind kitex --db postgres --preset rule-center
+cd rule-center
+make sqlc
+go mod tidy
+make dev
+```
+
+rule-center 服务包含：
+
+- `idl/rule-center.proto` — `GetRule` RPC，用于查询限流规则
+- `internal/handler/rulecenter/` — gRPC Handler
+- `internal/usecase/rulecenter/` — 业务逻辑
+- `internal/repository/rulecenter/` — PostgreSQL 数据访问
+- `schema/` + `query/` — sqlc schema 和查询
+
+### 第二步：创建启用规则中心的 Hertz 服务
+
+```bash
+ncgo new user-api \
+  --module github.com/acme/user-api \
+  --kind hertz --db postgres \
+  --rule-center-addr rule-center:8888
+cd user-api
+```
+
+当提供了 `--rule-center-addr` 时，ncgo 会：
+
+- 在 `conf/dev/conf.yaml` 中将 `rate_limit.source.type` 设为 `rule_center`
+- 生成 `internal/pkg/middleware/rule_center_client.go`
+- 添加 `rule_center` 配置块，填入指定地址
+
+### 第三步：在已有 Hertz 服务上接入规则中心
+
+如果已经有 Hertz 服务，后续想接入规则中心：
+
+```bash
+ncgo add rule-center --root ./user-api --addr rule-center:8888
+```
+
+这会修改现有的 `conf/dev/conf.yaml` 并生成客户端文件。
+使用 `--force` 可覆盖已存在的客户端文件，使用 `--dry-run` 可预览不写入。
+
+### 配置参考
+
+```yaml
+rate_limit:
+  enabled: true
+  source:
+    type: rule_center              # 切换到远程规则中心
+    cache_ttl_seconds: 60          # 本地缓存 TTL
+    fallback_on_error: true        # gRPC 失败时使用缓存规则
+  rule_center:                     # 规则中心连接配置
+    address: "rule-center:8888"    # gRPC 地址
+    query_timeout_milliseconds: 200
+  backend: redis                   # 限流计数器仍使用 Redis
+  fail_open: false
+```
+
+### 查询流程
+
+1. 检查本地内存缓存（`cache_ttl_seconds` 内有效）
+2. 缓存命中 → 返回缓存规则
+3. 缓存未命中 → gRPC `GetRule` 查询规则中心，结果写入缓存
+4. gRPC 失败 + `fallback_on_error: true` → 使用缓存中的旧规则
+5. gRPC 失败 + 无缓存 → 根据 `fail_open` 决定放行或拒绝
+
+### 通过 MCP 调用
+
+启动 `ncgo mcp serve` 后，Agent 可以调用：
+
+- `ncgo_new` 配合 `preset: "rule-center"` 和 `kind: "kitex"` 创建 rule-center 服务
+- `ncgo_new` 配合 `ruleCenterAddr: "rule-center:8888"` 创建接入规则中心的 Hertz 服务
+- `ncgo_add_rule_center` 配合 `addr: "rule-center:8888"` 为已有 Hertz 服务接入规则中心
+
+适合：多服务环境，需要集中管理限流规则、无需重启各服务即可更新规则的场景。
