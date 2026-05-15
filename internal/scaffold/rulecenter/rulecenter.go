@@ -112,12 +112,8 @@ func updateConfForRuleCenter(path, addr string) error {
 	content := string(b)
 
 	// Update source type
-	if strings.Contains(content, "type: config") {
-		content = strings.Replace(content, "type: config", "type: rule_center", 1)
-	}
-	if strings.Contains(content, "type: database") {
-		content = strings.Replace(content, "type: database", "type: rule_center", 1)
-	}
+	content = strings.Replace(content, "type: config", "type: rule_center", 1)
+	content = strings.Replace(content, "type: database", "type: rule_center", 1)
 
 	// Add rule_center block if not present
 	if !strings.Contains(content, "rule_center:") {
