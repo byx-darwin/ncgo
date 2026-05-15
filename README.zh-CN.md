@@ -137,6 +137,8 @@ make dev
 | 在已有项目上继续扩展 | `ncgo add domain`、`ncgo add infra`、`ncgo ai sync` | 你已经有 ncgo 项目，只想按需逐步增强 |
 | 生成项目中的 i18n 补译 | `make i18n-report`、`ncgo i18n check --mode release --output json` | 你想把 locale/status 更新、Agent 辅助补译和最终校验串成稳定流程 |
 | 生成项目中的 proto 契约校验 | `ncgo protolint --root . --file idl/app/demo.proto --output json` | 你想把 Req/Resp 命名、Hertz binding、Kitex response 结构等规则纳入自动检查 |
+| Rule-center Kitex 服务 | `ncgo new rule-center --module github.com/acme/rule-center --kind kitex --db postgres --preset rule-center` | 需要集中式限流规则管理服务 |
+| Hertz 接入规则中心 | `ncgo new user-api --module github.com/acme/user-api --kind hertz --db postgres --rule-center-addr rule-center:8888` | Hertz 服务从远程规则中心查询限流规则 |
 
 如果你是从 0 开始，先从上表选一条路径，再继续看下面对应的详细快速开始。
 

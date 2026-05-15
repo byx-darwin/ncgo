@@ -146,6 +146,8 @@ below.
 | Existing project enhancement | `ncgo add domain`, `ncgo add infra`, `ncgo ai sync` | You already have an ncgo project and want to expand it incrementally |
 | i18n translation in a generated project | `make i18n-report`, `ncgo i18n check --mode release --output json` | You want a stable workflow from locale/status updates to agent-assisted translation review and final validation |
 | Proto contract lint in a generated project | `ncgo protolint --root . --file idl/app/demo.proto --output json` | You want Req/Resp naming, Hertz binding, and Kitex response shape checks in a repeatable workflow |
+| Rule-center Kitex service | `ncgo new rule-center --module github.com/acme/rule-center --kind kitex --db postgres --preset rule-center` | You need a centralized rate-limit rule management service |
+| Hertz with rule-center | `ncgo new user-api --module github.com/acme/user-api --kind hertz --db postgres --rule-center-addr rule-center:8888` | Your Hertz service queries rate-limit rules from a remote rule-center |
 
 If you are starting fresh, pick one row above and then follow the matching
 Quick Start below.
