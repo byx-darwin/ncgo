@@ -63,3 +63,16 @@ func TestGenerateGoldenKitexDefault(t *testing.T) {
 	}
 	golden.Tree(t, "mono-kitex-default", res.Dir)
 }
+
+// TestGenerateGoldenWithRuleCenter covers the Hertz + rule-center path,
+// verifying that rule_center_client.go is generated and data.json includes
+// the RuleCenterAddr field.
+func TestGenerateGoldenWithRuleCenter(t *testing.T) {
+	opts := goldenOpts(t, "demo", true)
+	opts.RuleCenterAddr = "rule-center:8888"
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	golden.Tree(t, "mono-with-rulecenter", res.Dir)
+}

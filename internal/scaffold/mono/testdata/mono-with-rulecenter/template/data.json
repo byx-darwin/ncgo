@@ -1,0 +1,8 @@
+{
+  "*": {
+    "GoModule": "github.com/x/demo",
+    "RuleCenterAddr": "rule-center:8888",
+    "ServiceName": "demo",
+    "WithDatabase": true
+  }
+}

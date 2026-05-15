@@ -111,9 +111,20 @@ func updateConfForRuleCenter(path, addr string) error {
 
 	content := string(b)
 
-	// Update source type
-	content = strings.Replace(content, "type: config", "type: rule_center", 1)
-	content = strings.Replace(content, "type: database", "type: rule_center", 1)
+	// Update source type scoped to rate_limit block
+	if strings.Contains(content, "rate_limit:") {
+		// Extract rate_limit block, replace type within it, reassemble
+		idx := strings.Index(content, "rate_limit:")
+		rest := content[idx:]
+		if strings.Contains(rest, "type: config") {
+			newRest := strings.Replace(rest, "type: config", "type: rule_center", 1)
+			content = content[:idx] + newRest
+		}
+		if strings.Contains(rest, "type: database") {
+			newRest := strings.Replace(rest, "type: database", "type: rule_center", 1)
+			content = content[:idx] + newRest
+		}
+	}
 
 	// Add rule_center block if not present
 	if !strings.Contains(content, "rule_center:") {
