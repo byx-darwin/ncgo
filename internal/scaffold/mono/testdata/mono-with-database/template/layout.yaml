@@ -711,6 +711,7 @@ layouts:
           Source       RateLimitSourceConfig `json:"source" yaml:"source"`
           GRPC         RateLimitGRPCConfig  `json:"grpc" yaml:"grpc"`
           Database     RateLimitDatabaseConfig `json:"database" yaml:"database"`
+          RuleCenter   RuleCenterRateLimitConfig `json:"rule_center" yaml:"rule_center"`
           Backend      string               `json:"backend" yaml:"backend"`
           FailOpen     bool                 `json:"fail_open" yaml:"fail_open"`
           KeyPrefix    string               `json:"key_prefix" yaml:"key_prefix"`
@@ -738,6 +739,11 @@ layouts:
 
       type RateLimitDatabaseConfig struct {
           QueryTimeoutMilliseconds int `json:"query_timeout_milliseconds" yaml:"query_timeout_milliseconds"`
+      }
+
+      type RuleCenterRateLimitConfig struct {
+          Address                string `json:"address" yaml:"address"`
+          QueryTimeoutMilliseconds int   `json:"query_timeout_milliseconds" yaml:"query_timeout_milliseconds"`
       }
 
       type RateLimitPhaseConfig struct {
@@ -1077,6 +1083,9 @@ layouts:
                   Database: RateLimitDatabaseConfig{
                       QueryTimeoutMilliseconds: 200,
                   },
+                  RuleCenter: RuleCenterRateLimitConfig{
+                      QueryTimeoutMilliseconds: 200,
+                  },
                   Backend:      "memory",
                   KeyPrefix:    "rate_limit",
                   AppKeyHeader: "X-App-Key",
@@ -1391,15 +1400,18 @@ layouts:
           }
           if c.RateLimit.Enabled {
               switch c.RateLimit.Source.Type {
-              case "", "config", "grpc", "database":
+              case "", "config", "grpc", "database", "rule_center":
               default:
-                  return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.source.type must be config, grpc, or database")
+                  return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.source.type must be config, grpc, database, or rule_center")
               }
               if c.RateLimit.Source.Type == "grpc" && c.RateLimit.GRPC.TimeoutMilliseconds <= 0 {
                   return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.grpc.timeout_milliseconds must be positive")
               }
               if c.RateLimit.Source.Type == "database" && c.RateLimit.Database.QueryTimeoutMilliseconds <= 0 {
                   return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.database.query_timeout_milliseconds must be positive")
+              }
+              if c.RateLimit.Source.Type == "rule_center" && strings.TrimSpace(c.RateLimit.RuleCenter.Address) == "" {
+                  return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.rule_center.address is required when source.type is rule_center")
               }
               switch c.RateLimit.Backend {
               case "", "memory", "redis":
@@ -4976,8 +4988,9 @@ layouts:
       }
 
       type Options struct {
-          GRPC     GRPCClient
-          Database DatabaseHook
+          GRPC       GRPCClient
+          Database   DatabaseHook
+          RuleCenter GRPCClient // rule-center uses same GRPCClient interface
       }
 
       type source interface {
@@ -4997,6 +5010,8 @@ layouts:
               dynamic = &grpcSource{client: opts.GRPC, timeout: durationMilliseconds(cfg.GRPC.TimeoutMilliseconds)}
           case "database":
               dynamic = &databaseSource{hook: opts.Database, timeout: durationMilliseconds(cfg.Database.QueryTimeoutMilliseconds)}
+          case "rule_center":
+              dynamic = &grpcSource{client: opts.RuleCenter, timeout: durationMilliseconds(cfg.RuleCenter.QueryTimeoutMilliseconds)}
           }
           if dynamic != nil {
               dynamic = newCachedSource(cfg.Source.CacheTTLSeconds, dynamic)
@@ -5060,6 +5075,9 @@ layouts:
           cfg.GRPC.ServiceName = strings.TrimSpace(cfg.GRPC.ServiceName)
           if cfg.Database.QueryTimeoutMilliseconds <= 0 {
               cfg.Database.QueryTimeoutMilliseconds = 200
+          }
+          if cfg.RuleCenter.QueryTimeoutMilliseconds <= 0 {
+              cfg.RuleCenter.QueryTimeoutMilliseconds = 200
           }
           return cfg
       }
@@ -6410,17 +6428,22 @@ layouts:
 
       var redisFixedWindowScript = redis.NewScript(`
       local key = KEYS[1]
-      local limit = tonumber(ARGV[1])
+      local windowSeconds = tonumber(ARGV[1])
       local ttl = tonumber(ARGV[2])
-      local current = tonumber(redis.call("GET", key) or "0")
+      local limit = tonumber(ARGV[3])
+      local now = tonumber(ARGV[4])
+      local windowStart = math.floor(now / windowSeconds) * windowSeconds
+      local windowKey = key .. ":" .. tostring(windowStart)
+
+      local current = tonumber(redis.call("GET", windowKey) or "0")
       if current == 0 then
-          redis.call("SET", key, 1, "EX", ttl)
+          redis.call("SET", windowKey, 1, "EX", ttl)
           return 1
       end
       if current >= limit then
           return 0
       end
-      redis.call("INCR", key)
+      redis.call("INCR", windowKey)
       return 1
       `)
 
@@ -6444,7 +6467,7 @@ layouts:
               if ttlSeconds <= 0 {
                   ttlSeconds = 60
               }
-              allowed, err := redisFixedWindowScript.Run(ctx, s.client, []string{key}, rule.MaxRequests, ttlSeconds).Int()
+              allowed, err := redisFixedWindowScript.Run(ctx, s.client, []string{key}, rule.WindowSeconds, ttlSeconds, rule.MaxRequests, time.Now().Unix()).Int()
               if err != nil {
                   return false, err
               }
