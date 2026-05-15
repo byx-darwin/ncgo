@@ -292,9 +292,10 @@ type dataPayload map[string]map[string]any
 
 func renderDataJSON(opts Options) ([]byte, error) {
 	p := dataPayload{"*": {
-		"GoModule":     opts.Module,
-		"ServiceName":  opts.Name,
-		"WithDatabase": opts.WithDatabase,
+		"GoModule":       opts.Module,
+		"ServiceName":    opts.Name,
+		"WithDatabase":   opts.WithDatabase,
+		"RuleCenterAddr": opts.RuleCenterAddr,
 	}}
 	return json.MarshalIndent(p, "", "  ")
 }
