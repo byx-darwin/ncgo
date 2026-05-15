@@ -494,3 +494,115 @@ func TestSyncWritesStandaloneDocs(t *testing.T) {
 		t.Errorf("cross-profile kitex/design-doc.en.md not generated for hertz project")
 	}
 }
+
+func TestSyncWritesStandaloneDocsForKitex(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindKitex)
+	_, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	// Primary kitex design-doc
+	p := filepath.Join(root, "docs", "ncgo", "kitex", "design-doc.en.md")
+	if _, err := os.Stat(p); os.IsNotExist(err) {
+		t.Errorf("kitex design-doc not generated: %s", p)
+	}
+	// Cross-profile hertz design-doc (for links)
+	hp := filepath.Join(root, "docs", "ncgo", "hertz", "design-doc.en.md")
+	if _, err := os.Stat(hp); os.IsNotExist(err) {
+		t.Errorf("cross-profile hertz design-doc not generated for kitex project")
+	}
+	// rate-limit-dynamic-design should NOT be generated for kitex
+	rl := filepath.Join(root, "docs", "ncgo", "kitex", "rate-limit-dynamic-design.en.md")
+	if _, err := os.Stat(rl); !os.IsNotExist(err) {
+		t.Errorf("rate-limit-dynamic-design should not be generated for kitex profile")
+	}
+}
+
+func TestSyncWritesStandaloneDocsZhCN(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	_, err := Sync(Options{Root: root, Lang: LangZhCN})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	p := filepath.Join(root, "docs", "ncgo", "hertz", "design-doc.zh-CN.md")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read %s: %v", p, err)
+	}
+	body := string(b)
+	if !strings.Contains(body, "Hertz 模板详细设计") {
+		t.Errorf("zh-CN standalone doc missing Chinese title")
+	}
+	// Check links are rewritten
+	if strings.Contains(body, "../kitex/") || strings.Contains(body, "docs/kitex/") {
+		t.Errorf("zh-CN standalone doc still contains original kitex links")
+	}
+	if !strings.Contains(body, "./kitex/") {
+		t.Errorf("zh-CN standalone doc missing rewritten kitex link")
+	}
+}
+
+func TestSyncDryRunWritesNoStandaloneDocs(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	res, err := Sync(Options{Root: root, DryRun: true})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if len(res.Written) != 0 {
+		t.Errorf("DryRun must not write; got %v", res.Written)
+	}
+	p := filepath.Join(root, "docs", "ncgo", "hertz", "design-doc.en.md")
+	if _, err := os.Stat(p); !os.IsNotExist(err) {
+		t.Errorf("standalone doc should not exist after dry run")
+	}
+}
+
+func TestRewriteDocLinks(t *testing.T) {
+	tests := []struct {
+		name     string
+		input    string
+		expected string
+	}{
+		{
+			name:     "absolute hertz link",
+			input:    "see `docs/hertz/rate-limit-dynamic-design.en.md`",
+			expected: "see `./hertz/rate-limit-dynamic-design.en.md`",
+		},
+		{
+			name:     "relative kitex link",
+			input:    "[kitex](../kitex/design-doc.en.md)",
+			expected: "[kitex](./kitex/design-doc.en.md)",
+		},
+		{
+			name:     "absolute kitex link in hertz doc",
+			input:    "[kitex docs](docs/kitex/design-doc.en.md)",
+			expected: "[kitex docs](./kitex/design-doc.en.md)",
+		},
+		{
+			name:     "no links unchanged",
+			input:    "plain text with no links",
+			expected: "plain text with no links",
+		},
+		{
+			name:     "absolute micro link",
+			input:    "see `docs/micro/design-doc.en.md`",
+			expected: "see `./micro/design-doc.en.md`",
+		},
+		{
+			name:     "relative micro link",
+			input:    "[micro docs](../micro/design-doc.en.md)",
+			expected: "[micro docs](./micro/design-doc.en.md)",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := rewriteDocLinks(tt.input)
+			if got != tt.expected {
+				t.Errorf("rewriteDocLinks() = %q, want %q", got, tt.expected)
+			}
+		})
+	}
+}
