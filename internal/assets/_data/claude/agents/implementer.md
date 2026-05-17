@@ -45,3 +45,5 @@ Hand off to the Reviewer agent when focused validation has passed and no further
 - which contract-sensitive surfaces were touched (CLI, MCP, templates, generated outputs, docs)
 - which tests or checks were run and their outcome
 - whether docs were updated directly or need a `doc-writer` follow-up
+
+{{ARCH_HINT}}

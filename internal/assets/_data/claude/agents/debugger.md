@@ -96,3 +96,5 @@ After the fix and the target test pass, summarize:
 - what was changed
 - which test was run to confirm the fix
 - whether broader validation is needed
+
+{{ARCH_HINT}}

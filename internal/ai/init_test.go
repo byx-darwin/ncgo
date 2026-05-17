@@ -295,3 +295,130 @@ func TestInitClaudeRejectsInvalidPreset(t *testing.T) {
 		t.Fatalf("err = %v, want unsupported preset error", err)
 	}
 }
+
+func TestInitClaudeGoMdIncludesHertzRules(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	_, err := InitClaude(InitOptions{Root: root})
+	if err != nil {
+		t.Fatalf("InitClaude hertz: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, ".claude/rules/go.md"))
+	if err != nil {
+		t.Fatalf("read go.md: %v", err)
+	}
+	s := string(body)
+	want := []string{
+		"Hertz HTTP Service Rules",
+		"middleware",
+		"*app.RequestContext",
+		"response.OK",
+		"router.GeneratedRegister",
+	}
+	for _, w := range want {
+		if !strings.Contains(s, w) {
+			t.Errorf("go.md missing %q for Hertz service", w)
+		}
+	}
+	if strings.Contains(s, "interceptor") {
+		t.Errorf("go.md should not mention interceptor for Hertz service")
+	}
+}
+
+func TestInitClaudeGoMdIncludesKitexRules(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindKitex)
+	_, err := InitClaude(InitOptions{Root: root})
+	if err != nil {
+		t.Fatalf("InitClaude kitex: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, ".claude/rules/go.md"))
+	if err != nil {
+		t.Fatalf("read go.md: %v", err)
+	}
+	s := string(body)
+	want := []string{
+		"Kitex RPC Service Rules",
+		"interceptor",
+		"rpcerror.ToBizError",
+		"kitex.BizStatusError",
+	}
+	for _, w := range want {
+		if !strings.Contains(s, w) {
+			t.Errorf("go.md missing %q for Kitex service", w)
+		}
+	}
+	if strings.Contains(s, "*app.RequestContext") {
+		t.Errorf("go.md should not mention *app.RequestContext for Kitex service")
+	}
+}
+
+func TestInitClaudeMicroWorkspaceCreatesServiceDirs(t *testing.T) {
+	root := t.TempDir()
+	if err := manifest.SaveWorkspace(root, &manifest.Workspace{
+		Ncgo:        manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test-assets"},
+		Mode:        manifest.ModeMicro,
+		Name:        "commerce",
+		Module:      "github.com/acme/commerce",
+		Services:    []manifest.WorkspaceService{{Name: "user-api", Kind: manifest.KindHertz, Dir: "services/user-api"}, {Name: "user-rpc", Kind: manifest.KindKitex, Dir: "services/user-rpc"}},
+		GeneratedAt: time.Date(2026, 5, 7, 0, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("SaveWorkspace: %v", err)
+	}
+	res, err := InitClaude(InitOptions{Root: root})
+	if err != nil {
+		t.Fatalf("InitClaude micro: %v", err)
+	}
+	// Verify README lists both services with kind labels
+	readme, _ := os.ReadFile(filepath.Join(root, ".claude/README.md"))
+	body := string(readme)
+	if !strings.Contains(body, "user-api") || !strings.Contains(body, "HTTP (Hertz)") {
+		t.Errorf("README missing user-api with Hertz label:\n%s", body)
+	}
+	if !strings.Contains(body, "user-rpc") || !strings.Contains(body, "RPC (Kitex)") {
+		t.Errorf("README missing user-rpc with Kitex label:\n%s", body)
+	}
+	// Verify per-service directories were created
+	for _, svc := range []string{"user-api", "user-rpc"} {
+		rulesPath := filepath.Join(root, ".claude", "services", svc, "rules.md")
+		if _, err := os.Stat(rulesPath); err != nil {
+			t.Errorf("missing service rules file %s: %v", rulesPath, err)
+		}
+		checklistPath := filepath.Join(root, ".claude", "services", svc, "reviewer-checklist.md")
+		if _, err := os.Stat(checklistPath); err != nil {
+			t.Errorf("missing service checklist file %s: %v", checklistPath, err)
+		}
+	}
+	// Verify go.md does NOT contain arch-specific rules for micro workspace
+	goMd, _ := os.ReadFile(filepath.Join(root, ".claude/rules/go.md"))
+	if strings.Contains(string(goMd), "Hertz HTTP Service Rules") || strings.Contains(string(goMd), "Kitex RPC Service Rules") {
+		t.Errorf("micro workspace go.md should not contain arch-specific rules")
+	}
+	// Verify at least the service dirs were written
+	var svcWrites int
+	for _, w := range res.Written {
+		if strings.HasPrefix(w, ".claude/services/") {
+			svcWrites++
+		}
+	}
+	if svcWrites == 0 {
+		t.Errorf("expected service dir writes, got none: %v", res.Written)
+	}
+}
+
+func TestInitClaudeUnknownShapeHasEmptyArchRules(t *testing.T) {
+	root := t.TempDir()
+	_, err := InitClaude(InitOptions{Root: root})
+	if err != nil {
+		t.Fatalf("InitClaude unknown: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, ".claude/rules/go.md"))
+	if err != nil {
+		t.Fatalf("read go.md: %v", err)
+	}
+	// The placeholder should be replaced with empty string for unknown shape
+	if strings.Contains(string(body), "{{ARCHITECTURE_RULES}}") {
+		t.Errorf("go.md should not contain raw placeholder for unknown shape")
+	}
+}
+

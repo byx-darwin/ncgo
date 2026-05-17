@@ -43,3 +43,5 @@ On completing a review, produce a short report:
 Prefer a precise gap such as "missing test for changed CLI output" or
 "repository change lost context propagation" over broad requests for cleanup or
 refactoring.
+
+{{ARCH_HINT}}

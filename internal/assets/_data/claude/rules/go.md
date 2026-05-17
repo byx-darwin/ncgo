@@ -76,3 +76,11 @@ generated artifact by hand.
 
 Tests and docs are part of the same delivery when behavior changes. Do not stop
 at code edits if the repository contract has changed.
+
+## Architecture-Specific Rules
+
+{{ARCHITECTURE_RULES}}
+
+When this section is empty, refer to `.claude/generated/project-context.md` for
+service-specific architecture details, or to `.claude/services/<name>/rules.md`
+in a micro workspace.

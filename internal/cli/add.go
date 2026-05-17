@@ -8,7 +8,9 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/byx-darwin/ncgo/internal/ai"
 	"github.com/byx-darwin/ncgo/internal/assets"
+	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scaffold/bff"
 	"github.com/byx-darwin/ncgo/internal/scaffold/domain"
 	"github.com/byx-darwin/ncgo/internal/scaffold/infra"
@@ -223,6 +225,10 @@ func runAddRPC(cmd *cobra.Command, name string, opts *addRPCOptions) error {
 	if err != nil {
 		return err
 	}
+		// Update .claude/ for the newly added service
+		if !opts.dryRun {
+			_ = ai.WriteServiceClaudeDirs(opts.root, name, manifest.KindKitex)
+		}
 	out := cmd.OutOrStdout()
 	if opts.output == "json" {
 		return writeAddServiceJSON(out, res.ServiceDir, res.ServiceRel, res.Module, res.DryRun, res.Updated, res.RanGenerate, res.NextSteps, res.Plan)
@@ -309,6 +315,10 @@ func runAddBFF(cmd *cobra.Command, name string, opts *addBFFOptions) error {
 	if err != nil {
 		return err
 	}
+		// Update .claude/ for the newly added service
+		if !opts.dryRun {
+			_ = ai.WriteServiceClaudeDirs(opts.root, name, manifest.KindHertz)
+		}
 	out := cmd.OutOrStdout()
 	if opts.output == "json" {
 		return writeAddServiceJSON(out, res.ServiceDir, res.ServiceRel, res.Module, res.DryRun, res.Updated, res.RanGenerate, res.NextSteps, res.Plan)
