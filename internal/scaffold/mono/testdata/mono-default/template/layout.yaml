@@ -8256,6 +8256,16 @@ layouts:
       //     })
       // }
       var rlOpts ratelimit.Options
+      {{ if .RuleCenterAddr}}
+      if strings.EqualFold(strings.TrimSpace(cfg.RateLimit.Source.Type), "rule_center") {
+          rc, err := middleware.NewRuleCenterClient(cfg.RateLimit.RuleCenter.Address)
+          if err != nil {
+              panic(fmt.Sprintf("rule_center: init client: %v", err))
+          }
+          defer func() { _ = rc.Close() }()
+          rlOpts.RuleCenter = rc
+      }
+      {{ end}}
       {{ if .WithDatabase}}
       if strings.EqualFold(strings.TrimSpace(cfg.RateLimit.Source.Type), "database") {
           var dbData *data.Data

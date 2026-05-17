@@ -9,6 +9,7 @@ body: |-
 
   import (
       "context"
+      "regexp"
       "strings"
 
       "github.com/samber/oops"
@@ -190,15 +191,60 @@ body: |-
   func pickBestPattern(rules []gen.RateLimitRule, path string) *gen.RateLimitRule {
       for i := range rules {
           r := &rules[i]
-          if r.PathPattern == "*" {
-              return r
-          }
-          if r.MatchKind == "prefix" && strings.HasPrefix(path, r.PathPattern) {
-              return r
-          }
-          if r.MatchKind == "exact" && r.PathPattern == path {
-              return r
+          switch strings.ToLower(r.MatchKind) {
+          case "exact":
+              if r.PathPattern == path || r.Path == path {
+                  return r
+              }
+          case "prefix":
+              if strings.HasPrefix(path, r.PathPattern) {
+                  return r
+              }
+          case "glob":
+              if r.PathPattern != "" && globMatch(r.PathPattern, path) {
+                  return r
+              }
+          case "regex":
+              if r.PathPattern != "" && regexMatch(r.PathPattern, path) {
+                  return r
+              }
+          default:
+              if r.PathPattern == "*" || r.Path == "*" {
+                  return r
+              }
           }
       }
       return nil
+  }
+
+  func globMatch(pattern, path string) bool {
+      parts := strings.Split(pattern, "*")
+      idx := 0
+      if !strings.HasPrefix(pattern, "*") {
+          if !strings.HasPrefix(path, parts[0]) {
+              return false
+          }
+          idx = len(parts[0])
+          parts = parts[1:]
+      }
+      lastAnchored := !strings.HasSuffix(pattern, "*")
+      for i, part := range parts {
+          if part == "" {
+              continue
+          }
+          pos := strings.Index(path[idx:], part)
+          if pos < 0 {
+              return false
+          }
+          idx += pos + len(part)
+          if lastAnchored && i == len(parts)-1 && !strings.HasSuffix(path, part) {
+              return false
+          }
+      }
+      return true
+  }
+
+  func regexMatch(pattern, path string) bool {
+      matched, err := regexp.MatchString(pattern, path)
+      return err == nil && matched
   }

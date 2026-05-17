@@ -18,8 +18,8 @@ func TestBuildSeedSQLBasic(t *testing.T) {
 		t.Errorf("expected wildcard rule, got:\n%s", sql)
 	}
 
-	// Should contain healthz rule
-	if !strings.Contains(sql, "'GET', 'exact', '/healthz', '/healthz'") {
+	// Should contain healthz rule (path_pattern is empty for exact match)
+	if !strings.Contains(sql, "'GET', 'exact', '/healthz', ''") {
 		t.Errorf("expected healthz rule, got:\n%s", sql)
 	}
 

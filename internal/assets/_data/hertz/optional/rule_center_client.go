@@ -10,6 +10,12 @@
 //	go get google.golang.org/grpc
 //	go get google.golang.org/grpc/credentials/insecure
 //	go get github.com/samber/oops
+//
+// TODO(baoyx): This standalone gRPC client is a temporary bridge solution.
+// It should eventually be replaced by consuming the Kitex-generated client
+// (pkg/client/ruleserviceclient/) which includes retry, circuit-breaker,
+// and caller-service metadata. The Kitex-generated client lives alongside
+// the rule-center Kitex service.
 
 package middleware
 
@@ -26,6 +32,25 @@ import (
 	"{{.GoModule}}/kitex_gen/ratelimit/v1"
 )
 
+// RuleCenterConfig mirrors the timeout pattern of Kitex's generated
+// client.Config (pkg/client/<service>/client.go). It controls per-call RPC
+// timeout and connection verification for the rule-center gRPC client.
+type RuleCenterConfig struct {
+	Address                string
+	RPCTimeoutMilliseconds int // per-call RPC timeout; default 200ms
+	ConnectTimeoutMillis   int // initial connection timeout; default 100ms
+}
+
+// DefaultRuleCenterConfig returns a config with safe defaults, mirroring
+// the Kitex client pattern (100ms connect, 200ms RPC).
+func DefaultRuleCenterConfig(address string) RuleCenterConfig {
+	return RuleCenterConfig{
+		Address:                address,
+		RPCTimeoutMilliseconds: 200,
+		ConnectTimeoutMillis:   100,
+	}
+}
+
 // RuleCenterClient implements ratelimit.GRPCClient by querying the
 // rule-center Kitex service over gRPC.
 type RuleCenterClient struct {
@@ -36,33 +61,63 @@ type RuleCenterClient struct {
 
 // NewRuleCenterClient creates a gRPC client connected to the rule-center
 // service at the given address (e.g. "rule-center.internal:8888").
-// The connection is lazily established on first call.
+// Uses DefaultRuleCenterConfig for timeouts.
 func NewRuleCenterClient(address string) (*RuleCenterClient, error) {
 	if address == "" {
 		return nil, fmt.Errorf("rule_center: address is required")
 	}
-	conn, err := grpc.NewClient(address,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("rule_center: dial %s: %w", address, err)
-	}
-	return &RuleCenterClient{
-		conn:    conn,
-		cli:     ratelimitv1.NewRuleServiceClient(conn),
-		timeout: 200 * time.Millisecond,
-	}, nil
+	return NewRuleCenterClientWithConfig(DefaultRuleCenterConfig(address))
 }
 
 // NewRuleCenterClientWithTimeout creates a gRPC client with a custom
-// per-query timeout.
+// per-call RPC timeout.
 func NewRuleCenterClientWithTimeout(address string, timeout time.Duration) (*RuleCenterClient, error) {
-	c, err := NewRuleCenterClient(address)
-	if err != nil {
-		return nil, err
+	if address == "" {
+		return nil, fmt.Errorf("rule_center: address is required")
 	}
-	c.timeout = timeout
-	return c, nil
+	cfg := DefaultRuleCenterConfig(address)
+	cfg.RPCTimeoutMilliseconds = int(timeout.Milliseconds())
+	return NewRuleCenterClientWithConfig(cfg)
+}
+
+// NewRuleCenterClientWithConfig creates a gRPC client with explicit timeout
+// configuration. This mirrors the Kitex client.New(ctx, cfg) pattern.
+// Unlike Kitex clients which use `kitexclient.WithConnectTimeout` and
+// `kitexclient.WithRPCTimeout`, the gRPC client uses a context deadline
+// on `grpc.Dial` for connect timeout and per-call context deadline for RPC.
+func NewRuleCenterClientWithConfig(cfg RuleCenterConfig) (*RuleCenterClient, error) {
+	rpcTimeout := time.Duration(cfg.RPCTimeoutMilliseconds) * time.Millisecond
+	if rpcTimeout <= 0 {
+		rpcTimeout = 200 * time.Millisecond
+	}
+	connectTimeout := time.Duration(cfg.ConnectTimeoutMillis) * time.Millisecond
+	if connectTimeout <= 0 {
+		connectTimeout = 100 * time.Millisecond
+	}
+
+	connCtx, connCancel := context.WithTimeout(context.Background(), connectTimeout)
+	defer connCancel()
+
+	conn, err := grpc.DialContext(connCtx, cfg.Address,
+		grpc.WithTransportCredentials(insecure.NewCredentials()),
+		grpc.WithBlock(),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("rule_center: connect %s: %w", cfg.Address, err)
+	}
+
+	return &RuleCenterClient{
+		conn:    conn,
+		cli:     ratelimitv1.NewRuleServiceClient(conn),
+		timeout: rpcTimeout,
+	}, nil
+}
+
+func strPtrOrNil(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return &s
 }
 
 // Close releases the underlying gRPC connection.
@@ -82,17 +137,20 @@ func (c *RuleCenterClient) Close() error {
 //   - (nil, false, nil): remote answered "not found"
 //   - (nil, false, error): remote query failed
 func (c *RuleCenterClient) ResolveRateLimitRule(ctx context.Context, lookup ratelimit.Lookup) (*conf.RateLimitRuleConfig, bool, error) {
-	if c.timeout > 0 {
-		var cancel context.CancelFunc
-		ctx, cancel = context.WithTimeout(ctx, c.timeout)
-		defer cancel()
+	to := c.timeout
+	if to <= 0 {
+		to = 200 * time.Millisecond
 	}
+	var cancel context.CancelFunc
+	ctx, cancel = context.WithTimeout(ctx, to)
+	defer cancel()
 
 	resp, err := c.cli.GetRule(ctx, &ratelimitv1.GetRuleRequest{
 		Service: lookup.Service,
 		Phase:   lookup.Phase,
 		Method:  lookup.Method,
 		Path:    lookup.Path,
+		AppKey:  strPtrOrNil(lookup.AppKey),
 	})
 	if err != nil {
 		return nil, false, fmt.Errorf("rule_center: GetRule(%s, %s, %s, %s): %w",
@@ -109,11 +167,11 @@ func (c *RuleCenterClient) ResolveRateLimitRule(ctx context.Context, lookup rate
 	}
 
 	cfg := &conf.RateLimitRuleConfig{
-		Enabled:       true,
-		Strategy:      rule.GetStrategy(),
-		WindowSeconds: int(rule.GetWindowSeconds()),
-		MaxRequests:   int(rule.GetMaxRequests()),
-		KeyBy:         rule.GetKeyBy(),
+		Enabled:          true,
+		Strategy:         rule.GetStrategy(),
+		WindowSeconds:    int(rule.GetWindowSeconds()),
+		MaxRequests:      int(rule.GetMaxRequests()),
+		KeyBy:            rule.GetKeyBy(),
 		ClientTTLSeconds: int(rule.GetClientTtlSeconds()),
 	}
 	return cfg, true, nil

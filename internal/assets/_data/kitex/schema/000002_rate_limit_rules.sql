@@ -27,3 +27,7 @@ body: |-
 
   CREATE INDEX idx_rate_limit_rules_lookup ON rate_limit_rules (service, phase, method, match_kind, path, app_key);
   CREATE INDEX idx_rate_limit_rules_pattern ON rate_limit_rules (service, phase, method, app_key);
+
+  -- Prevent duplicate rules for the same identity.
+  CREATE UNIQUE INDEX idx_rate_limit_rules_unique
+      ON rate_limit_rules (service, phase, method, match_kind, path, COALESCE(app_key, ''));

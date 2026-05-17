@@ -65,6 +65,17 @@ func Add(opts Options) (*Result, error) {
 		result.WrittenPaths = append(result.WrittenPaths, confPath)
 	}
 
+	// 3. Wire RuleCenter client into server.go if it exists
+	serverPath := filepath.Join(opts.Root, "internal", "base", "server", "server.go")
+	if !opts.DryRun {
+		if _, err := os.Stat(serverPath); err == nil {
+			if err := wireRuleCenterInServer(serverPath); err != nil {
+				return result, fmt.Errorf("rule-center: wire server.go: %w", err)
+			}
+			result.WrittenPaths = append(result.WrittenPaths, serverPath)
+		}
+	}
+
 	result.NextSteps = []string{
 		"go get google.golang.org/grpc",
 		"go mod tidy",
@@ -130,6 +141,44 @@ func updateConfForRuleCenter(path, addr string) error {
 	if !strings.Contains(content, "rule_center:") {
 		content = strings.Replace(content, "source:", fmt.Sprintf("rule_center:\n    address: %q\n    query_timeout_milliseconds: 200\n  source:", addr), 1)
 	}
+
+	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+// wireRuleCenterInServer injects RuleCenter client wiring into the generated
+// server.go after the `var rlOpts ratelimit.Options` declaration.
+func wireRuleCenterInServer(path string) error {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("read server.go: %w", err)
+	}
+	content := string(b)
+
+	// Skip if already wired.
+	if strings.Contains(content, "middleware.NewRuleCenterClient") {
+		return nil
+	}
+
+	// Find the rlOpts declaration and inject wiring after it.
+	marker := "var rlOpts ratelimit.Options"
+	idx := strings.Index(content, marker)
+	if idx == -1 {
+		// server.go doesn't have the expected rlOpts block — skip gracefully
+		return nil
+	}
+
+	wiring := `
+	if strings.EqualFold(strings.TrimSpace(cfg.RateLimit.Source.Type), "rule_center") {
+		rc, err := middleware.NewRuleCenterClient(cfg.RateLimit.RuleCenter.Address)
+		if err != nil {
+			panic(fmt.Sprintf("rule_center: init client: %v", err))
+		}
+		defer func() { _ = rc.Close() }()
+		rlOpts.RuleCenter = rc
+	}
+`
+	insertPos := idx + len(marker)
+	content = content[:insertPos] + wiring + content[insertPos:]
 
 	return os.WriteFile(path, []byte(content), 0o644)
 }
