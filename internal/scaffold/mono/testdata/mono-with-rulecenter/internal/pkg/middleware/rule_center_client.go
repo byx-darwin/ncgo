@@ -10,6 +10,12 @@
 //	go get google.golang.org/grpc
 //	go get google.golang.org/grpc/credentials/insecure
 //	go get github.com/samber/oops
+//
+// TODO(baoyx): This standalone gRPC client is a temporary bridge solution.
+// It should eventually be replaced by consuming the Kitex-generated client
+// (pkg/client/ruleserviceclient/) which includes retry, circuit-breaker,
+// and caller-service metadata. The Kitex-generated client lives alongside
+// the rule-center Kitex service.
 
 package middleware
 
