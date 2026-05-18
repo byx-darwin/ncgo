@@ -18,7 +18,7 @@ NCGO="${NCGO:-/tmp/ncgo}"
 PROJECT_DIR="/tmp/test-ratelimit"
 REPORT_DIR="/tmp/test-ratelimit-reports"
 GOOSE_DSN="postgres://postgres:postgres@localhost:5432/app?sslmode=disable"
-GOOSE_DRIVER="pgx"
+GOOSE_DRIVER="postgres"
 
 mkdir -p "$REPORT_DIR"
 
@@ -27,9 +27,11 @@ mkdir -p "$REPORT_DIR"
 # ============================================================
 
 cleanup_service() {
-  kill "$SERVICE_PID" 2>/dev/null || true
-  sleep 1
-  unset SERVICE_PID
+  if [ -n "${SERVICE_PID:-}" ]; then
+    kill "$SERVICE_PID" 2>/dev/null || true
+    sleep 1
+    unset SERVICE_PID
+  fi
 }
 
 wait_ready() {
@@ -49,29 +51,79 @@ set_rate_limit_config() {
   local conf_file="$PROJECT_DIR/conf/dev/conf.yaml"
   local source_type="$1"   # config | database | grpc
   local backend="$2"       # memory | redis
+  local dsn="$GOOSE_DSN"
 
-  python3 -c "
-import re
+  _PY_CONF_FILE="$conf_file" _PY_SOURCE_TYPE="$source_type" _PY_BACKEND="$backend" _PY_DSN="$dsn" python3 - << 'PYEOF'
+import re, os
 
-with open('$conf_file', 'r') as f:
+conf_file = os.environ['_PY_CONF_FILE']
+source_type = os.environ['_PY_SOURCE_TYPE']
+backend = os.environ['_PY_BACKEND']
+dsn = os.environ['_PY_DSN']
+
+with open(conf_file, 'r') as f:
     lines = f.readlines()
 
 in_rate_limit = False
+in_top_database = False
+in_rate_limit_database = False
 for i, line in enumerate(lines):
     stripped = line.strip()
+
+    # Track top-level database: (no indent)
+    if stripped == 'database:' and not line.startswith(' '):
+        in_top_database = True
+        in_rate_limit_database = False
+        in_rate_limit = False
+        continue
+    if in_top_database and re.match(r'^  \S', line):
+        in_top_database = False
+
+    # Track rate_limit section
     if stripped == 'rate_limit:':
         in_rate_limit = True
+        in_rate_limit_database = False
+        in_top_database = False
+        continue
+    if in_rate_limit and re.match(r'^\S', line) and stripped != '':
+        in_rate_limit = False
+        in_rate_limit_database = False
+
+    # Track rate_limit.database section
+    if in_rate_limit and re.match(r'^  database:', line):
+        in_rate_limit_database = True
+        in_top_database = False
+        continue
+    if in_rate_limit_database and re.match(r'^  \S', line):
+        in_rate_limit_database = False
+
+    # Enable rate_limit
     if in_rate_limit and re.match(r'^  enabled: false$', line):
         lines[i] = '  enabled: true\n'
-        in_rate_limit = False
-    if re.match(r'^    type: (config|grpc|database)', line):
-        lines[i] = re.sub(r'^(\s+type: ).*', r'\1$source_type\n', line)
-    if re.match(r'^  backend: (memory|redis)', line):
-        lines[i] = re.sub(r'^(\s+backend: ).*', r'\1$backend\n', line)
 
-with open('$conf_file', 'w') as f:
+    # Set source type
+    if re.match(r'^    type: (config|grpc|database)', line):
+        lines[i] = re.sub(r'^(\s+type: ).*', r'\1' + source_type + '\n', line)
+
+    # Set backend
+    if re.match(r'^  backend: (memory|redis)', line):
+        lines[i] = re.sub(r'^(\s+backend: ).*', r'\1' + backend + '\n', line)
+
+    # For database source: enable top-level database and set DSN
+    if source_type == 'database' and in_top_database:
+        if re.match(r'^  enabled: false$', line):
+            lines[i] = '  enabled: true\n'
+        if re.match(r'^  dsn:', line):
+            lines[i] = '  dsn: "' + dsn + '"\n'
+
+    # For database source: enable rate_limit.database
+    if source_type == 'database' and in_rate_limit_database:
+        if re.match(r'^    enabled: false$', line):
+            lines[i] = '    enabled: true\n'
+
+with open(conf_file, 'w') as f:
     f.writelines(lines)
-"
+PYEOF
 }
 
 inject_rate_limit_rules() {
@@ -81,8 +133,12 @@ inject_rate_limit_rules() {
     return 0
   fi
 
-  python3 -c "
-with open('$conf_file', 'r') as f:
+  _PY_CONF_FILE="$conf_file" python3 - << 'PYEOF'
+import os
+
+conf_file = os.environ['_PY_CONF_FILE']
+
+with open(conf_file, 'r') as f:
     content = f.read()
 
 old = '    rules: []'
@@ -100,9 +156,9 @@ new = '''    rules:
 
 content = content.replace(old, new, 1)
 
-with open('$conf_file', 'w') as f:
+with open(conf_file, 'w') as f:
     f.write(content)
-"
+PYEOF
 }
 
 run_e2e_for_scenario() {
@@ -178,7 +234,8 @@ sleep 5
 # 步骤 4: 执行数据库迁移
 # ============================================================
 echo "=== 步骤 4: 执行数据库迁移 ==="
-GOOSE_DBSTRING="$GOOSE_DSN" GOOSE_DRIVER="$GOOSE_DRIVER" make migrate-up
+cd "$PROJECT_DIR"
+goose -dir internal/db/migrations postgres "$GOOSE_DSN" up || true
 echo "  迁移完成"
 
 # ============================================================

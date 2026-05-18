@@ -13,13 +13,13 @@ func TestBuildSeedSQLBasic(t *testing.T) {
 		t.Errorf("expected DELETE for my-service, got:\n%s", sql)
 	}
 
-	// Should contain wildcard rule
-	if !strings.Contains(sql, "'*', 'exact', '*', '*'") {
-		t.Errorf("expected wildcard rule, got:\n%s", sql)
+	// Should contain wildcard prefix rule (method='*' matches all methods via SQL wildcard)
+	if !strings.Contains(sql, "'pre_auth', '*', 'prefix', NULL, '/'") {
+		t.Errorf("expected wildcard prefix rule, got:\n%s", sql)
 	}
 
-	// Should contain healthz rule (path_pattern is empty for exact match)
-	if !strings.Contains(sql, "'GET', 'exact', '/healthz', ''") {
+	// Should contain healthz rule (exact match with path_pattern NULL)
+	if !strings.Contains(sql, "'pre_auth', 'GET', 'exact', '/healthz', NULL") {
 		t.Errorf("expected healthz rule, got:\n%s", sql)
 	}
 
@@ -32,7 +32,7 @@ func TestBuildSeedSQLBasic(t *testing.T) {
 
 func TestBuildSeedSQLContainsGRPCRule(t *testing.T) {
 	sql := buildSeedSQL("my-service", 10, 60)
-	if !strings.Contains(sql, "'my-service', 'grpc', '*', 'exact', '*', '*'") {
+	if !strings.Contains(sql, "'my-service', 'grpc', '*', 'prefix', NULL, '/'") {
 		t.Errorf("expected grpc rule for my-service, got:\n%s", sql)
 	}
 }

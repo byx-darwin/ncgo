@@ -7741,7 +7741,7 @@ layouts:
       FROM rate_limit_rules
       WHERE service = $1
         AND phase = $2
-        AND method = $3
+        AND (method = $3 OR method = '*')
         AND match_kind = 'exact'
         AND (path = $4 OR path = '*')
         AND app_key = $5
@@ -7762,7 +7762,7 @@ layouts:
       FROM rate_limit_rules
       WHERE service = $1
         AND phase = $2
-        AND method = $3
+        AND (method = $3 OR method = '*')
         AND match_kind = 'exact'
         AND (path = $4 OR path = '*')
         AND app_key IS NULL
@@ -7791,7 +7791,7 @@ layouts:
       FROM rate_limit_rules
       WHERE service = $1
         AND phase = $2
-        AND method = $3
+        AND (method = $3 OR method = '*')
         AND app_key = $5
         AND (
               path_pattern = '*'
@@ -7832,7 +7832,7 @@ layouts:
       FROM rate_limit_rules
       WHERE service = $1
         AND phase = $2
-        AND method = $3
+        AND (method = $3 OR method = '*')
         AND app_key IS NULL
         AND (
               path_pattern = '*'
