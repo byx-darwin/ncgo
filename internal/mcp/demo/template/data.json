@@ -1,0 +1,7 @@
+{
+  "*": {
+    "GoModule": "github.com/x/demo",
+    "ServiceName": "demo",
+    "WithDatabase": false
+  }
+}

@@ -1,0 +1,11 @@
+ncgo:
+    version: test-version
+    assets_version: test-assets
+mode: mono
+module: github.com/x/demo
+service:
+    name: demo
+    kind: hertz
+    with_database: false
+    idl: idl/app/demo.proto
+generated_at: 2026-05-11T04:40:59.508653Z

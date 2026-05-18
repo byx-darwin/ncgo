@@ -1,0 +1,8 @@
+ncgo:
+    version: test-version
+    assets_version: test-assets
+mode: micro
+name: commerce
+module: github.com/x/commerce
+services: []
+generated_at: 2026-05-11T04:40:59.510016Z
