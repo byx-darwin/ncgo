@@ -46,7 +46,7 @@ echo "  等待数据库就绪..."
 sleep 5
 
 echo "=== 步骤 5: 执行数据库迁移 ==="
-make migrate-up
+GOOSE_DBSTRING="postgres://postgres:postgres@localhost:5432/app?sslmode=disable" GOOSE_DRIVER=postgres make migrate-up
 echo "  迁移完成"
 
 echo "=== 步骤 6: 启动服务 ==="
@@ -79,6 +79,7 @@ cd "$PROJECT_DIR"
   --rate 50 \
   --duration 10s \
   --paths /ping \
+  --readiness-path /healthz \
   --cleanup false \
   --report "$REPORT_MD"
 echo ""
@@ -88,6 +89,7 @@ echo "=== 步骤 8: 生成 JSON 报告 ==="
   --rate 50 \
   --duration 10s \
   --paths /ping \
+  --readiness-path /healthz \
   --cleanup false \
   --report "$REPORT_JSON"
 

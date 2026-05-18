@@ -19,27 +19,28 @@ import (
 
 // E2EOptions configures the end-to-end rate-limit test.
 type E2EOptions struct {
-	Root     string
-	Host     string
-	Port     int
-	Rate     int
-	Duration string
-	Paths    []string
-	DSN      string
-	Cleanup  bool
-	DryRun   bool
-	Report   string // output report file path (.md or .json)
+	Root          string
+	Host          string
+	Port          int
+	Rate          int
+	Duration      string
+	Paths         []string
+	ReadinessPath string // separate health check path (defaults to Paths[0])
+	DSN           string
+	Cleanup       bool
+	DryRun        bool
+	Report        string // output report file path (.md or .json)
 }
 
 // E2EResult holds the result of an e2e test run.
 type E2EResult struct {
-	Mode        string        // mono | micro
-	Kind        string        // hertz | kitex
-	Source      string        // config | database | rule_center | grpc
-	Backend     string        // memory | redis
+	Mode        string // mono | micro
+	Kind        string // hertz | kitex
+	Source      string // config | database | rule_center | grpc
+	Backend     string // memory | redis
 	ServiceName string
-	Pass        bool          // true = rate limiting detected
-	Status      string        // PASS | FAIL | WARN
+	Pass        bool   // true = rate limiting detected
+	Status      string // PASS | FAIL | WARN
 	TotalReqs   int
 	Status429   int
 	Status200   int
@@ -113,7 +114,11 @@ func E2E(ctx context.Context, opts E2EOptions) (*E2EResult, error) {
 	}
 
 	// 5. Health check
-	targetURL := fmt.Sprintf("http://%s:%d%s", opts.Host, opts.Port, opts.Paths[0])
+	checkPath := opts.ReadinessPath
+	if checkPath == "" {
+		checkPath = opts.Paths[0]
+	}
+	targetURL := fmt.Sprintf("http://%s:%d%s", opts.Host, opts.Port, checkPath)
 	if err := waitForReady(ctx, targetURL, 2*time.Second, 30*time.Second); err != nil {
 		return result, fmt.Errorf("service not ready at %s: %w", targetURL, err)
 	}
@@ -498,8 +503,8 @@ type vegetaReportJSON struct {
 		Mean  int64 `json:"mean"`
 		P99   int64 `json:"99th"`
 	} `json:"latencies"`
-	Requests   int            `json:"requests"`
-	Success    int            `json:"success"`
+	Requests    int            `json:"requests"`
+	Success     int            `json:"success"`
 	StatusCodes map[string]int `json:"status_codes"`
 }
 
@@ -624,11 +629,11 @@ type jsonReport struct {
 	Backend     string `json:"backend"`
 	Service     string `json:"service"`
 	TestParams  struct {
-		TargetURL   string   `json:"targetUrl"`
-		Paths       []string `json:"paths"`
-		Rate        int      `json:"rate"`
-		Duration    string   `json:"duration"`
-		TotalReqs   int      `json:"totalRequests"`
+		TargetURL string   `json:"targetUrl"`
+		Paths     []string `json:"paths"`
+		Rate      int      `json:"rate"`
+		Duration  string   `json:"duration"`
+		TotalReqs int      `json:"totalRequests"`
 	} `json:"testParams"`
 	Results struct {
 		Status      string `json:"status"`

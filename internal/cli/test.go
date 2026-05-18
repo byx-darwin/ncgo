@@ -83,7 +83,7 @@ func newRateLimitRunCmd() *cobra.Command {
 }
 
 func newRateLimitE2ECmd() *cobra.Command {
-	var root, host, duration, dsn, report, output string
+	var root, host, duration, dsn, report, output, readinessPath string
 	var port, rate int
 	var paths []string
 	var cleanup, plan bool
@@ -97,22 +97,24 @@ and optionally generate a report.
   ncgo test rate-limit e2e
   ncgo test rate-limit e2e --report report.md
   ncgo test rate-limit e2e --plan
+  ncgo test rate-limit e2e --readiness-path /healthz --paths /ping
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if plan {
 				output = "json"
 			}
 			result, err := ratelimit.E2E(cmd.Context(), ratelimit.E2EOptions{
-				Root:     root,
-				Host:     host,
-				Port:     port,
-				Rate:     rate,
-				Duration: duration,
-				Paths:    paths,
-				DSN:      dsn,
-				Cleanup:  cleanup,
-				DryRun:   plan,
-				Report:   report,
+				Root:          root,
+				Host:          host,
+				Port:          port,
+				Rate:          rate,
+				Duration:      duration,
+				Paths:         paths,
+				ReadinessPath: readinessPath,
+				DSN:           dsn,
+				Cleanup:       cleanup,
+				DryRun:        plan,
+				Report:        report,
 			})
 			if err != nil {
 				return err
@@ -132,6 +134,7 @@ and optionally generate a report.
 	cmd.Flags().IntVar(&rate, "rate", 200, "Requests per second")
 	cmd.Flags().StringVar(&duration, "duration", "10s", "Attack duration")
 	cmd.Flags().StringSliceVar(&paths, "paths", nil, "Target paths (default: /healthz, /)")
+	cmd.Flags().StringVar(&readinessPath, "readiness-path", "", "Health check path (defaults to first path)")
 	cmd.Flags().StringVar(&dsn, "dsn", "", "PostgreSQL DSN (default: use docker compose exec)")
 	cmd.Flags().BoolVar(&cleanup, "cleanup", true, "Stop dependencies after test")
 	cmd.Flags().StringVar(&report, "report", "", "Output report file (.md or .json)")
