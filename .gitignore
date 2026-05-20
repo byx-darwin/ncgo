@@ -15,3 +15,16 @@
 *.test
 *.out
 coverage.txt
+
+# Secrets (must not be committed)
+.env
+.env.*
+
+# Claude Flow / Ruflo runtime artifacts
+.claude-flow/
+.swarm/
+.mcp.json
+claude-flow.config.json
+
+# Claude Code local overrides (user-owned, machine-specific)
+.claude/settings.local.json
