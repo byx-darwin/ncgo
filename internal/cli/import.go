@@ -1,0 +1,288 @@
+package cli
+
+import (
+	"bufio"
+	"fmt"
+	"os"
+	"path/filepath"
+	"regexp"
+	"strings"
+
+	"github.com/spf13/cobra"
+	"gopkg.in/yaml.v3"
+
+	"github.com/byx-darwin/ncgo/internal/assets"
+	"github.com/byx-darwin/ncgo/internal/manifest"
+)
+
+type importOptions struct {
+	Root   string
+	Kind   string // auto-detected if empty
+	DryRun bool
+}
+
+func newImportCmd() *cobra.Command {
+	opts := &importOptions{}
+	cmd := &cobra.Command{
+		Use:   "import",
+		Short: "Import an existing hz/kitex project into ncgo",
+		Long: `Detect an existing Hertz or Kitex project and generate .ncgo/manifest.yaml.
+
+ncgo import detects project type from generated markers in the source code,
+extracts the Go module path from go.mod, and writes a minimal manifest.
+This allows existing projects to use ncgo doctor, ncgo ai sync, and MCP tools.`,
+		Example: `  ncgo import
+  ncgo import --root ./my-service
+  ncgo import --root . --dry-run`,
+		RunE: runImport(opts),
+	}
+	cmd.Flags().StringVar(&opts.Root, "root", ".", "Project root")
+	cmd.Flags().StringVar(&opts.Kind, "kind", "", "Service kind (hertz or kitex); auto-detected if empty")
+	cmd.Flags().BoolVar(&opts.DryRun, "dry-run", false, "Preview without writing files")
+	return cmd
+}
+
+func runImport(opts *importOptions) func(*cobra.Command, []string) error {
+	return func(cmd *cobra.Command, args []string) error {
+		root, err := filepath.Abs(opts.Root)
+		if err != nil {
+			return fmt.Errorf("import: resolve root: %w", err)
+		}
+
+		// Reject if manifest already exists.
+		manifestPath := manifest.Path(root)
+		if _, err := os.Stat(manifestPath); err == nil {
+			return fmt.Errorf("import: manifest already exists at %s; remove it first or edit it manually", manifestPath)
+		}
+
+		// Check go.mod exists.
+		goModPath := filepath.Join(root, "go.mod")
+		if _, err := os.Stat(goModPath); os.IsNotExist(err) {
+			return fmt.Errorf("import: go.mod not found at %s; this command requires an existing Go module", goModPath)
+		}
+
+		// Detect module path.
+		module, err := detectModule(root)
+		if err != nil {
+			return fmt.Errorf("import: %w", err)
+		}
+
+		// Detect service kind.
+		kind := opts.Kind
+		if kind == "" {
+			kind, err = detectKind(root)
+			if err != nil {
+				return fmt.Errorf("import: %w", err)
+			}
+		} else if kind != manifest.KindHertz && kind != manifest.KindKitex {
+			return fmt.Errorf("import: --kind %q is invalid (hertz|kitex)", kind)
+		}
+
+		// Detect service name.
+		serviceName, err := detectServiceName(root, kind)
+		if err != nil {
+			return fmt.Errorf("import: %w", err)
+		}
+
+		// Detect IDL path.
+		idlPath := detectIDLPath(root, serviceName)
+
+		m := &manifest.Manifest{
+			Ncgo: manifest.Meta{
+				Version:       Version,
+				AssetsVersion: assets.Version(),
+			},
+			Mode:   manifest.ModeMono,
+			Module: module,
+			Service: manifest.Service{
+				Name:         serviceName,
+				Kind:         kind,
+				WithDatabase: false,
+				IDL:          idlPath,
+			},
+		}
+
+		if opts.DryRun {
+			out := cmd.OutOrStdout()
+			fmt.Fprint(out, "Preview of generated manifest:\n\n")
+			b, err := yaml.Marshal(m)
+			if err != nil {
+				return fmt.Errorf("import: marshal preview: %w", err)
+			}
+			fmt.Fprint(out, string(b))
+			return nil
+		}
+
+		if err := manifest.Save(root, m); err != nil {
+			return fmt.Errorf("import: %w", err)
+		}
+
+		out := cmd.OutOrStdout()
+		fmt.Fprintf(out, "✓ Created .ncgo/manifest.yaml\n\n")
+		fmt.Fprintln(out, "Next steps:")
+		fmt.Fprintln(out, "  ncgo doctor                    # Check project health")
+		fmt.Fprintln(out, "  ncgo ai sync                   # Generate AI context files")
+		fmt.Fprintln(out, "  ncgo add infra redis --dry-run # Preview optional infrastructure")
+		return nil
+	}
+}
+
+// detectModule reads the first "module" directive from go.mod.
+func detectModule(root string) (string, error) {
+	f, err := os.Open(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module ")), nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read go.mod: %w", err)
+	}
+	return "", fmt.Errorf("module directive not found in go.mod")
+}
+
+// detectKind inspects source markers to determine whether the project is
+// Hertz or Kitex.
+func detectKind(root string) (string, error) {
+	if isHertzProject(filepath.Join(root, "router.go")) {
+		return manifest.KindHertz, nil
+	}
+	if isKitexProject(filepath.Join(root, "handler.go")) {
+		return manifest.KindKitex, nil
+	}
+	return "", fmt.Errorf("cannot detect service kind: no router.go (hz marker) or handler.go (kitex marker) found; use --kind to specify")
+}
+
+func isHertzProject(path string) bool {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(b), "// Code generated by hz.")
+}
+
+func isKitexProject(path string) bool {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false
+	}
+	return strings.Contains(string(b), "// Code generated by kitex.")
+}
+
+// detectServiceName tries to extract the service name from IDL files first,
+// then from source code patterns, then falls back to the directory name.
+func detectServiceName(root string, kind string) (string, error) {
+	// Try IDL-based detection first (most reliable).
+	idlPath := detectIDLPath(root, "")
+	if idlPath != "" {
+		if name := serviceNameFromIDL(idlPath); name != "" {
+			return name, nil
+		}
+	}
+	// Try source code detection.
+	switch kind {
+	case manifest.KindHertz:
+		if name := serviceNameFromHertz(root); name != "" {
+			return name, nil
+		}
+	case manifest.KindKitex:
+		if name := serviceNameFromKitex(root); name != "" {
+			return name, nil
+		}
+	}
+	// Fallback: directory name.
+	return filepath.Base(root), nil
+}
+
+func serviceNameFromIDL(idlPath string) string {
+	base := filepath.Base(idlPath)
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	name = strings.TrimPrefix(name, "service_")
+	return name
+}
+
+// serviceNameFromHertz tries to extract the service name from router.go's
+// import paths or registration patterns.
+func serviceNameFromHertz(root string) string {
+	b, err := os.ReadFile(filepath.Join(root, "router.go"))
+	if err != nil {
+		return ""
+	}
+	content := string(b)
+	// Look for import path patterns like "xxx/biz/router" and extract the
+	// module path's last segment as the service name.
+	re := regexp.MustCompile(`"\S+/biz/router"`)
+	match := re.FindString(content)
+	if match != "" {
+		match = strings.Trim(match, `"`)
+		parts := strings.Split(match, "/")
+		// The segment before "biz" is typically the service identifier.
+		for i, p := range parts {
+			if p == "biz" && i > 0 {
+				return parts[i-1]
+			}
+		}
+	}
+	return ""
+}
+
+// serviceNameFromKitex tries to extract the service name from handler.go's
+// NewServer call: <ServiceName>.NewServer(.
+func serviceNameFromKitex(root string) string {
+	b, err := os.ReadFile(filepath.Join(root, "handler.go"))
+	if err != nil {
+		return ""
+	}
+	content := string(b)
+	re := regexp.MustCompile(`(\w+)\.NewServer\(`)
+	matches := re.FindStringSubmatch(content)
+	if len(matches) >= 2 {
+		return matches[1]
+	}
+	return ""
+}
+
+// detectIDLPath searches the idl/ directory for .proto or .thrift files.
+// If serviceName is non-empty, prioritizes idl/app/<name>.proto.
+func detectIDLPath(root string, serviceName string) string {
+	if serviceName != "" {
+		candidates := []string{
+			filepath.Join("idl", "app", serviceName+".proto"),
+			filepath.Join("idl", "app", serviceName+".thrift"),
+			filepath.Join("idl", serviceName+".proto"),
+			filepath.Join("idl", serviceName+".thrift"),
+		}
+		for _, c := range candidates {
+			if _, err := os.Stat(filepath.Join(root, c)); err == nil {
+				return c
+			}
+		}
+	}
+	// Recursive search in idl/ directory tree.
+	var found string
+	idlDir := filepath.Join(root, "idl")
+	filepath.WalkDir(idlDir, func(path string, d os.DirEntry, err error) error {
+		if err != nil || found != "" {
+			return nil
+		}
+		if d.IsDir() {
+			return nil
+		}
+		ext := filepath.Ext(d.Name())
+		if ext == ".proto" || ext == ".thrift" {
+			rel, relErr := filepath.Rel(root, path)
+			if relErr == nil {
+				found = rel
+			}
+		}
+		return nil
+	})
+	return found
+}

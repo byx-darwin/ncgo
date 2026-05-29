@@ -9,9 +9,9 @@
 
 如果你希望用一个 CLI 同时解决可复现脚手架、可选基础设施能力以及 Agent 友好的项目上下文，`ncgo` 就是为这个场景设计的。
 
-English documentation: [README.md](README.md)。产品需求文档见 [docs/prd.md](docs/prd.md) 和 [docs/prd.zh-CN.md](docs/prd.zh-CN.md)。Agent 上下文交接见 [docs/context-handoff.zh-CN.md](docs/context-handoff.zh-CN.md)。i18n Hybrid 方案见 [docs/i18n-hybrid-plan.zh-CN.md](docs/i18n-hybrid-plan.zh-CN.md)。i18n Agent 协议见 [docs/i18n-agent-protocol.zh-CN.md](docs/i18n-agent-protocol.zh-CN.md)。i18n Agent Schema 见 [docs/i18n-agent-schema.zh-CN.md](docs/i18n-agent-schema.zh-CN.md)。i18n Payload 设计见 [docs/i18n-payload.zh-CN.md](docs/i18n-payload.zh-CN.md)。
+English documentation: [README.md](README.md)。产品需求文档见 [specs/prd.md](specs/prd.md) 和 [specs/prd.zh-CN.md](specs/prd.zh-CN.md)。Agent 上下文交接见 [specs/005-context-handoff.zh-CN.md](specs/005-context-handoff.zh-CN.md)。i18n 系统设计见 [specs/004-i18n-system.zh-CN.md](specs/004-i18n-system.zh-CN.md)。i18n 详细协议/Schema/Payload 见 [specs/archive/](specs/archive/)。
 
-**快速导航：** [安装](#安装) · [30 秒上手](#30-秒上手) · [典型使用路径](#典型使用路径) · [i18n Hybrid 方案](docs/i18n-hybrid-plan.zh-CN.md) · [i18n 工作流](docs/i18n-workflow.zh-CN.md) · [i18n Agent 协作](docs/i18n-agent-workflow.zh-CN.md) · [i18n Agent 协议](docs/i18n-agent-protocol.zh-CN.md) · [i18n Agent Schema](docs/i18n-agent-schema.zh-CN.md) · [i18n Payload](docs/i18n-payload.zh-CN.md) · [示例文档](docs/examples.zh-CN.md) · [贡献指南](CONTRIBUTING.zh-CN.md) · [FAQ](#faq)
+**快速导航：** [安装](#安装) · [30 秒上手](#30-秒上手) · [典型使用路径](#典型使用路径) · [i18n 系统](specs/004-i18n-system.zh-CN.md) · [示例文档](docs/examples.zh-CN.md) · [贡献指南](CONTRIBUTING.zh-CN.md) · [FAQ](#faq)
 
 ## 为什么用 ncgo
 
@@ -306,11 +306,11 @@ common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_otel`（
 
 `observability_logging` 会生成 `internal/base/logging/logging.go`，并按服务类型额外生成 `hertz.go` 或 `kitex.go`。MVP 支持 `slog`、console/file/both/none、`lumberjack` rotate + gzip、日志分类、`samber/oops` 结构化解析，以及 request/trace/release/canary 字段。
 
-默认 Hertz / Kitex 模板只预留 logging wiring 注释，不会在未启用 optional 时 import `internal/base/logging`；也可以使用 opt-in 的 `--wire` 自动替换默认 access/recovery 日志。加 `--dry-run` 可预览 optional 文件、manifest 更新和 wiring 目标，不会修改文件。接入示例见 `docs/observability-logging.zh-CN.md`。
+默认 Hertz / Kitex 模板只预留 logging wiring 注释，不会在未启用 optional 时 import `internal/base/logging`；也可以使用 opt-in 的 `--wire` 自动替换默认 access/recovery 日志。加 `--dry-run` 可预览 optional 文件、manifest 更新和 wiring 目标，不会修改文件。接入示例见 `specs/007-observability-logging.zh-CN.md`。
 
 `release_canary` 会生成 `internal/base/release/canary.go`，并按服务类型额外生成 `hertz.go` 或 `kitex.go`。MVP 是 SDK-neutral helper，支持 release metadata、traffic context、Hertz Header adapter、Kitex metadata adapter、统一 canary rule、Nacos/Polaris discovery instance 模型、`Discoverer` / `RuleProvider` / `Selector` 抽象、stable/canary pool 拆分、权重选择、`fallback=stable|fail_fast`、Kitex load balancer 以及 Nacos/Polaris discoverer / rule-provider skeleton；后续再接真实 SDK adapter。
 
-默认 Hertz / Kitex 模板只预留 canary wiring 注释，不会在未启用 optional 时 import `internal/base/release`；也可以使用 opt-in 的 `--wire` 自动挂载 traffic middleware。加 `--dry-run` 可预览会被接线修改的源码。接入示例见 `docs/canary-release.zh-CN.md`。
+默认 Hertz / Kitex 模板只预留 canary wiring 注释，不会在未启用 optional 时 import `internal/base/release`；也可以使用 opt-in 的 `--wire` 自动挂载 traffic middleware。加 `--dry-run` 可预览会被接线修改的源码。接入示例见 `specs/006-canary-release.zh-CN.md`。
 
 Hertz 模板内置轻量多语言响应处理：`internal/pkg/i18n` 会根据 `Accept-Language` 选择 `en`、`zh-CN`、`zh-TW`、`ja-JP`、`ko-KR`、`fr-FR`、`de-DE` 或 `es-ES`，`internal/pkg/response` 会对 JSON 响应里的 `msg` 做翻译并写入 `Content-Language`。这些默认语言同样来自 `internal/pkg/i18n/locales/*.json`，并由 `make i18n` 生成的 `catalog_gen.go` 注册。默认无请求头时仍返回原来的英文错误 key；业务错误可在启动期用 `i18n.Register("zh-CN", "order_conflict", "订单冲突")` 扩展翻译。
 
@@ -408,7 +408,7 @@ go test ./... -count=1
 ./scripts/smoke.sh
 ```
 
-CI 会在 GitHub Actions 中运行更完整的检查集合。Release 构建由 tag 触发；人工发布流程见 [docs/release.zh-CN.md](docs/release.zh-CN.md)。
+CI 会在 GitHub Actions 中运行更完整的检查集合。Release 构建由 tag 触发；人工发布流程见 [specs/008-release-process.zh-CN.md](specs/008-release-process.zh-CN.md)。
 
 模板或脚手架发生有意变更后，更新 golden：
 

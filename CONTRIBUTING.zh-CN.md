@@ -93,7 +93,7 @@ release notes 由 PR 标签驱动自动生成。
 
 主要参考文档：
 
-- `docs/release-labels.zh-CN.md`
+- `specs/008-release-labels.zh-CN.md`
 
 常见标签：
 
@@ -106,8 +106,8 @@ release notes 由 PR 标签驱动自动生成。
 
 ## 发布资料
 
-- `docs/release.zh-CN.md` — 发布流程与人工发布步骤
-- `docs/release-notes-template.zh-CN.md` — 发布说明人工润色模板
+- `specs/008-release-process.zh-CN.md` — 发布流程与人工发布步骤
+- `specs/008-release-notes-template.zh-CN.md` — 发布说明人工润色模板
 - `.github/release.yml` — GitHub 自动生成 release notes 的分类规则
 
 ## 相关文档
@@ -116,7 +116,8 @@ release notes 由 PR 标签驱动自动生成。
 - `README.zh-CN.md`
 - `docs/examples.md`
 - `docs/examples.zh-CN.md`
-- `docs/context-handoff.zh-CN.md`
+- `specs/005-context-handoff.zh-CN.md`
+- `specs/README.md` — 完整规格文档索引
 
 如果你暂时不确定改动应该落在哪，建议尽早创建 Draft PR，并说明：
 

@@ -1,0 +1,36 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{.ServiceName}}
+  labels:
+    app: {{.ServiceName}}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: {{.ServiceName}}
+  template:
+    metadata:
+      labels:
+        app: {{.ServiceName}}
+    spec:
+      containers:
+      - name: {{.ServiceName}}
+        image: {{.Module}}:latest
+        ports:
+        - containerPort: {{.Port}}
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: {{.Port}}
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: {{.Port}}
+        resources:
+          requests:
+            memory: "64Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "500m"

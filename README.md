@@ -13,8 +13,8 @@ Use it when you want reproducible Go service scaffolds, optional infra add-ons,
 and agent-friendly project context from a single CLI.
 
 中文文档见 [README.zh-CN.md](README.zh-CN.md)。Product requirements live in
-[docs/prd.md](docs/prd.md) and [docs/prd.zh-CN.md](docs/prd.zh-CN.md). For
-agent handoff, see [docs/context-handoff.zh-CN.md](docs/context-handoff.zh-CN.md).
+[specs/prd.md](specs/prd.md) and [specs/prd.zh-CN.md](specs/prd.zh-CN.md). For
+agent handoff, see [specs/005-context-handoff.zh-CN.md](specs/005-context-handoff.zh-CN.md).
 
 **Quick links:** [Install](#install) · [30-Second Tour](#30-second-tour) · [Typical Workflows](#typical-workflows) · [Examples](docs/examples.md) · [Contributing](CONTRIBUTING.md) · [FAQ](#faq)
 
@@ -60,7 +60,7 @@ The v0.5 MVP is complete:
 - Lifecycle MVPs: metadata-only `upgrade --plan` and conservative `extract domain --apply`.
 
 Deferred optionals remain documented but intentionally not implemented yet:
-~~NATS~~, ~~Mongo~~, and ~~MinIO~~.
+~~NATS~~, ~~Mongo~~, and ~~MinIO~~ (formally removed per P0-5 decision — Kafka, Postgres, and ClickHouse cover equivalent use-cases).
 
 ## What ncgo Generates
 
@@ -364,7 +364,7 @@ The default Hertz/Kitex templates only include commented logging wiring anchors,
 so projects that have not enabled the optional `internal/base/logging` package
 continue to compile. Use opt-in `--wire` to patch generated server/client wiring
 automatically; add `--dry-run` to preview the optional files, manifest update, and
-wiring targets without modifying files. See `docs/observability-logging.zh-CN.md`
+wiring targets without modifying files. See `specs/007-observability-logging.zh-CN.md`
 for examples.
 
 `release_canary` generates `internal/base/release/canary.go` plus a framework
@@ -380,7 +380,7 @@ The default Hertz/Kitex templates only include commented canary wiring anchors,
 so projects that have not enabled the optional `internal/base/release` package
 continue to compile. Use opt-in `--wire` to mount traffic middleware automatically.
 Use `--dry-run` with `--wire` to preview the source files that would change. See
-`docs/canary-release.zh-CN.md` for examples.
+`specs/006-canary-release.zh-CN.md` for examples.
 
 The Hertz template includes lightweight localized response messages. `internal/pkg/i18n`
 selects `en`, `zh-CN`, `zh-TW`, `ja-JP`, `ko-KR`, `fr-FR`, `de-DE`, or `es-ES`
@@ -532,7 +532,7 @@ go test ./... -count=1
 ```
 
 CI runs a fuller set of checks on GitHub Actions. Release builds are tag-driven;
-see [docs/release.zh-CN.md](docs/release.zh-CN.md) for the release flow.
+see [specs/008-release-process.zh-CN.md](specs/008-release-process.zh-CN.md) for the release flow.
 
 Update scaffold goldens after intentional template/scaffold changes:
 

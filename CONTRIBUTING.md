@@ -92,7 +92,7 @@ Release notes are generated from PR labels.
 
 Primary reference:
 
-- `docs/release-labels.zh-CN.md`
+- `specs/008-release-labels.zh-CN.md`
 
 Common labels:
 
@@ -105,8 +105,8 @@ Common labels:
 
 ## Release docs / 发布资料
 
-- `docs/release.zh-CN.md` — release workflow and manual release steps
-- `docs/release-notes-template.zh-CN.md` — human-edited release notes template
+- `specs/008-release-process.zh-CN.md` — release workflow and manual release steps
+- `specs/008-release-notes-template.zh-CN.md` — human-edited release notes template
 - `.github/release.yml` — GitHub generated release notes categories
 
 ## Useful docs / 相关文档
@@ -115,7 +115,8 @@ Common labels:
 - `README.zh-CN.md`
 - `docs/examples.md`
 - `docs/examples.zh-CN.md`
-- `docs/context-handoff.zh-CN.md`
+- `specs/005-context-handoff.zh-CN.md`
+- `specs/README.md` — full specs index
 
 If you are unsure where a change belongs, open a draft PR early and explain the
 intended user impact plus the validation plan.

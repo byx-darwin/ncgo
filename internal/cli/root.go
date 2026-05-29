@@ -14,6 +14,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/byx-darwin/ncgo/internal/assets"
+	"github.com/byx-darwin/ncgo/internal/cli/interactive"
 	goexec "github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scaffold/micro"
@@ -56,6 +57,8 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newExtractCmd())
 	cmd.AddCommand(newExportCmd())
 	cmd.AddCommand(newTestCmd())
+	cmd.AddCommand(newImportCmd())
+	cmd.AddCommand(newCompletionCmd())
 	return cmd
 }
 
@@ -125,6 +128,14 @@ func versionLine(ncgoVersion, assetsVersion, buildVersion, buildTime string) str
 	return fmt.Sprintf("ncgo %s (build: %s, built: %s, assets: %s)", nonEmpty(ncgoVersion, "unknown"), nonEmpty(buildVersion, "unknown"), nonEmpty(buildTime, "unknown"), nonEmpty(assetsVersion, "unknown"))
 }
 
+func isTerminal() bool {
+	fi, err := os.Stdin.Stat()
+	if err != nil {
+		return false
+	}
+	return (fi.Mode() & os.ModeCharDevice) != 0
+}
+
 func nonEmpty(value, fallback string) string {
 	if value == "" {
 		return fallback
@@ -172,7 +183,23 @@ func newNewCmd() *cobra.Command {
 
 func runNew(cmd *cobra.Command, name string, opts *newOptions) error {
 	if opts.module == "" {
-		return errors.New("--module is required")
+		if isTerminal() {
+			result, err := interactive.Run(name)
+			if err != nil {
+				return err
+			}
+			if result == nil {
+				return silentErr("cancelled")
+			}
+			opts.module = result.Module
+			opts.kind = result.Kind
+			opts.db = "none"
+			if result.WithDB {
+				opts.db = "postgres"
+			}
+		} else {
+			return errors.New("--module is required")
+		}
 	}
 	switch opts.mode {
 	case manifest.ModeMono:
