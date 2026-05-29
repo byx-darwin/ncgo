@@ -225,10 +225,10 @@ func runAddRPC(cmd *cobra.Command, name string, opts *addRPCOptions) error {
 	if err != nil {
 		return err
 	}
-		// Update .claude/ for the newly added service
-		if !opts.dryRun {
-			_ = ai.WriteServiceClaudeDirs(opts.root, name, manifest.KindKitex)
-		}
+	// Update .claude/ for the newly added service
+	if !opts.dryRun {
+		_ = ai.WriteServiceClaudeDirs(opts.root, name, manifest.KindKitex)
+	}
 	out := cmd.OutOrStdout()
 	if opts.output == "json" {
 		return writeAddServiceJSON(out, res.ServiceDir, res.ServiceRel, res.Module, res.DryRun, res.Updated, res.RanGenerate, res.NextSteps, res.Plan)
@@ -315,10 +315,10 @@ func runAddBFF(cmd *cobra.Command, name string, opts *addBFFOptions) error {
 	if err != nil {
 		return err
 	}
-		// Update .claude/ for the newly added service
-		if !opts.dryRun {
-			_ = ai.WriteServiceClaudeDirs(opts.root, name, manifest.KindHertz)
-		}
+	// Update .claude/ for the newly added service
+	if !opts.dryRun {
+		_ = ai.WriteServiceClaudeDirs(opts.root, name, manifest.KindHertz)
+	}
 	out := cmd.OutOrStdout()
 	if opts.output == "json" {
 		return writeAddServiceJSON(out, res.ServiceDir, res.ServiceRel, res.Module, res.DryRun, res.Updated, res.RanGenerate, res.NextSteps, res.Plan)

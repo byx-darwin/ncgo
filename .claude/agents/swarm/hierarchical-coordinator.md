@@ -643,13 +643,13 @@ mcp__claude-flow__metrics_collect --components="agents,tasks,coordination"
 def assign_task(task, available_agents):
     # 1. Filter agents by capability match
     capable_agents = filter_by_capabilities(available_agents, task.required_capabilities)
-    
+
     # 2. Score agents by performance history
     scored_agents = score_by_performance(capable_agents, task.type)
-    
+
     # 3. Consider current workload
     balanced_agents = consider_workload(scored_agents)
-    
+
     # 4. Select optimal agent
     return select_best_agent(balanced_agents)
 ```

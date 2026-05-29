@@ -56,7 +56,7 @@ func KitexRules() []FileRule {
 // ExcludedPaths returns paths that should never be exported as templates.
 var ExcludedPaths = []string{
 	"internal/pb/", // hz-generated protobuf code
-	"kitex_gen/",  // kitex-generated RPC stubs
+	"kitex_gen/",   // kitex-generated RPC stubs
 }
 
 // ExportOptions describes an export operation.

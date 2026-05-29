@@ -39,18 +39,18 @@ import (
 
 // Options describes a `ncgo new --mode mono` invocation.
 type Options struct {
-	Name          string      // service name; also default base directory
-	Module        string      // Go module path
-	Kind          string      // service kind: manifest.KindHertz (default) | manifest.KindKitex
-	Dir           string      // target directory; must be empty or nonexistent
-	WithDatabase  bool        // postgres scaffolding flag
-	Infra         []string    // creation-time infra add-ons (currently only redis)
-	IDL           string      // IDL path relative to project root; default differs by Kind
-	AssetsVersion string      // recorded into manifest.ncgo.assets_version
-	NCGOVersion   string      // recorded into manifest.ncgo.version
-	NoGenerate    bool        // when true, skip the generator (hz/kitex) invocation
-	Runner        exec.Runner // injected exec; nil means exec.NewDefault()
-	Now           time.Time   // injected clock for golden tests; zero means time.Now().UTC()
+	Name           string      // service name; also default base directory
+	Module         string      // Go module path
+	Kind           string      // service kind: manifest.KindHertz (default) | manifest.KindKitex
+	Dir            string      // target directory; must be empty or nonexistent
+	WithDatabase   bool        // postgres scaffolding flag
+	Infra          []string    // creation-time infra add-ons (currently only redis)
+	IDL            string      // IDL path relative to project root; default differs by Kind
+	AssetsVersion  string      // recorded into manifest.ncgo.assets_version
+	NCGOVersion    string      // recorded into manifest.ncgo.version
+	NoGenerate     bool        // when true, skip the generator (hz/kitex) invocation
+	Runner         exec.Runner // injected exec; nil means exec.NewDefault()
+	Now            time.Time   // injected clock for golden tests; zero means time.Now().UTC()
 	Preset         string      // preset name (e.g., "rule-center")
 	RuleCenterAddr string      // rule-center gRPC address; when set, Hertz scaffolds rule_center_client.go
 }

@@ -15,10 +15,10 @@ import (
 
 func TestParseRateLimitConfig(t *testing.T) {
 	tests := []struct {
-		name           string
-		yamlContent    string
-		wantSource     string
-		wantBackend    string
+		name        string
+		yamlContent string
+		wantSource  string
+		wantBackend string
 	}{
 		{
 			name: "config + memory",

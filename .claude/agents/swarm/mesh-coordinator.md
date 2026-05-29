@@ -121,7 +121,7 @@ class WorkStealingProtocol:
     def __init__(self):
         self.local_queue = TaskQueue()
         self.peer_connections = PeerNetwork()
-    
+
     def steal_work(self):
         if self.local_queue.is_empty():
             # Find overloaded peers
@@ -131,7 +131,7 @@ class WorkStealingProtocol:
                 if stolen_task:
                     self.local_queue.add(stolen_task)
                     break
-    
+
     def distribute_work(self, task):
         if self.is_overloaded():
             # Find underutilized peers
@@ -149,12 +149,12 @@ class TaskDistributionDHT:
         # Hash task ID to determine responsible node
         hash_value = consistent_hash(task.id)
         responsible_node = self.find_node_by_hash(hash_value)
-        
+
         if responsible_node == self:
             self.execute_task(task)
         else:
             responsible_node.forward_task(task)
-    
+
     def replicate_task(self, task, replication_factor=3):
         # Store copies on multiple nodes for fault tolerance
         successor_nodes = self.get_successors(replication_factor)
@@ -168,18 +168,18 @@ class TaskAuction:
     def conduct_auction(self, task):
         # Broadcast task to all peers
         bids = self.broadcast_task_request(task)
-        
+
         # Evaluate bids based on:
         evaluated_bids = []
         for bid in bids:
             score = self.evaluate_bid(bid, criteria={
                 'capability_match': 0.4,
-                'current_load': 0.3, 
+                'current_load': 0.3,
                 'past_performance': 0.2,
                 'resource_availability': 0.1
             })
             evaluated_bids.append((bid, score))
-        
+
         # Award to highest scorer
         winner = max(evaluated_bids, key=lambda x: x[1])
         return self.award_task(task, winner[0])
@@ -850,12 +850,12 @@ class HeartbeatMonitor:
         self.peers = {}
         self.timeout = timeout
         self.interval = interval
-        
+
     def monitor_peer(self, peer_id):
         last_heartbeat = self.peers.get(peer_id, 0)
         if time.time() - last_heartbeat > self.timeout:
             self.trigger_failure_detection(peer_id)
-    
+
     def trigger_failure_detection(self, peer_id):
         # Initiate failure confirmation protocol
         confirmations = self.request_failure_confirmations(peer_id)
@@ -869,10 +869,10 @@ class PartitionHandler:
     def detect_partition(self):
         reachable_peers = self.ping_all_peers()
         total_peers = len(self.known_peers)
-        
+
         if len(reachable_peers) < total_peers * 0.5:
             return self.handle_potential_partition()
-        
+
     def handle_potential_partition(self):
         # Use quorum-based decisions
         if self.has_majority_quorum():
@@ -889,11 +889,11 @@ class LoadBalancer:
     def balance_load(self):
         # Collect load metrics from all peers
         peer_loads = self.collect_load_metrics()
-        
+
         # Identify overloaded and underutilized nodes
         overloaded = [p for p in peer_loads if p.cpu_usage > 0.8]
         underutilized = [p for p in peer_loads if p.cpu_usage < 0.3]
-        
+
         # Migrate tasks from hot to cold nodes
         for hot_node in overloaded:
             for cold_node in underutilized:
@@ -906,7 +906,7 @@ class LoadBalancer:
 class CapabilityRouter:
     def route_by_capability(self, task):
         required_caps = task.required_capabilities
-        
+
         # Find peers with matching capabilities
         capable_peers = []
         for peer in self.peers:
@@ -915,7 +915,7 @@ class CapabilityRouter:
             )
             if capability_match > 0.7:  # 70% match threshold
                 capable_peers.append((peer, capability_match))
-        
+
         # Route to best match with available capacity
         return self.select_optimal_peer(capable_peers)
 ```

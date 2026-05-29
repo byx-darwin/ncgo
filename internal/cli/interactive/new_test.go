@@ -72,96 +72,96 @@ func TestCtrlCQuits(t *testing.T) {
 
 func TestEnterAdvancesSteps(t *testing.T) {
 	tests := []struct {
-		name          string
-		initialStep   int
-		inputValue    string
-		wantStep      int
-		wantKind      string
-		wantWithDB    bool
-		wantQuitting  bool
+		name         string
+		initialStep  int
+		inputValue   string
+		wantStep     int
+		wantKind     string
+		wantWithDB   bool
+		wantQuitting bool
 	}{
 		{
 			name:        "step0 enter with value",
 			initialStep: 0,
-			inputValue: "github.com/test/mymod",
+			inputValue:  "github.com/test/mymod",
 			wantStep:    1,
 			wantKind:    "hertz",
 		},
 		{
 			name:        "step0 enter empty uses placeholder",
 			initialStep: 0,
-			inputValue: "",
+			inputValue:  "",
 			wantStep:    1,
 			wantKind:    "hertz",
 		},
 		{
 			name:        "step1 enter h selects hertz",
 			initialStep: 1,
-			inputValue: "h",
+			inputValue:  "h",
 			wantStep:    2,
 			wantKind:    "hertz",
 		},
 		{
 			name:        "step1 enter k selects kitex",
 			initialStep: 1,
-			inputValue: "k",
+			inputValue:  "k",
 			wantStep:    2,
 			wantKind:    "kitex",
 		},
 		{
 			name:        "step1 enter K selects kitex",
 			initialStep: 1,
-			inputValue: "K",
+			inputValue:  "K",
 			wantStep:    2,
 			wantKind:    "kitex",
 		},
 		{
 			name:        "step1 enter other defaults to hertz",
 			initialStep: 1,
-			inputValue: "x",
+			inputValue:  "x",
 			wantStep:    2,
 			wantKind:    "hertz",
 		},
 		{
 			name:        "step2 enter n selects no database",
 			initialStep: 2,
-			inputValue: "n",
+			inputValue:  "n",
 			wantStep:    3,
 			wantWithDB:  false,
 		},
 		{
 			name:        "step2 enter p selects postgres",
 			initialStep: 2,
-			inputValue: "p",
+			inputValue:  "p",
 			wantStep:    3,
 			wantWithDB:  true,
 		},
 		{
 			name:        "step2 enter P selects postgres",
 			initialStep: 2,
-			inputValue: "P",
+			inputValue:  "P",
 			wantStep:    3,
 			wantWithDB:  true,
 		},
 		{
-			name:        "step3 enter y proceeds",
-			initialStep: 3,
-			inputValue: "y",
-			wantStep:    3,
+			name:         "step3 enter y proceeds",
+			initialStep:  3,
+			inputValue:   "y",
+			wantStep:     3,
 			wantQuitting: false,
 		},
 		{
-			name:        "step3 enter n cancels",
-			initialStep: 3,
-			inputValue: "n",
-			wantStep:    3,
+			name:         "step3 enter n cancels",
+			initialStep:  3,
+			inputValue:   "n",
+			wantStep:     3,
 			wantQuitting: true,
 		},
 		{
-			name:        "step3 enter N cancels",
-			initialStep: 3,
-			inputValue: "N",
-			wantStep:    3,
+			name:         "step3 enter N cancels",
+			initialStep:  3,
+			inputValue:   "N",
+			wantStep:     3,
 			wantQuitting: true,
 		},
 	}

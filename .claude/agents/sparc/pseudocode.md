@@ -251,26 +251,26 @@ BEGIN
     IF email is empty OR password is empty THEN
         RETURN error("Invalid credentials")
     END IF
-    
+
     // Retrieve user from database
     user ← Database.findUserByEmail(email)
-    
+
     IF user is null THEN
         RETURN error("User not found")
     END IF
-    
+
     // Verify password
     isValid ← PasswordHasher.verify(password, user.passwordHash)
-    
+
     IF NOT isValid THEN
         // Log failed attempt
         SecurityLog.logFailedLogin(email)
         RETURN error("Invalid credentials")
     END IF
-    
+
     // Create session
     session ← CreateUserSession(user)
-    
+
     RETURN {user: user, session: session}
 END
 ```
@@ -285,7 +285,7 @@ UserCache:
     Size: 10,000 entries
     TTL: 5 minutes
     Purpose: Reduce database queries for active users
-    
+
     Operations:
         - get(userId): O(1)
         - set(userId, userData): O(1)
@@ -294,7 +294,7 @@ UserCache:
 PermissionTree:
     Type: Trie (Prefix Tree)
     Purpose: Efficient permission checking
-    
+
     Structure:
         root
         ├── users
@@ -304,7 +304,7 @@ PermissionTree:
         └── admin
             ├── system
             └── users
-    
+
     Operations:
         - hasPermission(path): O(m) where m = path length
         - addPermission(path): O(m)
@@ -326,20 +326,20 @@ CONSTANTS:
 
 BEGIN
     bucket ← RateLimitBuckets.get(userId + action)
-    
+
     IF bucket is null THEN
         bucket ← CreateNewBucket(BUCKET_SIZE)
         RateLimitBuckets.set(userId + action, bucket)
     END IF
-    
+
     // Refill tokens based on time elapsed
     currentTime ← GetCurrentTime()
     elapsed ← currentTime - bucket.lastRefill
     tokensToAdd ← elapsed * REFILL_RATE
-    
+
     bucket.tokens ← MIN(bucket.tokens + tokensToAdd, BUCKET_SIZE)
     bucket.lastRefill ← currentTime
-    
+
     // Check if request allowed
     IF bucket.tokens >= 1 THEN
         bucket.tokens ← bucket.tokens - 1
@@ -366,14 +366,14 @@ BEGIN
     // Phase 1: Query preprocessing
     normalizedQuery ← NormalizeText(query)
     queryTokens ← Tokenize(normalizedQuery)
-    
+
     // Phase 2: Index lookup
     candidates ← SET()
     FOR EACH token IN queryTokens DO
         matches ← SearchIndex.get(token)
         candidates ← candidates UNION matches
     END FOR
-    
+
     // Phase 3: Scoring and ranking
     scoredResults ← []
     FOR EACH item IN candidates DO
@@ -382,11 +382,11 @@ BEGIN
             scoredResults.append({item: item, score: score})
         END IF
     END FOR
-    
+
     // Phase 4: Sort and filter
     scoredResults.sortByDescending(score)
     finalResults ← ApplyFilters(scoredResults, filters)
-    
+
     // Phase 5: Pagination
     RETURN finalResults.slice(0, limit)
 END
@@ -397,24 +397,24 @@ OUTPUT: score (float)
 
 BEGIN
     score ← 0
-    
+
     // Title match (highest weight)
     titleMatches ← CountTokenMatches(item.title, queryTokens)
     score ← score + (titleMatches * 10)
-    
+
     // Description match (medium weight)
     descMatches ← CountTokenMatches(item.description, queryTokens)
     score ← score + (descMatches * 5)
-    
+
     // Tag match (lower weight)
     tagMatches ← CountTokenMatches(item.tags, queryTokens)
     score ← score + (tagMatches * 2)
-    
+
     // Boost by recency
     daysSinceUpdate ← (CurrentDate - item.updatedAt).days
     recencyBoost ← 1 / (1 + daysSinceUpdate * 0.1)
     score ← score * recencyBoost
-    
+
     RETURN score
 END
 ```
@@ -469,14 +469,14 @@ INTERFACE: AuthenticationStrategy
 CLASS: EmailPasswordStrategy IMPLEMENTS AuthenticationStrategy
     authenticate(credentials):
         // Email/password logic
-        
+
 CLASS: OAuthStrategy IMPLEMENTS AuthenticationStrategy
     authenticate(credentials):
         // OAuth logic
-        
+
 CLASS: AuthenticationContext
     strategy: AuthenticationStrategy
-    
+
     executeAuthentication(credentials):
         RETURN strategy.authenticate(credentials)
 ```
@@ -485,13 +485,13 @@ CLASS: AuthenticationContext
 ```
 CLASS: EventEmitter
     listeners: Map<eventName, List<callback>>
-    
+
     on(eventName, callback):
         IF NOT listeners.has(eventName) THEN
             listeners.set(eventName, [])
         END IF
         listeners.get(eventName).append(callback)
-    
+
     emit(eventName, data):
         IF listeners.has(eventName) THEN
             FOR EACH callback IN listeners.get(eventName) DO

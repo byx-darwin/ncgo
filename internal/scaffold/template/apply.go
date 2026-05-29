@@ -11,12 +11,12 @@ import (
 
 // ApplyOptions describes a template apply operation.
 type ApplyOptions struct {
-	Root         string         // project root (after hz new)
-	Module       string         // Go module path
-	ServiceName  string         // service name
-	WithDatabase bool           // database enabled flag
-	Infra        []string       // infra add-ons
-	Services     []ServiceInfo  // parsed from proto (all services)
+	Root         string        // project root (after hz new)
+	Module       string        // Go module path
+	ServiceName  string        // service name
+	WithDatabase bool          // database enabled flag
+	Infra        []string      // infra add-ons
+	Services     []ServiceInfo // parsed from proto (all services)
 }
 
 // ApplyResult describes what was applied.

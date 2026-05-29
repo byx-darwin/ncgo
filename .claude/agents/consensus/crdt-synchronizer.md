@@ -54,12 +54,12 @@ class CRDTSynchronizer {
   registerCRDT(name, crdtType, initialState = null) {
     const crdt = this.createCRDTInstance(crdtType, initialState);
     this.crdtInstances.set(name, crdt);
-    
+
     // Subscribe to CRDT changes for delta tracking
     crdt.onUpdate((delta) => {
       this.trackDelta(name, delta);
     });
-    
+
     return crdt;
   }
 
@@ -86,7 +86,7 @@ class CRDTSynchronizer {
   // Synchronize with peer nodes
   async synchronize(peerNodes = null) {
     const targets = peerNodes || Array.from(this.replicationGroup);
-    
+
     for (const peer of targets) {
       if (peer !== this.nodeId) {
         await this.synchronizeWithPeer(peer);
@@ -98,7 +98,7 @@ class CRDTSynchronizer {
     // Get current state and deltas
     const localState = this.getCurrentState();
     const deltas = this.getDeltasSince(peerNode);
-    
+
     // Send sync request
     const syncRequest = {
       type: 'CRDT_SYNC_REQUEST',
@@ -107,7 +107,7 @@ class CRDTSynchronizer {
       state: localState,
       deltas: deltas
     };
-    
+
     try {
       const response = await this.sendSyncRequest(peerNode, syncRequest);
       await this.processSyncResponse(response);
@@ -125,16 +125,16 @@ class GCounter {
     this.nodeId = nodeId;
     this.replicationGroup = replicationGroup;
     this.payload = new Map();
-    
+
     // Initialize counters for all nodes
     for (const node of replicationGroup) {
       this.payload.set(node, 0);
     }
-    
+
     if (initialState) {
       this.merge(initialState);
     }
-    
+
     this.updateCallbacks = [];
   }
 
@@ -143,11 +143,11 @@ class GCounter {
     if (amount < 0) {
       throw new Error('G-Counter only supports positive increments');
     }
-    
+
     const oldValue = this.payload.get(this.nodeId) || 0;
     const newValue = oldValue + amount;
     this.payload.set(this.nodeId, newValue);
-    
+
     // Notify observers
     this.notifyUpdate({
       type: 'INCREMENT',
@@ -156,7 +156,7 @@ class GCounter {
       newValue: newValue,
       delta: amount
     });
-    
+
     return newValue;
   }
 
@@ -168,7 +168,7 @@ class GCounter {
   // Merge with another G-Counter state
   merge(otherState) {
     let changed = false;
-    
+
     for (const [node, otherValue] of otherState.payload) {
       const currentValue = this.payload.get(node) || 0;
       if (otherValue > currentValue) {
@@ -176,7 +176,7 @@ class GCounter {
         changed = true;
       }
     }
-    
+
     if (changed) {
       this.notifyUpdate({
         type: 'MERGE',
@@ -223,30 +223,30 @@ class ORSet {
     this.elements = new Map(); // element -> Set of unique tags
     this.tombstones = new Set(); // removed element tags
     this.tagCounter = 0;
-    
+
     if (initialState) {
       this.merge(initialState);
     }
-    
+
     this.updateCallbacks = [];
   }
 
   // Add element to set
   add(element) {
     const tag = this.generateUniqueTag();
-    
+
     if (!this.elements.has(element)) {
       this.elements.set(element, new Set());
     }
-    
+
     this.elements.get(element).add(tag);
-    
+
     this.notifyUpdate({
       type: 'ADD',
       element: element,
       tag: tag
     });
-    
+
     return tag;
   }
 
@@ -255,22 +255,22 @@ class ORSet {
     if (!this.elements.has(element)) {
       return false; // Element not present
     }
-    
+
     const tags = this.elements.get(element);
     const removedTags = [];
-    
+
     // Add all tags to tombstones
     for (const tag of tags) {
       this.tombstones.add(tag);
       removedTags.push(tag);
     }
-    
+
     this.notifyUpdate({
       type: 'REMOVE',
       element: element,
       removedTags: removedTags
     });
-    
+
     return true;
   }
 
@@ -279,23 +279,23 @@ class ORSet {
     if (!this.elements.has(element)) {
       return false;
     }
-    
+
     const tags = this.elements.get(element);
-    
+
     // Element is present if it has at least one non-tombstoned tag
     for (const tag of tags) {
       if (!this.tombstones.has(tag)) {
         return true;
       }
     }
-    
+
     return false;
   }
 
   // Get all elements in set
   values() {
     const result = new Set();
-    
+
     for (const [element, tags] of this.elements) {
       // Include element if it has at least one non-tombstoned tag
       for (const tag of tags) {
@@ -305,22 +305,22 @@ class ORSet {
         }
       }
     }
-    
+
     return result;
   }
 
   // Merge with another OR-Set
   merge(otherState) {
     let changed = false;
-    
+
     // Merge elements and their tags
     for (const [element, otherTags] of otherState.elements) {
       if (!this.elements.has(element)) {
         this.elements.set(element, new Set());
       }
-      
+
       const currentTags = this.elements.get(element);
-      
+
       for (const tag of otherTags) {
         if (!currentTags.has(tag)) {
           currentTags.add(tag);
@@ -328,7 +328,7 @@ class ORSet {
         }
       }
     }
-    
+
     // Merge tombstones
     for (const tombstone of otherState.tombstones) {
       if (!this.tombstones.has(tombstone)) {
@@ -336,7 +336,7 @@ class ORSet {
         changed = true;
       }
     }
-    
+
     if (changed) {
       this.notifyUpdate({
         type: 'MERGE',
@@ -373,14 +373,14 @@ class LWWRegister {
   // Set new value with timestamp
   set(newValue, timestamp = null) {
     const ts = timestamp || Date.now();
-    
-    if (ts > this.timestamp || 
+
+    if (ts > this.timestamp ||
         (ts === this.timestamp && this.nodeId > this.getLastWriter())) {
       const oldValue = this.value;
       this.value = newValue;
       this.timestamp = ts;
       this.vectorClock.increment();
-      
+
       this.notifyUpdate({
         type: 'SET',
         oldValue: oldValue,
@@ -398,13 +398,13 @@ class LWWRegister {
   // Merge with another LWW-Register
   merge(otherRegister) {
     if (otherRegister.timestamp > this.timestamp ||
-        (otherRegister.timestamp === this.timestamp && 
+        (otherRegister.timestamp === this.timestamp &&
          otherRegister.nodeId > this.nodeId)) {
-      
+
       const oldValue = this.value;
       this.value = otherRegister.value;
       this.timestamp = otherRegister.timestamp;
-      
+
       this.notifyUpdate({
         type: 'MERGE',
         oldValue: oldValue,
@@ -412,7 +412,7 @@ class LWWRegister {
         mergedFrom: otherRegister
       });
     }
-    
+
     // Merge vector clocks
     this.vectorClock.merge(otherRegister.vectorClock);
   }
@@ -440,31 +440,31 @@ class RGA {
     this.sequence = [];
     this.tombstones = new Set();
     this.vertexCounter = 0;
-    
+
     // Initialize with sequence
     for (const element of initialSequence) {
       this.insert(this.sequence.length, element);
     }
-    
+
     this.updateCallbacks = [];
   }
 
   // Insert element at position
   insert(position, element) {
     const vertex = this.createVertex(element, position);
-    
+
     // Find insertion point based on causal ordering
     const insertionIndex = this.findInsertionIndex(vertex, position);
-    
+
     this.sequence.splice(insertionIndex, 0, vertex);
-    
+
     this.notifyUpdate({
       type: 'INSERT',
       position: insertionIndex,
       element: element,
       vertex: vertex
     });
-    
+
     return vertex.id;
   }
 
@@ -473,20 +473,20 @@ class RGA {
     if (position < 0 || position >= this.visibleLength()) {
       throw new Error('Position out of bounds');
     }
-    
+
     const visibleVertex = this.getVisibleVertex(position);
     if (visibleVertex) {
       this.tombstones.add(visibleVertex.id);
-      
+
       this.notifyUpdate({
         type: 'REMOVE',
         position: position,
         vertex: visibleVertex
       });
-      
+
       return true;
     }
-    
+
     return false;
   }
 
@@ -505,14 +505,14 @@ class RGA {
   // Merge with another RGA
   merge(otherRGA) {
     let changed = false;
-    
+
     // Merge sequences
     const mergedSequence = this.mergeSequences(this.sequence, otherRGA.sequence);
     if (mergedSequence.length !== this.sequence.length) {
       this.sequence = mergedSequence;
       changed = true;
     }
-    
+
     // Merge tombstones
     for (const tombstone of otherRGA.tombstones) {
       if (!this.tombstones.has(tombstone)) {
@@ -520,7 +520,7 @@ class RGA {
         changed = true;
       }
     }
-    
+
     if (changed) {
       this.notifyUpdate({
         type: 'MERGE',
@@ -531,7 +531,7 @@ class RGA {
 
   createVertex(element, position) {
     const leftVertex = position > 0 ? this.getVisibleVertex(position - 1) : null;
-    
+
     return {
       id: `${this.nodeId}-${++this.vertexCounter}`,
       element: element,
@@ -545,7 +545,7 @@ class RGA {
     // Simplified insertion logic - in practice would use more sophisticated
     // causal ordering based on left origins and vector clocks
     let visibleCount = 0;
-    
+
     for (let i = 0; i < this.sequence.length; i++) {
       if (!this.tombstones.has(this.sequence[i].id)) {
         if (visibleCount === targetPosition) {
@@ -554,13 +554,13 @@ class RGA {
         visibleCount++;
       }
     }
-    
+
     return this.sequence.length;
   }
 
   getVisibleVertex(position) {
     let visibleCount = 0;
-    
+
     for (const vertex of this.sequence) {
       if (!this.tombstones.has(vertex.id)) {
         if (visibleCount === position) {
@@ -569,7 +569,7 @@ class RGA {
         visibleCount++;
       }
     }
-    
+
     return null;
   }
 
@@ -577,13 +577,13 @@ class RGA {
     // Simplified merge - real implementation would use topological sort
     // based on causal dependencies
     const merged = [...seq1];
-    
+
     for (const vertex of seq2) {
       if (!merged.find(v => v.id === vertex.id)) {
         merged.push(vertex);
       }
     }
-    
+
     // Sort by timestamp for basic ordering
     return merged.sort((a, b) => a.timestamp - b.timestamp);
   }
@@ -613,11 +613,11 @@ class DeltaStateCRDT {
     const oldState = this.baseCRDT.clone();
     const result = this.baseCRDT.applyOperation(operation);
     const newState = this.baseCRDT.clone();
-    
+
     // Compute delta
     const delta = this.computeDelta(oldState, newState);
     this.addDelta(delta);
-    
+
     return result;
   }
 
@@ -628,7 +628,7 @@ class DeltaStateCRDT {
       timestamp: Date.now(),
       vectorClock: this.baseCRDT.vectorClock.clone()
     });
-    
+
     // Maintain buffer size
     if (this.deltaBuffer.length > this.maxDeltaBuffer) {
       this.deltaBuffer.shift();
@@ -638,8 +638,8 @@ class DeltaStateCRDT {
   // Get deltas since last sync with peer
   getDeltasSince(peerNode) {
     const lastSync = this.lastSyncVector.get(peerNode) || new VectorClock();
-    
-    return this.deltaBuffer.filter(deltaEntry => 
+
+    return this.deltaBuffer.filter(deltaEntry =>
       deltaEntry.vectorClock.isAfter(lastSync)
     );
   }
@@ -647,7 +647,7 @@ class DeltaStateCRDT {
   // Apply received deltas
   applyDeltas(deltas) {
     const sortedDeltas = this.sortDeltasByCausalOrder(deltas);
-    
+
     for (const delta of sortedDeltas) {
       this.baseCRDT.merge(delta.delta);
     }
@@ -675,7 +675,7 @@ class DeltaStateCRDT {
   // Garbage collection for old deltas
   garbageCollectDeltas() {
     const cutoffTime = Date.now() - (24 * 60 * 60 * 1000); // 24 hours
-    
+
     this.deltaBuffer = this.deltaBuffer.filter(
       deltaEntry => deltaEntry.timestamp > cutoffTime
     );
@@ -751,7 +751,7 @@ class CausalTracker {
   trackEvent(event) {
     event.vectorClock = this.vectorClock.clone();
     this.vectorClock.increment();
-    
+
     // Check if event can be delivered
     if (this.canDeliver(event)) {
       this.deliverEvent(event);
@@ -783,10 +783,10 @@ class CausalTracker {
     if (!this.deliveredEvents.has(event.id)) {
       // Update vector clock
       this.vectorClock.merge(event.vectorClock);
-      
+
       // Mark as delivered
       this.deliveredEvents.add(event.id);
-      
+
       // Apply event to CRDT
       this.applyCRDTOperation(event);
     }
@@ -800,13 +800,13 @@ class CausalTracker {
 
   checkBufferedEvents() {
     const deliverable = [];
-    
+
     for (const [eventId, event] of this.causalBuffer) {
       if (this.canDeliver(event)) {
         deliverable.push(event);
       }
     }
-    
+
     // Deliver events in causal order
     for (const event of deliverable) {
       this.causalBuffer.delete(event.id);
@@ -828,26 +828,26 @@ class CRDTComposer {
   defineComposite(name, schema) {
     this.compositeTypes.set(name, {
       schema: schema,
-      factory: (nodeId, replicationGroup) => 
+      factory: (nodeId, replicationGroup) =>
         this.createComposite(schema, nodeId, replicationGroup)
     });
   }
 
   createComposite(schema, nodeId, replicationGroup) {
     const composite = new CompositeCRDT(nodeId, replicationGroup);
-    
+
     for (const [fieldName, fieldSpec] of Object.entries(schema)) {
       const fieldCRDT = this.createFieldCRDT(fieldSpec, nodeId, replicationGroup);
       composite.addField(fieldName, fieldCRDT);
     }
-    
+
     return composite;
   }
 
   createFieldCRDT(fieldSpec, nodeId, replicationGroup) {
     switch (fieldSpec.type) {
       case 'counter':
-        return fieldSpec.decrements ? 
+        return fieldSpec.decrements ?
           new PNCounter(nodeId, replicationGroup) :
           new GCounter(nodeId, replicationGroup);
       case 'set':
@@ -874,7 +874,7 @@ class CompositeCRDT {
 
   addField(name, crdt) {
     this.fields.set(name, crdt);
-    
+
     // Subscribe to field updates
     crdt.onUpdate((delta) => {
       this.notifyUpdate({
@@ -891,19 +891,19 @@ class CompositeCRDT {
 
   merge(otherComposite) {
     let changed = false;
-    
+
     for (const [fieldName, fieldCRDT] of this.fields) {
       const otherField = otherComposite.fields.get(fieldName);
       if (otherField) {
         const oldState = fieldCRDT.clone();
         fieldCRDT.merge(otherField);
-        
+
         if (!this.statesEqual(oldState, fieldCRDT)) {
           changed = true;
         }
       }
     }
-    
+
     if (changed) {
       this.notifyUpdate({
         type: 'COMPOSITE_MERGE',
@@ -914,11 +914,11 @@ class CompositeCRDT {
 
   serialize() {
     const serialized = {};
-    
+
     for (const [fieldName, fieldCRDT] of this.fields) {
       serialized[fieldName] = fieldCRDT.serialize();
     }
-    
+
     return serialized;
   }
 
@@ -951,7 +951,7 @@ class CRDTConsensusIntegrator {
       operation: operation,
       timestamp: Date.now()
     });
-    
+
     if (consensusResult.committed) {
       // Step 2: Apply operation to CRDT with consensus-determined order
       const orderedOperation = {
@@ -959,16 +959,16 @@ class CRDTConsensusIntegrator {
         consensusIndex: consensusResult.index,
         globalTimestamp: consensusResult.timestamp
       };
-      
+
       await this.crdt.applyOrderedOperation(orderedOperation);
-      
+
       return {
         success: true,
         consensusIndex: consensusResult.index,
         crdtState: this.crdt.getCurrentState()
       };
     }
-    
+
     return { success: false, reason: 'Consensus failed' };
   }
 
@@ -982,7 +982,7 @@ class CRDTConsensusIntegrator {
     // Verify current CRDT state against consensus
     const consensusState = await this.consensus.getCommittedState();
     const crdtState = this.crdt.getCurrentState();
-    
+
     if (this.statesConsistent(consensusState, crdtState)) {
       return this.crdt.read(key);
     } else {

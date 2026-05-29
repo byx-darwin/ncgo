@@ -759,8 +759,8 @@ func New(ctx context.Context, cfg Config, opts ...kitexclient.Option) {
 	result, err := WireFile([]byte(src),
 		WireOp{AddImport: "github.com/x/demo/internal/base/logging"},
 		WireOp{
-			Marker: "// ncgo:wire:kitex-client:middleware",
-			Anchors: []string{"\tif cfg.EnableMetaInfo {\n\t\toptions = append(options, kitexclient.WithMetaHandler(transmeta.ClientTTHeaderHandler))\n\t}\n"},
+			Marker:         "// ncgo:wire:kitex-client:middleware",
+			Anchors:        []string{"\tif cfg.EnableMetaInfo {\n\t\toptions = append(options, kitexclient.WithMetaHandler(transmeta.ClientTTHeaderHandler))\n\t}\n"},
 			InsertSrc:      loggingBlock,
 			ExistsSentinel: "logging.KitexAccessLog()",
 		},
@@ -803,8 +803,8 @@ func New(ctx context.Context, cfg Config, opts ...kitexclient.Option) {
 	result, err := WireFile([]byte(src),
 		WireOp{AddImport: "github.com/x/demo/internal/base/release"},
 		WireOp{
-			Marker: "// ncgo:wire:kitex-client:middleware",
-			Anchors: []string{"\tif cfg.EnableMetaInfo {\n\t\toptions = append(options, kitexclient.WithMetaHandler(transmeta.ClientTTHeaderHandler))\n\t}\n"},
+			Marker:         "// ncgo:wire:kitex-client:middleware",
+			Anchors:        []string{"\tif cfg.EnableMetaInfo {\n\t\toptions = append(options, kitexclient.WithMetaHandler(transmeta.ClientTTHeaderHandler))\n\t}\n"},
 			InsertSrc:      "\toptions = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))\n",
 			ExistsSentinel: "release.KitexTraffic()",
 		},
