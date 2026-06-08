@@ -421,4 +421,3 @@ func TestInitClaudeUnknownShapeHasEmptyArchRules(t *testing.T) {
 		t.Errorf("go.md should not contain raw placeholder for unknown shape")
 	}
 }
-

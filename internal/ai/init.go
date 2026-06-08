@@ -41,8 +41,8 @@ const (
 // initContext carries the detection result from manifests, sufficient for
 // rendering all starter files.
 type initContext struct {
-	Shape           projectShape
-	Kind            string            // hertz | kitex | "" (empty for micro_workspace or unknown)
+	Shape             projectShape
+	Kind              string // hertz | kitex | "" (empty for micro_workspace or unknown)
 	WorkspaceServices []initServiceDesc
 }
 
@@ -130,8 +130,8 @@ func detectInitContext(root string) initContext {
 			})
 		}
 		return initContext{
-			Shape:           projectShapeMicroWorkspace,
-			Kind:            "",
+			Shape:             projectShapeMicroWorkspace,
+			Kind:              "",
 			WorkspaceServices: services,
 		}
 	}

@@ -39,8 +39,8 @@ func TestApply_SingleTemplate(t *testing.T) {
 	}
 
 	result, err := Apply(ApplyOptions{
-		Root:       dir,
-		Module:     "github.com/acme/test",
+		Root:        dir,
+		Module:      "github.com/acme/test",
 		ServiceName: "UserApi",
 	})
 	if err != nil {
@@ -85,8 +85,8 @@ func TestApply_SkipExisting(t *testing.T) {
 	}
 
 	result, err := Apply(ApplyOptions{
-		Root:       dir,
-		Module:     "github.com/acme/test",
+		Root:        dir,
+		Module:      "github.com/acme/test",
 		ServiceName: "UserApi",
 	})
 	if err != nil {

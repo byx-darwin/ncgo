@@ -45,8 +45,8 @@ func TestGlobMatch(t *testing.T) {
 	}{
 		{"main.go", "main.go", true},
 		{"main.go", "main_test.go", false},
-		{"internal/handler/*", "internal/handler/user", true},     // * matches single segment
-		{"internal/handler/*", "internal/handler/user/handler.go", false}, // * doesn't cross segments
+		{"internal/handler/*", "internal/handler/user", true},                     // * matches single segment
+		{"internal/handler/*", "internal/handler/user/handler.go", false},         // * doesn't cross segments
 		{"internal/handler/**/*.go", "internal/handler/userapi/handler.go", true}, // ** matches nested dirs
 		{"internal/handler/**/*.go", "internal/handler/userapi/handler_test.go", true},
 		{"internal/handler/**/*.go", "internal/handler/file.go", true}, // ** matches zero nested dirs
