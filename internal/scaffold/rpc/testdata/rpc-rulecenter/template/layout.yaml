@@ -1,0 +1,21 @@
+# Kitex rule-center preset — layout definition
+# Used instead of the default layout.yaml when --preset rule-center is set.
+templates:
+  - kitex-template/ratelimit_proto.yaml
+  - kitex-template/ratelimit_handler.yaml
+  - kitex-template/ratelimit_middleware.yaml
+  - kitex-template/ratelimit_sqlc_queries.yaml
+  - kitex-template/ratelimit_usecase.yaml
+  - kitex-template/ratelimit_repository.yaml
+  - kitex-template/conf.yaml
+  - kitex-template/server.yaml
+  - kitex-template/main.yaml
+  - kitex-template/data.yaml
+  - kitex-template/rpcerror.yaml
+  - kitex-template/interceptor.yaml
+  - kitex-template/makefile.yaml
+  - kitex-template/client.yaml
+  - kitex-template/migration_init.yaml
+  - kitex-template/migration_keep.yaml
+  - sqlc.yaml
+  - schema/000002_rate_limit_rules.sql

@@ -99,6 +99,7 @@ type addDomainOptions struct {
 	force  bool
 	dryRun bool
 	plan   bool
+	wire   bool
 	output string
 }
 

@@ -1,0 +1,11 @@
+ncgo:
+    version: 0.3.0-test
+    assets_version: test-assets
+mode: mono
+module: github.com/acme/commerce/services/web-bff
+service:
+    name: web-bff
+    kind: hertz
+    with_database: false
+    idl: idl/app/web-bff.proto
+generated_at: 2026-04-29T08:30:00Z

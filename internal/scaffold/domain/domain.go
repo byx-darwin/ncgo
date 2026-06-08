@@ -3,9 +3,11 @@
 // A domain in nc-skills terms is a triple of layers: a usecase, a repository
 // port (with a stub implementation), and a samber/do registration. v0.1
 // generates the three files verbatim from in-package templates and records
-// the domain in .ncgo/manifest.yaml. AST-level wiring of the domain into
-// cmd/server/main.go is deferred to v0.3 (PRD §7); the user is expected to
-// call Register<Name>() from their bootstrap once.
+// the domain in .ncgo/manifest.yaml.
+//
+// When --wire is passed, ncgo also inserts the data.Register<Name>(injector)
+// call into cmd/server/main.go after the injector is created, so the user
+// does not need to wire by hand.
 package domain
 
 import (
@@ -15,6 +17,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strings"
 
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	planpkg "github.com/byx-darwin/ncgo/internal/scaffold/plan"
@@ -32,6 +35,7 @@ type Options struct {
 	Name   string // domain name; must satisfy nameRE
 	Force  bool   // overwrite existing generated files
 	DryRun bool   // report intended writes without modifying files
+	Wire   bool   // opt-in: inject data.Register<Name>(injector) into cmd/server/main.go
 }
 
 // Result describes what Add produced.
@@ -89,11 +93,19 @@ func Add(opts Options) (*Result, error) {
 			return nil, err
 		}
 	}
-	next := nextSteps(opts.Name)
+	// Wire the Register call into main.go when --wire is passed.
+	wired := false
+	if opts.Wire && !opts.DryRun {
+		if err := wireDomain(root, m.Module, opts.Name); err != nil {
+			return nil, fmt.Errorf("domain: wire %s: %w", opts.Name, err)
+		}
+		wired = true
+	}
+	next := nextSteps(opts.Name, wired)
 	return &Result{
 		WrittenPaths: written,
 		NextSteps:    next,
-		Plan:         buildPlan(filePlans, updated, next),
+		Plan:         buildPlan(filePlans, updated, next, wired, opts.Name),
 		Updated:      updated,
 		DryRun:       opts.DryRun,
 	}, nil
@@ -167,23 +179,107 @@ func mergeDomain(m *manifest.Manifest, name string) bool {
 	return true
 }
 
-func nextSteps(name string) []string {
+func nextSteps(name string, wired bool) []string {
 	export := exportName(name)
-	return []string{
-		fmt.Sprintf("wire %s into cmd/server/main.go: data.Register%s(injector)", name, export),
-		"go mod tidy",
+	steps := []string{"go mod tidy"}
+	if !wired {
+		steps = append([]string{
+			fmt.Sprintf("wire %s into cmd/server/main.go: data.Register%s(injector)", name, export),
+		}, steps...)
 	}
+	return steps
 }
 
-func buildPlan(filePlans []planpkg.Item, manifestUpdated bool, next []string) []planpkg.Item {
+func buildPlan(filePlans []planpkg.Item, manifestUpdated bool, next []string, wired bool, name string) []planpkg.Item {
 	items := append([]planpkg.Item(nil), filePlans...)
 	manifestAction := "already_present"
 	if manifestUpdated {
 		manifestAction = "add"
 	}
 	items = append(items, planpkg.Item{Kind: "manifest", Action: manifestAction, Path: filepath.Join(".ncgo", "manifest.yaml")})
+	if wired {
+		items = append(items, planpkg.Item{Kind: "wire", Action: "insert", Path: filepath.Join("cmd", "server", "main.go"), Detail: "data.Register" + exportName(name) + "(injector)"})
+	}
 	for _, step := range next {
 		items = append(items, planpkg.Item{Kind: "next_step", Action: "run", Detail: step})
 	}
 	return items
+}
+
+// wireDomain inserts data.Register<Name>(injector) into cmd/server/main.go
+// after the injector is created. It is called only when --wire is passed.
+func wireDomain(root, module, name string) error {
+	mainPath := filepath.Join(root, "cmd", "server", "main.go")
+	body, err := os.ReadFile(mainPath)
+	if err != nil {
+		if errors.Is(err, os.ErrNotExist) {
+			return fmt.Errorf("wire: %s not found; run the generator first (e.g. hz/kitex)", mainPath)
+		}
+		return fmt.Errorf("wire: read %s: %w", mainPath, err)
+	}
+	src := string(body)
+
+	// Marker-based insertion: look for // ncgo:wire:domain marker first,
+	// then fall back to injector := do.New() anchor.
+	marker := "// ncgo:wire:domain"
+	injectorAnchor := "injector := do.New()"
+	registerStmt := fmt.Sprintf("\tdata.Register%s(injector)", exportName(name))
+
+	// Check if already wired.
+	if strings.Contains(src, registerStmt) {
+		return nil // already wired; idempotent
+	}
+
+	var updated string
+	if idx := strings.Index(src, marker); idx >= 0 {
+		// Insert after the marker line.
+		nl := strings.Index(src[idx:], "\n")
+		if nl < 0 {
+			nl = len(src[idx:])
+		}
+		updated = src[:idx+nl+1] + registerStmt + "\n" + src[idx+nl+1:]
+	} else if idx := strings.Index(src, injectorAnchor); idx >= 0 {
+		// Insert after the injector := do.New() line.
+		nl := strings.Index(src[idx:], "\n")
+		if nl < 0 {
+			nl = len(src[idx:])
+		}
+		updated = src[:idx+nl+1] + registerStmt + "\n" + src[idx+nl+1:]
+	} else {
+		return fmt.Errorf("wire: could not find injection point in %s; add // ncgo:wire:domain marker or ensure injector := do.New() exists", mainPath)
+	}
+
+	// Ensure the data package import exists.
+	dataPkg := fmt.Sprintf("data \"%s/internal/base/data\"", module)
+	if !strings.Contains(updated, dataPkg) {
+		updated = addGoImport(updated, dataPkg)
+	}
+
+	if err := os.WriteFile(mainPath, []byte(updated), 0o644); err != nil {
+		return fmt.Errorf("wire: write %s: %w", mainPath, err)
+	}
+	return nil
+}
+
+// addGoImport adds a Go import if not already present, inserting it after
+// the last existing import or after the "package main" line.
+func addGoImport(src, imp string) string {
+	if strings.Contains(src, imp) {
+		return src
+	}
+	// Find import block or just package line.
+	importStart := strings.Index(src, "import (")
+	if importStart >= 0 {
+		// Insert before the closing ) of the import block.
+		closeParen := strings.Index(src[importStart:], ")")
+		if closeParen >= 0 {
+			return src[:importStart+closeParen] + "\t" + imp + "\n" + src[importStart+closeParen:]
+		}
+	}
+	// No import block found - insert after "package main\n"
+	pkgLine := strings.Index(src, "\n")
+	if pkgLine >= 0 {
+		return src[:pkgLine+1] + fmt.Sprintf("\nimport %q\n", imp) + src[pkgLine+1:]
+	}
+	return src
 }

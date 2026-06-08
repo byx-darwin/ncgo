@@ -1,0 +1,10 @@
+.git/
+.gitignore
+.idea/
+.vscode/
+output/
+tmp/
+vendor/
+template/
+.ncgo/
+scripts/

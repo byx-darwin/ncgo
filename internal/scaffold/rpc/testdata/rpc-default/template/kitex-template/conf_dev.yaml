@@ -1,0 +1,59 @@
+# Kitex custom template — local config
+path: conf/dev/conf.yaml
+update_behavior:
+  type: skip
+body: |-
+  # 本地开发环境配置（默认由 GO_ENV=dev 加载）
+  # env 会决定默认读取 conf/<env>/conf.yaml；常见值为 dev/test/staging/prod
+  env: dev
+  # 是否开启调试模式；通常会影响日志级别、错误细节和本地开发体验
+  # 生产环境通常应关闭
+  debug: true
+  # 服务监听配置
+  server:
+    # 服务名：用于服务注册、日志、指标等
+    name: {{ToLower .ServiceInfo.ServiceName}}
+    # 监听地址，格式 host:port；例如 ":8888"
+    addr: ":8888"
+    # 连接读写超时，单位秒
+    # 运维建议：应覆盖正常请求耗时，但也不要大到掩盖下游故障
+    read_write_timeout_seconds: 30
+    # 优雅停机等待中的最大退出时间，单位秒
+    # 运维建议：发布摘流后应预留足够时间处理完在途请求
+    exit_wait_time_seconds: 10
+  # RPC 调用默认超时配置
+  rpc:
+    # 下游 RPC 请求默认超时时间，单位秒；建议小于上游 HTTP 超时
+    request_timeout_seconds: 3
+  # 调用方鉴权配置
+  auth:
+    caller_allowlist:
+      # 是否启用调用方白名单校验
+      enabled: false
+      # 从哪个请求头读取调用方服务名
+      header: x-caller-service
+      # allowed_callers 中填写允许访问当前服务的上游服务名
+      # 运维建议：开启 enabled 且 allow_missing=false 时，这里必须显式配置
+      allowed_callers: []
+      # 是否允许请求头缺失；false 时缺失会被拒绝
+      allow_missing: false
+  # 数据库配置
+  database:
+    # 是否启用数据库连接
+    enabled: false
+    # PostgreSQL DSN；例如 postgres://user:pass@host:5432/dbname?sslmode=disable
+    # 启用数据库时必须填写
+    dsn: ""
+    # 连接池最大连接数；需结合数据库实例上限和服务副本数评估
+    max_conns: 20
+    # 连接池最小空闲连接数；可减少突发流量时的建连开销
+    min_conns: 2
+    # 单连接最大生命周期，单位秒
+    # 运维建议：略小于数据库或代理层连接回收时间，避免同时批量失效
+    max_conn_lifetime_seconds: 1800
+    # 单连接最大空闲时间，单位秒
+    # 运维建议：用于及时回收长时间不用的连接，降低空闲连接占用
+    max_conn_idle_time_seconds: 300
+    # 连接健康检查周期，单位秒
+    # 运维建议：不要过小，否则会增加额外探测开销
+    health_check_period_seconds: 30

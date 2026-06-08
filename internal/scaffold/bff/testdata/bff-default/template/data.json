@@ -1,0 +1,8 @@
+{
+  "*": {
+    "GoModule": "github.com/acme/commerce/services/web-bff",
+    "RuleCenterAddr": "",
+    "ServiceName": "web-bff",
+    "WithDatabase": false
+  }
+}

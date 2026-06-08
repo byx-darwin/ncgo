@@ -1,0 +1,24 @@
+# Kitex custom template — internal/pkg/rpcerror tests
+path: internal/pkg/rpcerror/rpcerror_test.go
+update_behavior:
+  type: cover
+body: |-
+  package rpcerror
+
+  import (
+      "testing"
+
+      "github.com/cloudwego/kitex/pkg/kerrors"
+      "github.com/samber/oops"
+  )
+
+  func TestToBizErrorMapsOopsCode(t *testing.T) {
+      err := ToBizError(oops.Code(10010).Public("not_implemented").New("todo"))
+      biz, ok := kerrors.FromBizStatusError(err)
+      if !ok {
+          t.Fatalf("expected BizStatusError, got %T", err)
+      }
+      if biz.BizStatusCode() != CodeNotImplemented || biz.BizMessage() != "not_implemented" {
+          t.Fatalf("biz = (%d, %q)", biz.BizStatusCode(), biz.BizMessage())
+      }
+  }

@@ -1,0 +1,8 @@
+ncgo:
+    version: 0.3.0-test
+    assets_version: test-assets
+mode: micro
+name: shop
+module: github.com/acme/shop
+services: []
+generated_at: 2026-04-29T08:00:00Z
