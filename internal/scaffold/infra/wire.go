@@ -269,7 +269,7 @@ func hertzLoggingInit() string {
 		"\t\tGitSHA:      cfg.Release.Info.GitSHA,\n" +
 		"\t\tBuildTime:   cfg.Release.Info.BuildTime,\n" +
 		"\t}); err != nil {\n" +
-		"\t\tpanic(err)\n" +
+		"\t\tlog.Fatalf(\"init logging: %v\", err)\n" +
 		"\t}\n"
 }
 

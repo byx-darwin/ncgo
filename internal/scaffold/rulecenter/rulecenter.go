@@ -171,7 +171,7 @@ func wireRuleCenterInServer(path string) error {
 	if strings.EqualFold(strings.TrimSpace(cfg.RateLimit.Source.Type), "rule_center") {
 		rc, err := middleware.NewRuleCenterClient(cfg.RateLimit.RuleCenter.Address)
 		if err != nil {
-			panic(fmt.Sprintf("rule_center: init client: %v", err))
+			return nil, fmt.Errorf("rule_center: init client: %w", err)
 		}
 		defer func() { _ = rc.Close() }()
 		rlOpts.RuleCenter = rc

@@ -93,10 +93,8 @@ func CloseSharedRedisClients() {
 }
 
 func redisClientKey(cfg RedisConfig) string {
-	payload, err := json.Marshal(cfg)
-	if err != nil {
-		panic(err)
-	}
+	// json.Marshal on a concrete struct with basic types cannot fail.
+	payload, _ := json.Marshal(cfg)
 	return string(payload)
 }
 
