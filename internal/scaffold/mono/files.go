@@ -305,6 +305,8 @@ func renderHertzTemplate(content string, opts Options) string {
 	rendered := strings.ReplaceAll(rest, "{{.Module}}", opts.Module)
 	rendered = strings.ReplaceAll(rendered, "{{.ServiceName | ToLower}}", strings.ToLower(opts.Name))
 	rendered = strings.ReplaceAll(rendered, "{{ToLower .ServiceName}}", strings.ToLower(opts.Name))
+	// Strip common indentation from yaml block scalar body
+	rendered = dedentBody(rendered)
 	return rendered
 }
 
@@ -602,4 +604,30 @@ func exportName(s string) string {
 		upper = false
 	}
 	return string(out)
+}
+
+// dedentBody strips the common leading whitespace prefix from all non-empty
+// lines in a yaml block-scalar body, so the rendered output is correctly
+// indented as Go source code.
+func dedentBody(s string) string {
+	lines := strings.Split(s, "\n")
+	minIndent := -1
+	for _, line := range lines {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		if minIndent < 0 || indent < minIndent {
+			minIndent = indent
+		}
+	}
+	if minIndent <= 0 {
+		return s
+	}
+	for i, line := range lines {
+		if len(line) >= minIndent {
+			lines[i] = line[minIndent:]
+		}
+	}
+	return strings.Join(lines, "\n")
 }
