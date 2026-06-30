@@ -1,0 +1,40 @@
+# Hertz custom template — pkg/response/response.go
+# Generates the HTTP response helpers using go-framework/hertz.Responder.
+# Must maintain backward compatibility with handler template calls:
+#   response.OK(c, resp)     — 2 args
+#   response.Err(c, err)     — 2 args
+#   response.BindError(c, err) — 2 args
+path: internal/pkg/response/response.go
+update_behavior:
+  type: cover
+body: |-
+  package response
+
+  import (
+      hertzframework "github.com/byx-darwin/go-tools/go-framework/hertz"
+      "github.com/cloudwego/hertz/pkg/app"
+  )
+
+  const (
+      CodeNotImplemented = 10010
+  )
+
+  // NewResponder creates a Responder instance (called by server.Run).
+  func NewResponder() *hertzframework.Responder {
+      return hertzframework.NewResponder()
+  }
+
+  // OK writes a success response using Responder from context.
+  func OK(c *app.RequestContext, data any) {
+      hertzframework.RespondFrom(c).Success(c, data)
+  }
+
+  // Err writes an error response using Responder from context.
+  func Err(c *app.RequestContext, err error) {
+      hertzframework.RespondFrom(c).Error(c, c, err, "")
+  }
+
+  // BindError writes a 400 bind-validation error response.
+  func BindError(c *app.RequestContext, err error) {
+      hertzframework.RespondFrom(c).Error(c, c, err, "bind_error")
+  }

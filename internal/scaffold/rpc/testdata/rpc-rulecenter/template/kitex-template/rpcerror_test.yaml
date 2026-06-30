@@ -13,12 +13,18 @@ body: |-
   )
 
   func TestToBizErrorMapsOopsCode(t *testing.T) {
-      err := ToBizError(oops.Code(10010).Public("not_implemented").New("todo"))
+      err := ToBizError(oops.Code(CodeNotImplemented).Public("not_implemented").New("todo"))
       biz, ok := kerrors.FromBizStatusError(err)
       if !ok {
           t.Fatalf("expected BizStatusError, got %T", err)
       }
       if biz.BizStatusCode() != CodeNotImplemented || biz.BizMessage() != "not_implemented" {
           t.Fatalf("biz = (%d, %q)", biz.BizStatusCode(), biz.BizMessage())
+      }
+  }
+
+  func TestToBizErrorNil(t *testing.T) {
+      if err := ToBizError(nil); err != nil {
+          t.Fatalf("expected nil, got %v", err)
       }
   }

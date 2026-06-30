@@ -9,18 +9,19 @@ body: |-
 
   import (
       "fmt"
-      "math"
 
+      goerror "github.com/byx-darwin/go-tools/go-common/error"
+      "github.com/byx-darwin/go-tools/go-framework/kitex/rpcerror"
       "github.com/cloudwego/kitex/pkg/kerrors"
       "github.com/samber/oops"
   )
 
-  const (
-      CodeInternalError  int32 = 10000
-      CodeNotImplemented int32 = 10010
-      CodePermissionDenied int32 = 10108
-      CodeRPCTimeout     int32 = 10302
-      CodeConfigInvalid  int32 = 10308
+  var (
+      CodeInternalError    = goerror.CodeSystem
+      CodeNotImplemented   int32 = 10010
+      CodePermissionDenied = goerror.CodePermissionDenied
+      CodeRPCTimeout       = goerror.CodeRPCTimeout
+      CodeConfigInvalid    = goerror.CodeConfigInvalid
   )
 
   func ToBizError(err error) error {
@@ -30,15 +31,7 @@ body: |-
       if _, ok := kerrors.FromBizStatusError(err); ok {
           return err
       }
-      code := CodeInternalError
-      message := "internal_error"
-      if oe, ok := oops.AsOops(err); ok {
-          code = codeFromOops(oe.Code())
-          if public := oe.Public(); public != "" {
-              message = public
-          }
-      }
-      return kerrors.NewBizStatusError(code, message)
+      return &rpcerror.OopsStatusAdapter{Err: err}
   }
 
   func InternalErrorf(format string, args ...any) error {
@@ -54,22 +47,6 @@ body: |-
           message = "permission denied"
       }
       return oops.In("kitex.server").Code(CodePermissionDenied).Public("permission_denied").New(message)
-  }
-
-  func codeFromOops(value any) int32 {
-      switch v := value.(type) {
-      case int:
-          if v >= math.MinInt32 && v <= math.MaxInt32 {
-              return int32(v)
-          }
-      case int32:
-          return v
-      case int64:
-          if v >= math.MinInt32 && v <= math.MaxInt32 {
-              return int32(v)
-          }
-      }
-      return CodeInternalError
   }
 
   func BizCode(err error) (int32, bool) {

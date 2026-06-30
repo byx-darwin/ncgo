@@ -1,0 +1,106 @@
+# Hertz custom template — base/conf.go
+# Generates configuration loading using go-framework/config.
+path: internal/base/conf/conf.go
+update_behavior:
+  type: cover
+body: |-
+  package conf
+
+  import (
+      "os"
+      "sync"
+
+      "github.com/byx-darwin/go-tools/go-framework/config"
+      hertzconfig "github.com/byx-darwin/go-tools/go-framework/config/hertz"
+  )
+
+  var (
+      current *Config
+      once    sync.Once
+      initErr error
+  )
+
+  type Config struct {
+      Env       string                   `yaml:"env"`
+      Debug     bool                     `yaml:"debug"`
+      Server    hertzconfig.ServerConfig `yaml:"server"`
+      Database  DatabaseConfig           `yaml:"database"`
+      Log       LogConfig                `yaml:"log"`
+  }
+
+  type DatabaseConfig struct {
+      Enabled                  bool   `yaml:"enabled"`
+      DSN                      string `yaml:"dsn"`
+      MaxConns                 int32  `yaml:"max_conns"`
+      MinConns                 int32  `yaml:"min_conns"`
+      MaxConnLifetimeSeconds   int    `yaml:"max_conn_lifetime_seconds"`
+      MaxConnIdleTimeSeconds   int    `yaml:"max_conn_idle_time_seconds"`
+      HealthCheckPeriodSeconds int    `yaml:"health_check_period_seconds"`
+  }
+
+  type LogConfig struct {
+      Level  string `yaml:"level"`
+      Format string `yaml:"format"`
+      Mode   string `yaml:"mode"`
+  }
+
+  func Init() error {
+      once.Do(func() {
+          current, initErr = Load()
+      })
+      return initErr
+  }
+
+  func Get() *Config { return current }
+
+  func Load() (*Config, error) {
+      cfg := Default()
+      path := os.Getenv("CONFIG_PATH")
+      fromEnv := path != ""
+      if path == "" {
+          path = "conf/" + Env() + "/conf.yaml"
+      }
+      if err := config.LoadYAML(path, cfg); err != nil {
+          if os.IsNotExist(err) && !fromEnv {
+              return cfg, nil
+          }
+          return nil, err
+      }
+      return cfg, nil
+  }
+
+  func Default() *Config {
+      return &Config{
+          Env:   Env(),
+          Debug: Env() != "prod",
+          Server: hertzconfig.ServerConfig{
+              HTTP: hertzconfig.HTTPConfig{
+                  Port:    "8080",
+                  Network: "tcp",
+              },
+              Registry: hertzconfig.RegistryConfig{
+                  Name: "{{ToLower .ServiceName}}",
+              },
+          },
+          Database: DatabaseConfig{
+              Enabled:                  false,
+              MaxConns:                 20,
+              MinConns:                 2,
+              MaxConnLifetimeSeconds:   1800,
+              MaxConnIdleTimeSeconds:   300,
+              HealthCheckPeriodSeconds: 30,
+          },
+          Log: LogConfig{
+              Level:  "info",
+              Format: "json",
+              Mode:   "both",
+          },
+      }
+  }
+
+  func Env() string {
+      if env := os.Getenv("GO_ENV"); env != "" {
+          return env
+      }
+      return "dev"
+  }

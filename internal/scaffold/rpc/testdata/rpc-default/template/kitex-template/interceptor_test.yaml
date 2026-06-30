@@ -13,6 +13,8 @@ body: |-
       "github.com/bytedance/gopkg/cloud/metainfo"
       "github.com/cloudwego/kitex/pkg/endpoint"
       "github.com/cloudwego/kitex/pkg/kerrors"
+
+      "{{.Module}}/internal/pkg/rpcerror"
   )
 
   func TestRecoveryConvertsPanicToBizError(t *testing.T) {
@@ -21,7 +23,7 @@ body: |-
           panic("boom")
       })(context.Background(), nil, nil)
       biz, ok := kerrors.FromBizStatusError(err)
-      if !ok || biz.BizStatusCode() != 10000 {
+      if !ok || biz.BizStatusCode() != rpcerror.CodeInternalError {
           t.Fatalf("err = %#v", err)
       }
   }
@@ -32,7 +34,7 @@ body: |-
           return nil
       })(context.Background(), nil, nil)
       biz, ok := kerrors.FromBizStatusError(err)
-      if !ok || biz.BizStatusCode() != 10302 {
+      if !ok || biz.BizStatusCode() != rpcerror.CodeRPCTimeout {
           t.Fatalf("err = %#v", err)
       }
   }
@@ -58,7 +60,7 @@ body: |-
 
       err := CallerAllowlist(true, HeaderCallerService, []string{"bff-api"}, false)(next)(context.Background(), nil, nil)
       biz, ok := kerrors.FromBizStatusError(err)
-      if !ok || biz.BizStatusCode() != 10108 || called {
+      if !ok || biz.BizStatusCode() != rpcerror.CodePermissionDenied || called {
           t.Fatalf("missing caller err=%#v called=%v", err, called)
       }
 

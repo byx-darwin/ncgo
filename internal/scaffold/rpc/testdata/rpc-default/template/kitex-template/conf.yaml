@@ -12,9 +12,11 @@ body: |-
       "os"
       "path/filepath"
       "sync"
+      "time"
 
+      "github.com/byx-darwin/go-tools/go-framework/config"
+      kitexconfig "github.com/byx-darwin/go-tools/go-framework/config/kitex"
       "github.com/samber/oops"
-      "gopkg.in/yaml.v3"
   )
 
   var (
@@ -24,20 +26,21 @@ body: |-
   )
 
   type Config struct {
-      Env      string         `json:"env" yaml:"env"`
-      Debug    bool           `json:"debug" yaml:"debug"`
-      Server   ServerConfig   `json:"server" yaml:"server"`
-      RPC      RPCConfig      `json:"rpc" yaml:"rpc"`
-      Auth     AuthConfig     `json:"auth" yaml:"auth"`
-      Database DatabaseConfig `json:"database" yaml:"database"`
-      RateLimit RateLimitConfig `json:"rate_limit" yaml:"rate_limit"`
+      Env      string                   `json:"env" yaml:"env"`
+      Debug    bool                     `json:"debug" yaml:"debug"`
+      Server   kitexconfig.ServerConfig `json:"server" yaml:"server"`
+      RPC      RPCConfig                `json:"rpc" yaml:"rpc"`
+      Auth     AuthConfig               `json:"auth" yaml:"auth"`
+      Database DatabaseConfig           `json:"database" yaml:"database"`
+      RateLimit RateLimitConfig         `json:"rate_limit" yaml:"rate_limit"`
+      Log      LogConfig                `json:"log" yaml:"log"`
+      Jaeger   *config.JaegerOption     `json:"jaeger" yaml:"jaeger"`
   }
 
-  type ServerConfig struct {
-      Name                    string `json:"name" yaml:"name"`
-      Addr                    string `json:"addr" yaml:"addr"`
-      ReadWriteTimeoutSeconds int    `json:"read_write_timeout_seconds" yaml:"read_write_timeout_seconds"`
-      ExitWaitTimeSeconds     int    `json:"exit_wait_time_seconds" yaml:"exit_wait_time_seconds"`
+  type LogConfig struct {
+      Level  string `json:"level" yaml:"level"`
+      Format string `json:"format" yaml:"format"`
+      Mode   string `json:"mode" yaml:"mode"`
   }
 
   type RPCConfig struct {
@@ -155,16 +158,14 @@ body: |-
       if path == "" {
           path = filepath.Join("conf", Env(), "conf.yaml")
       }
-      content, err := os.ReadFile(path)
+      loaded, err := config.LoadYAML[Config](path)
       if err != nil {
           if os.IsNotExist(err) && !fromEnv {
               return cfg, nil
           }
           return nil, oops.In("config").Code(10308).Public("config_invalid").With("path", path).Wrap(err)
       }
-      if err := yaml.Unmarshal(content, cfg); err != nil {
-          return nil, oops.In("config").Code(10308).Public("config_invalid").With("path", path).Wrap(err)
-      }
+      *cfg = *loaded
       if err := cfg.Validate(); err != nil {
           return nil, err
       }
@@ -175,11 +176,18 @@ body: |-
       return &Config{
           Env:   Env(),
           Debug: Env() != "prod",
-          Server: ServerConfig{
-              Name:                    "{{ToLower .ServiceInfo.ServiceName}}",
-              Addr:                    ":8888",
-              ReadWriteTimeoutSeconds: 30,
-              ExitWaitTimeSeconds:     10,
+          Server: kitexconfig.ServerConfig{
+              RPC: kitexconfig.RPCConfig{
+                  Port:    ":8888",
+                  Network: "tcp",
+              },
+              Registry: kitexconfig.RegistryConfig{
+                  Name: "{{ToLower .ServiceInfo.ServiceName}}",
+              },
+              Timeout: kitexconfig.TimeoutConfig{
+                  ReadWriteTimeout: 30 * time.Second,
+                  ExitWaitTimeout:  10 * time.Second,
+              },
           },
           RPC: RPCConfig{RequestTimeoutSeconds: 3},
           Auth: AuthConfig{CallerAllowlist: CallerAllowlistConfig{Header: "x-caller-service"}},
@@ -212,18 +220,23 @@ body: |-
               Memory:  MemoryCacheConfig{MaxEntries: 1000},
               Redis:   RateLimitRedisConfig{},
           },
+          Log: LogConfig{
+              Level:  "info",
+              Format: "json",
+              Mode:   "both",
+          },
       }
   }
 
   func (c *Config) Validate() error {
-      if c.Server.Name == "" {
-          return oops.In("config").Code(10308).Public("config_invalid").New("server.name is empty")
+      if c.Server.Registry.Name == "" {
+          return oops.In("config").Code(10308).Public("config_invalid").New("server.registry.name is empty")
       }
-      if c.Server.Addr == "" {
-          return oops.In("config").Code(10308).Public("config_invalid").New("server.addr is empty")
+      if c.Server.RPC.Port == "" {
+          return oops.In("config").Code(10308).Public("config_invalid").New("server.rpc.port is empty")
       }
-      if c.Server.ReadWriteTimeoutSeconds < 0 || c.Server.ExitWaitTimeSeconds < 0 || c.RPC.RequestTimeoutSeconds < 0 {
-          return oops.In("config").Code(10308).Public("config_invalid").New("timeout seconds must not be negative")
+      if c.Server.Timeout.ReadWriteTimeout <= 0 || c.Server.Timeout.ExitWaitTimeout <= 0 || c.RPC.RequestTimeoutSeconds < 0 {
+          return oops.In("config").Code(10308).Public("config_invalid").New("timeout values must be positive")
       }
       if c.Auth.CallerAllowlist.Enabled {
           if c.Auth.CallerAllowlist.Header == "" {
