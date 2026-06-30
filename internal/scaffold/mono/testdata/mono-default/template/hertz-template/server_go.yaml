@@ -21,6 +21,7 @@ body: |-
   func Run() {
       cfg := conf.Get()
 
+      // ncgo:wire:logging:init
       ctx := context.Background()
       h, err := hertzframework.NewHTTPServer(ctx, cfg.Server)
       if err != nil {
@@ -33,6 +34,20 @@ body: |-
 
       // AccessLog middleware — uses go-tools AccessLog
       h.Use(middleware.AccessLog())
+
+      // Optional structured logging wiring (after `ncgo add infra logging`):
+      // import "{{.Module}}/internal/base/logging"
+      // ncgo:wire:logging:server-middleware
+      // h.Use(logging.HertzRecovery())
+      // h.Use(logging.HertzRequestID())
+      // h.Use(logging.HertzAccessLog())
+
+      // Optional release canary wiring (after `ncgo add infra canary`):
+      // import "{{.Module}}/internal/base/release"
+      // ncgo:wire:canary:server-traffic
+      // if cfg.Release.Enabled {
+      //     h.Use(release.HertzTraffic())
+      // }
 
       // ncgo:wire:ddd — Wire DDD layers (data -> repository -> usecase)
       // TODO: initialize data layer, repositories, and usecases here

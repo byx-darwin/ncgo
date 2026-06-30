@@ -2,9 +2,12 @@
 # Dev environment configuration sample.
 path: conf/dev/conf.yaml
 update_behavior:
-  type: skip
+  type: cover
 body: |-
+  # 本地开发环境配置（默认由 GO_ENV=dev 加载）
+  # env 会决定默认读取 conf/<env>/conf.yaml；常见值为 dev/test/staging/prod
   env: dev
+  # 是否开启调试模式；通常会影响日志级别、错误细节和本地开发体验
   debug: true
   server:
     http:
@@ -13,9 +16,62 @@ body: |-
       mode: 0
     registry:
       name: "{{ToLower .ServiceName}}"
+  # 数据库配置
   database:
+    # 是否启用数据库连接
     enabled: false
+    # PostgreSQL DSN；例如 postgres://user:pass@host:5432/dbname?sslmode=disable
+    dsn: ""
+    # 连接池最大连接数；需结合数据库实例上限和服务副本数评估
+    max_conns: 20
+    # 连接池最小空闲连接数；可减少突发流量时的建连开销
+    min_conns: 2
+    # 单连接最大生命周期，单位秒
+    # 运维建议：略小于数据库或代理层连接回收时间，避免同时批量失效
+    max_conn_lifetime_seconds: 1800
+    # 单连接最大空闲时间，单位秒
+    max_conn_idle_time_seconds: 300
+    # 连接健康检查周期，单位秒
+    health_check_period_seconds: 30
+  # Redis 连接配置
+  redis:
+    addrs:
+      - 127.0.0.1:6379
+    db: 0
+    pool_size: 10
   log:
     level: "info"
     format: "json"
     mode: "both"
+  # 结构化日志配置（与 ncgo add infra logging 生成的 optional 兼容）
+  logging:
+    enabled: false
+    mode: console
+    format: json
+    level: info
+  # 发布/灰度配置（与 ncgo add infra canary 生成的 optional 兼容）
+  release:
+    enabled: false
+  # 跨域配置
+  cors:
+    enabled: false
+    allow_origins:
+      - "*"
+  # 限流配置
+  rate_limit:
+    enabled: false
+  # 鉴权配置
+  auth:
+    public_paths:
+      - /healthz
+      - /readyz
+  # 安全控制：这些路径只允许来自 internal_cidrs 的请求访问
+  security:
+    internal_paths:
+      - /healthz
+      - /readyz
+    internal_cidrs:
+      - 127.0.0.0/8
+  # 配置中心：用于在本地文件之上叠加远程配置；默认关闭
+  config_center:
+    enabled: false

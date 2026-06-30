@@ -120,6 +120,12 @@ func writeHertzTemplate(dir string, opts Options) error {
 	if err := copyHertzTemplateYAML(dir, srcFS); err != nil {
 		return fmt.Errorf("scaffold: copy hertz-template: %w", err)
 	}
+	// Also write root-level cover-type templates (e.g. Makefile) directly to
+	// the project root so they are available before template.Apply() runs
+	// (required for NoGenerate path where `make sqlc` etc. are invoked).
+	if err := writeHertzRootTemplates(dir, opts, srcFS); err != nil {
+		return fmt.Errorf("scaffold: write hertz root templates: %w", err)
+	}
 	// Generate rule center client when address is provided
 	if opts.RuleCenterAddr != "" {
 		b, err := fs.ReadFile(srcFS, "hertz/optional/rule_center_client.go")
@@ -217,6 +223,89 @@ func writeKitexTemplate(dir string, preset string) error {
 		}
 	}
 	return nil
+}
+
+// writeHertzRootTemplates reads hertz-template files whose target path is at
+// the project root (e.g. Makefile) and writes them directly to the scaffold
+// directory with template variables rendered. This ensures make targets like
+// sqlc are available before template.Apply() runs (NoGenerate / post-generate).
+func writeHertzRootTemplates(dir string, opts Options, srcFS fs.FS) error {
+	entries, err := fs.ReadDir(srcFS, "hertz/hertz-template")
+	if err != nil {
+		return nil // hertz-template doesn't exist yet
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		b, err := fs.ReadFile(srcFS, "hertz/hertz-template/"+name)
+		if err != nil {
+			return fmt.Errorf("scaffold: read embedded hertz/hertz-template/%s: %w", name, err)
+		}
+		// Only write root-level templates (no subdirectory in path).
+		// Parse the yaml to find the target path.
+		content := string(b)
+		targetPath, isRoot := parseHertzTemplatePath(content)
+		if !isRoot {
+			continue
+		}
+		// Render template variables.
+		rendered := renderHertzTemplate(content, opts)
+		full := filepath.Join(dir, filepath.FromSlash(targetPath))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(full), err)
+		}
+		if err := os.WriteFile(full, []byte(rendered), 0o644); err != nil {
+			return fmt.Errorf("scaffold: write %s: %w", targetPath, err)
+		}
+	}
+	return nil
+}
+
+// parseHertzTemplatePath extracts the target path from a hertz-template yaml body
+// and reports whether it is a root-level file (no "/" in path).
+func parseHertzTemplatePath(content string) (path string, isRoot bool) {
+	// Look for "path: <value>" line
+	lines := strings.Split(content, "\n")
+	for _, line := range lines {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "path:") {
+			p := strings.TrimSpace(strings.TrimPrefix(trimmed, "path:"))
+			return p, !strings.Contains(p, "/")
+		}
+	}
+	return "", false
+}
+
+// renderHertzTemplate applies template variable substitution for a hertz-template
+// yaml body. It extracts the body content and renders {{.Module}} and {{.ServiceName}}.
+func renderHertzTemplate(content string, opts Options) string {
+	// Extract the body section from the yaml
+	idx := strings.Index(content, "body:")
+	if idx < 0 {
+		return content
+	}
+	bodyStart := idx + len("body:")
+	// Skip the "|-" or "|" or "|+" indicator
+	rest := content[bodyStart:]
+	if len(rest) > 0 && rest[0] == ' ' {
+		rest = rest[1:]
+	}
+	if strings.HasPrefix(rest, "|-\n") {
+		rest = rest[3:]
+	} else if strings.HasPrefix(rest, "|+\n") {
+		rest = rest[3:]
+	} else if strings.HasPrefix(rest, "|\n") {
+		rest = rest[2:]
+	} else if rest[0] == '\n' {
+		rest = rest[1:]
+	}
+	// Render template variables
+	rendered := strings.ReplaceAll(rest, "{{.Module}}", opts.Module)
+	rendered = strings.ReplaceAll(rendered, "{{.ServiceName | ToLower}}", strings.ToLower(opts.Name))
+	rendered = strings.ReplaceAll(rendered, "{{ToLower .ServiceName}}", strings.ToLower(opts.Name))
+	return rendered
 }
 
 // copyHertzTemplateYAML copies every embedded hertz/hertz-template/*.yaml verbatim

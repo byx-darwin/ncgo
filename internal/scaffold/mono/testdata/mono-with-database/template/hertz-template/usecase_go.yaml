@@ -1,0 +1,39 @@
+# Hertz custom template — usecase per service
+# Generates internal/usecase/{service}/usecase.go for each service.
+# update_behavior: skip protects user business logic from overwrites.
+path: /internal/usecase/{{ToLower .ServiceName}}/usecase.go
+update_behavior:
+  type: skip
+loop_service: true
+body: |-
+  {{ $svc := exportName .ServiceName -}}
+  package {{ToLower .ServiceName}}
+
+  import (
+      "context"
+
+      "github.com/samber/oops"
+  )
+
+  // {{$svc}}Repo defines the data-access port for this usecase.
+  // Implement it in internal/repository/{{ToLower .ServiceName}}/.
+  type {{$svc}}Repo interface {
+      // TODO: declare repository methods needed by the usecase
+  }
+
+  // UseCase orchestrates business logic for {{$svc}}.
+  // It depends on interfaces (ports), not concrete implementations.
+  type UseCase struct {
+      repo {{$svc}}Repo
+  }
+
+  // New creates a UseCase wired to the given repository.
+  func New(repo {{$svc}}Repo) *UseCase {
+      return &UseCase{repo: repo}
+  }
+
+  // Add HTTP methods to the IDL proto, then rerun `make update`.
+  // Implement handler methods here as:
+  //   func (uc *UseCase) Ping(ctx context.Context, req *pb.PingReq) (*pb.PingResp, error) {
+  //       return nil, oops.In("{{ToLower .ServiceName}}.usecase").Code(10010).Public("not_implemented").Errorf("Ping: not implemented")
+  //   }
