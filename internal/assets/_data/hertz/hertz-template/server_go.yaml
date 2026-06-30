@@ -1,0 +1,45 @@
+# Hertz custom template — base/server.go
+# Generates the server entry point using go-framework/hertz.NewHTTPServer.
+path: internal/base/server/server.go
+update_behavior:
+  type: cover
+body: |-
+  package server
+
+  import (
+      "context"
+
+      hertzframework "github.com/byx-darwin/go-tools/go-framework/hertz"
+      goclog "github.com/byx-darwin/go-tools/go-common/log"
+
+      "{{.Module}}/internal/base/conf"
+      "{{.Module}}/internal/pkg/middleware"
+      "{{.Module}}/internal/pkg/response"
+      "{{.Module}}/internal/router"
+  )
+
+  func Run() {
+      cfg := conf.Get()
+
+      ctx := context.Background()
+      h, err := hertzframework.NewHTTPServer(ctx, cfg.Server)
+      if err != nil {
+          goclog.L().Fatal("create server", "error", err)
+      }
+
+      // Responder middleware — injects RequestID / Lang / Responder into context
+      responder := response.NewResponder()
+      h.Use(responder.Middleware())
+
+      // AccessLog middleware — uses go-tools AccessLog
+      h.Use(middleware.AccessLog())
+
+      // ncgo:wire:ddd — Wire DDD layers (data -> repository -> usecase)
+      // TODO: initialize data layer, repositories, and usecases here
+
+      // Register routes
+      router.Register(h)
+
+      // Start server
+      h.Spin()
+  }
