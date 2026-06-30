@@ -1,0 +1,67 @@
+# Hertz custom template — Makefile
+# Generates a Makefile at the project root with update, sqlc, build, lint, dev targets.
+path: Makefile
+update_behavior:
+  type: cover
+body: |
+  APP_NAME = {{.ServiceName | ToLower}}-http
+  MODULE   = {{.Module}}
+  IDL_FILE = idl/{{.ServiceName | ToLower}}.proto
+  GOOSE_DRIVER ?= postgres
+  MIGRATIONS_DIR ?= internal/db/migrations
+  DATABASE_URL ?=
+
+  .PHONY: build run dev update generate sqlc migrate-up migrate-down migrate-status migrate-create lint test clean install-tools tidy i18n-sync i18n-report i18n-check i18n-check-release i18n swagger
+
+  # ── Build ────────────────────────────────────────────────────────────────
+  build: ; @echo "Building $(APP_NAME)..."; mkdir -p output/bin; go build -o output/bin/$(APP_NAME) .; echo "Build complete → output/bin/$(APP_NAME)"
+
+  run: build ; @./output/bin/$(APP_NAME)
+
+  dev: ; @which air > /dev/null 2>&1 && air || go run .
+
+  # ── Code generation ──────────────────────────────────────────────────────
+  # Re-run after modifying the IDL file.
+  update: ; @echo "Generating Hertz HTTP code from IDL..."; hz new --mod=$(MODULE) --idl=$(IDL_FILE) -I idl --handler_dir=internal/handler --model_dir=internal/pb --router_dir=internal/router --customize_layout=template/layout.yaml --customize_layout_data_path=template/data.json --customize_package=template/package.yaml; echo "Hertz code generation complete"
+
+  i18n-sync: ; @echo "Synchronizing i18n locales..."; go run ./tools/i18n/sync -root . -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -source zh-CN
+
+  i18n-report: ; @echo "Writing i18n report..."; go run ./tools/i18n/report -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN
+
+  i18n-check: ; @echo "Checking i18n locales..."; go run ./tools/i18n/check -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN -mode dev
+
+  i18n-check-release: ; @echo "Checking i18n locales (release mode)..."; go run ./tools/i18n/check -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN -mode release
+
+  i18n: ; @echo "Generating i18n catalog..."; go run ./tools/i18n/gen -in internal/pkg/i18n/locales -out internal/pkg/i18n/catalog_gen.go
+
+  swagger: ; @command -v protoc >/dev/null 2>&1 || (echo "protoc-gen-http-swagger is required for make swagger"; echo "install: go install github.com/hertz-contrib/swagger-generate/protoc-gen-http-swagger@latest"; exit 1); protoc --proto_path=idl --proto_path=idl/openapi -I idl --http-swagger_out=logtostderr=true,fqn_for_swagger_name=true,jsonpb=true,merge_file_name=openapi:internal/docs/swagger idl/app/{{.ServiceName | ToLower}}.proto; echo "Swagger generation complete → internal/docs/swagger (rebuild/restart to embed updated spec)"
+
+  # Generate type-safe DB query code from SQL files in internal/db/.
+  sqlc: ; @echo "Generating sqlc DB code..."; sqlc generate -f internal/db/sqlc.yaml; echo "sqlc generation complete"
+
+  generate: i18n-sync i18n-check i18n update swagger sqlc ; @echo "All code generation complete"
+
+  # ── Database migrations ──────────────────────────────────────────────────
+  migrate-up: ; @test -n "$(DATABASE_URL)" || (echo "DATABASE_URL is required" && exit 1); goose -dir $(MIGRATIONS_DIR) $(GOOSE_DRIVER) "$(DATABASE_URL)" up
+
+  migrate-down: ; @test -n "$(DATABASE_URL)" || (echo "DATABASE_URL is required" && exit 1); goose -dir $(MIGRATIONS_DIR) $(GOOSE_DRIVER) "$(DATABASE_URL)" down
+
+  migrate-status: ; @test -n "$(DATABASE_URL)" || (echo "DATABASE_URL is required" && exit 1); goose -dir $(MIGRATIONS_DIR) $(GOOSE_DRIVER) "$(DATABASE_URL)" status
+
+  migrate-create: ; @test -n "$(name)" || (echo "usage: make migrate-create name=create_users" && exit 1); goose -dir $(MIGRATIONS_DIR) create $(name) sql
+
+  # ── Quality ──────────────────────────────────────────────────────────────
+  lint: ; @golangci-lint run ./...
+
+  test: ; @go test -race -count=1 ./...
+
+  check: lint test
+
+  # ── Dependencies ─────────────────────────────────────────────────────────
+  tidy: ; @go mod tidy
+
+  # ── Install tools ────────────────────────────────────────────────────────
+  install-tools: ; @echo "Installing development tools..."; go install github.com/cloudwego/hertz/cmd/hz@latest; go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest; go install github.com/pressly/goose/v3/cmd/goose@latest; go install github.com/air-verse/air@latest; go install golang.org/x/tools/cmd/goimports@latest; echo "Install complete"
+
+  # ── Cleanup ──────────────────────────────────────────────────────────────
+  clean: ; @rm -rf output/

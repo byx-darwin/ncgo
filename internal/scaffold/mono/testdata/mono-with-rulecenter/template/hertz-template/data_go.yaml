@@ -1,0 +1,40 @@
+# Hertz custom template — base/data.go
+# Generates core infrastructure layer with go-middleware/db when WithDatabase is enabled.
+# Wire up via samber/do in internal/base/server/server.go.
+path: internal/base/data/data.go
+update_behavior:
+  type: cover
+condition: WithDatabase
+body: |-
+  package data
+
+  import (
+      "context"
+
+      godb "github.com/byx-darwin/go-tools/go-middleware/db"
+      "github.com/jackc/pgx/v5/pgxpool"
+
+      "{{.Module}}/internal/db/gen"
+  )
+
+  // Data holds shared infrastructure clients.
+  type Data struct {
+      Pool    *pgxpool.Pool
+      Queries *gen.Queries
+  }
+
+  // New initialises core infrastructure connections using go-middleware/db.
+  func New(ctx context.Context, cfg godb.Config) (*Data, func(), error) {
+      pool, err := godb.NewPostgres(ctx, cfg)
+      if err != nil {
+          return nil, nil, err
+      }
+      queries := gen.New(pool)
+      cleanup := func() {
+          pool.Close()
+      }
+      return &Data{
+          Pool:    pool,
+          Queries: queries,
+      }, cleanup, nil
+  }

@@ -22,7 +22,6 @@
 - `go-framework/hertz/observability`（OTel）由 `NewHTTPServer` 内部处理，模板无需直接导入
 - 所有 commit message 引用 Issue #N
 
-## Issue 规划
 
 **Issue 标题:** feat: create hertz-template with per-file yaml and go-tools integration
 

@@ -1,0 +1,19 @@
+# Hertz custom template — pkg/errcode/errcode.go
+# Re-exports go-common/error predefined error codes.
+path: internal/pkg/errcode/errcode.go
+update_behavior:
+  type: cover
+body: |-
+  package errcode
+
+  import goerror "github.com/byx-darwin/go-tools/go-common/error"
+
+  // Re-export predefined error codes from go-common/error.
+  var (
+      CodeSystem         = goerror.CodeSystem
+      CodeParamInvalid   = goerror.CodeParamInvalid
+      CodeAuthFailed     = goerror.CodeAuthFailed
+      CodeConfigInvalid  = goerror.CodeConfigInvalid
+      CodeRPCTimeout     = goerror.CodeRPCTimeout
+      CodeRPCUnavailable = goerror.CodeRPCUnavailable
+  )

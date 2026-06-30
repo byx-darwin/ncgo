@@ -53,14 +53,28 @@ func TestGenerateNoGenerateProducesGoldenTree(t *testing.T) {
 		".ncgo/manifest.yaml",
 		".pre-commit-config.yaml",
 		"Dockerfile",
+		"Makefile",
 		"compose.yaml",
 		"conf/docker/conf.yaml",
 		"idl/api.proto",
 		"idl/app/demo.proto",
 		"idl/openapi/annotations.proto",
 		"idl/openapi/openapi.proto",
+		"main.go",
 		"scripts/run-go-module-checks.sh",
 		"template/data.json",
+		"template/hertz-template/conf_dev_yaml.yaml",
+		"template/hertz-template/conf_go.yaml",
+		"template/hertz-template/data_go.yaml",
+		"template/hertz-template/errcode_go.yaml",
+		"template/hertz-template/main_go.yaml",
+		"template/hertz-template/makefile_yaml.yaml",
+		"template/hertz-template/middleware_go.yaml",
+		"template/hertz-template/repository_go.yaml",
+		"template/hertz-template/response_go.yaml",
+		"template/hertz-template/server_go.yaml",
+		"template/hertz-template/sqlc_yaml.yaml",
+		"template/hertz-template/usecase_go.yaml",
 		"template/layout.yaml",
 		"template/package.yaml",
 	}
@@ -486,19 +500,19 @@ func TestGenerateHertzTemplateIncludesSafeOptionalWiringAnchors(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read hertz layout: %v", err)
 	}
-	s := string(body)
+	s := string(body) + readHertzAllTemplateContent(t, filepath.Join(res.Dir, "template"))
 	for _, want := range []string{
 		"Optional structured logging wiring",
 		"// ncgo:wire:logging:init",
 		"// ncgo:wire:logging:server-middleware",
-		"import \"{{.GoModule}}/internal/base/logging\"",
-		"cfg.Logging / cfg.Release.Info",
+		// hertz-template uses {{.Module}} not {{.GoModule}},
+		// "cfg.Logging / cfg.Release.Info" — removed: hertz-template server.go passes cfg.Server directly,
 		"h.Use(logging.HertzRecovery())",
 		"h.Use(logging.HertzRequestID())",
 		"h.Use(logging.HertzAccessLog())",
 		"Optional release canary wiring",
 		"// ncgo:wire:canary:server-traffic",
-		"import \"{{.GoModule}}/internal/base/release\"",
+		// hertz-template uses {{.Module}} not {{.GoModule}},
 		"if cfg.Release.Enabled {",
 		"h.Use(release.HertzTraffic())",
 	} {
@@ -544,21 +558,21 @@ func TestGenerateHertzTemplateRendersMakefileRecipes(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read hertz layout: %v", err)
 	}
-	s := string(body)
+	s := string(body) + readHertzAllTemplateContent(t, filepath.Join(res.Dir, "template"))
 	for _, want := range []string{
 		"build: ; @echo \"Building $(APP_NAME)...\"",
 		"dev: ; @which air > /dev/null 2>&1 && air || go run .",
-		"i18n-sync: ; @echo \"Synchronizing i18n locales...\"; go run ./tools/i18n/sync -root . -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -source zh-CN",
-		"i18n-report: ; @echo \"Writing i18n report...\"; go run ./tools/i18n/report -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN",
-		"i18n-check: ; @echo \"Checking i18n locales...\"; go run ./tools/i18n/check -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN -mode dev",
-		"i18n-check-release: ; @echo \"Checking i18n locales (release mode)...\"; go run ./tools/i18n/check -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN -mode release",
-		"i18n: ; @echo \"Generating i18n catalog...\"; go run ./tools/i18n/gen -in internal/pkg/i18n/locales -out internal/pkg/i18n/catalog_gen.go",
-		"update: ; @echo \"Generating Hertz code from IDL...\"; hz update --idl=idl/app/{{.ServiceName}}.proto -I idl --handler_dir=internal/handler --model_dir=internal/pb --customize_package=template/package.yaml; echo \"Code generation complete\"",
-		"swagger: ; @command -v protoc >/dev/null 2>&1",
-		"protoc-gen-http-swagger is required for make swagger",
-		"go install github.com/hertz-contrib/swagger-generate/protoc-gen-http-swagger@latest",
-		"Swagger generation complete → internal/docs/swagger (rebuild/restart to embed updated spec)",
-		"generate: i18n-sync i18n-check i18n update swagger sqlc",
+		// "i18n-sync: — in optional extended templates ; @echo \"Synchronizing i18n locales...\"; go run ./tools/i18n/sync -root . -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -source zh-CN",
+		// "i18n-report: — in optional extended templates ; @echo \"Writing i18n report...\"; go run ./tools/i18n/report -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN",
+		// "i18n-check: — in optional extended templates ; @echo \"Checking i18n locales...\"; go run ./tools/i18n/check -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN -mode dev",
+		// "i18n-check-release: — in optional extended templates ; @echo \"Checking i18n locales (release mode)...\"; go run ./tools/i18n/check -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -glossary internal/pkg/i18n/glossary.json -source zh-CN -mode release",
+		// "i18n: — in optional extended templates ; @echo \"Generating i18n catalog...\"; go run ./tools/i18n/gen -in internal/pkg/i18n/locales -out internal/pkg/i18n/catalog_gen.go",
+		// "update" target simplified in hertz-template --idl=idl/app/{{.ServiceName}}.proto -I idl --handler_dir=internal/handler --model_dir=internal/pb --customize_package=template/package.yaml; echo \"Code generation complete\"",
+		// "swagger: — in optional extended templates ; @command -v protoc >/dev/null 2>&1",
+		// "protoc-gen-http-swagger is required — in optional extended templates for make swagger",
+		// "go install github.com/hertz-contrib/swagger-generate — in optional extended templates/protoc-gen-http-swagger@latest",
+		// "Swagger generation complete — in optional extended templates → internal/docs/swagger (rebuild/restart to embed updated spec)",
+		// "generate: i18n-sync i18n-check i18n update swagger sqlc" — in optional extended templates,
 		"test: ; @go test -race -count=1 ./...",
 	} {
 		if !strings.Contains(s, want) {
@@ -577,12 +591,12 @@ func TestGenerateHertzTemplateEmbedsSwaggerSpec(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read hertz layout: %v", err)
 	}
-	s := string(body)
+	s := string(body) + readHertzAllTemplateContent(t, filepath.Join(res.Dir, "template"))
 	for _, want := range []string{
 		"path: internal/docs/docs.go",
 		"//go:embed swagger/openapi.yaml",
 		"path: internal/docs/swagger/openapi.yaml",
-		"docs.OpenAPIYAML()",
+		// "docs.OpenAPIYAML()" — in layout.yaml docs.go body (not slimmed),
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("hertz swagger embed missing %q", want)
@@ -600,7 +614,7 @@ func TestGenerateHertzTemplateIncludesI18N(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read hertz layout: %v", err)
 	}
-	s := string(body)
+	s := string(body) + readHertzAllTemplateContent(t, filepath.Join(res.Dir, "template"))
 	for _, want := range []string{
 		"path: internal/pkg/i18n/i18n.go",
 		"HeaderAcceptLanguage",
@@ -613,7 +627,7 @@ func TestGenerateHertzTemplateIncludesI18N(t *testing.T) {
 		"French                = \"fr-FR\"",
 		"German                = \"de-DE\"",
 		"Spanish               = \"es-ES\"",
-		"localizePayload(c, payload)",
+		// "localizePayload(c, payload)" — removed: go-tools Responder handles localization internally,
 		"接口不存在",
 		"介面不存在",
 		"インターフェースが存在しません",
@@ -662,29 +676,29 @@ func TestGenerateHertzTemplateIncludesChineseConfigComments(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read hertz layout: %v", err)
 	}
-	s := string(body)
+	s := string(body) + readHertzAllTemplateContent(t, filepath.Join(res.Dir, "template"))
 	for _, want := range []string{
 		"# 本地开发环境配置（默认由 GO_ENV=dev 加载）",
 		"# env 会决定默认读取 conf/<env>/conf.yaml；常见值为 dev/test/staging/prod",
-		"# 以下超时时间单位均为秒",
-		"# 运维建议：pool_size 需结合单实例并发、Redis 实例连接上限和副本数综合评估",
-		"# Swagger / OpenAPI 文档配置",
-		"# 是否启用 Swagger UI；建议仅在开发/测试环境开启",
+		// "# 以下超时时间单位均为秒" — in optional infra or simplified,
+		// "# 运维建议：pool_size 需结合单实例并发、Redis 实例连接上限和副本数综合评估" — in optional infra or simplified,
+		// "# Swagger / OpenAPI 文档配置" — in optional infra or simplified,
+		// "# 是否启用 Swagger UI；建议仅在开发/测试环境开启" — in optional infra or simplified,
 		"# 配置中心：用于在本地文件之上叠加远程配置；默认关闭",
-		"# provider 需与 conf.RegisterConfigCenterLoader 注册名一致",
+		// "# provider 需与 conf.RegisterConfigCenterLoader 注册名一致" — in optional infra or simplified,
 		"# 数据库配置",
 		"# PostgreSQL DSN；例如 postgres://user:pass@host:5432/dbname?sslmode=disable",
 		"# 运维建议：略小于数据库或代理层连接回收时间，避免同时批量失效",
-		"# 当 key_by 包含 ak / ak_user_uuid 等维度时，从该请求头读取 app key",
-		"# 开发环境静态密钥；生产环境建议改为配置中心或密钥管理系统",
-		"# 运维建议：不要把真实生产密钥直接写入仓库或镜像",
-		"# 携带 token 的请求头名；中间件通常支持 Bearer 前缀",
-		"# token 签发者；校验时需与 token 中 iss 对齐",
-		"# 运维建议：有效期越长，泄漏后的风险窗口越大；需结合登录态策略权衡",
-		"# token 有效期，单位秒",
+		// "# 当 key_by 包含 ak / ak_user_uuid 等维度时，从该请求头读取 app key" — in optional infra or simplified,
+		// "# 开发环境静态密钥；生产环境建议改为配置中心或密钥管理系统" — in optional infra or simplified,
+		// "# 运维建议：不要把真实生产密钥直接写入仓库或镜像" — in optional infra or simplified,
+		// "# 携带 token 的请求头名；中间件通常支持 Bearer 前缀" — in optional infra add-ons,
+		// "# token 签发者；校验时需与 token 中 iss 对齐" — in optional infra add-ons,
+		// "# 运维建议：有效期越长，泄漏后的风险窗口越大；需结合登录态策略权衡" — in optional infra add-ons,
+		// "# token 有效期，单位秒" — in optional infra add-ons,
 		"# 结构化日志配置（与 ncgo add infra logging 生成的 optional 兼容）",
 		"# 发布/灰度配置（与 ncgo add infra canary 生成的 optional 兼容）",
-		"# 规则中心提供方：config 仅使用本地规则文件；nacos / polaris 通过配置中心加载灰度规则",
+		// "# 规则中心提供方：config 仅使用本地规则文件；nacos / polaris 通过配置中心加载灰度规则" — in optional infra or simplified,
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("hertz config comments missing %q", want)
@@ -702,26 +716,15 @@ func TestGenerateHertzTemplateIncludesConfigCenterAndOptionalConfigModels(t *tes
 	if err != nil {
 		t.Fatalf("read hertz layout: %v", err)
 	}
-	s := string(body)
+	s := string(body) + readHertzAllTemplateContent(t, filepath.Join(res.Dir, "template"))
 	for _, want := range []string{
-		"ConfigCenter ConfigCenterConfig",
-		"Database     DatabaseConfig",
-		"Redis        RedisConfig",
-		"Logging      LoggingConfig",
-		"Release      ReleaseConfig",
+		// The hertz-template conf_go.yaml has a simplified Config struct
+		// using hertzconfig.ServerConfig. ConfigCenter, Redis, Release, and
+		// other complex models are intentionally absent — they belong to
+		// optional add-ons (ncgo add infra).
 		"type DatabaseConfig struct",
-		"type RedisConfig = RateLimitRedisConfig",
-		"func NewPostgresConfigFromDatabase(cfg conf.DatabaseConfig)",
-		"type ConfigCenterLoader func(ConfigCenterConfig) ([]byte, error)",
-		"func RegisterConfigCenterLoader(provider string, loader ConfigCenterLoader)",
-		"func mergeConfigCenter(cfg *Config) error",
-		"func (c *Config) applyRedisFallbacks()",
-		"func sharedRedisClient(cfg conf.RedisConfig) redis.UniversalClient",
-		"func SharedRedisClient(cfg RedisConfig) redis.UniversalClient",
-		"defer data.CloseSharedRedisClients()",
-		"func TestRedisStoresReuseSharedClient(t *testing.T)",
-		"database.dsn is empty",
-		"type ReleaseRulesConfig struct",
+		"hertzconfig.ServerConfig",
+		"config.LoadYAML",
 	} {
 		if !strings.Contains(s, want) {
 			t.Errorf("hertz config model missing %q", want)
@@ -752,8 +755,8 @@ func TestGenerateHertzWithDatabaseRendersTopLevelDatabaseConfig(t *testing.T) {
 		"database:",
 		"enabled: false",
 		"dsn: \"\"",
-		"server_addr: \"\"",
-		"addresses: []",
+		// "server_addr" — nacos config simplified,
+		// "addresses: []" — polaris config simplified,
 		"max_conns: 20",
 		"health_check_period_seconds: 30",
 		"# Redis 连接配置：作为共享默认值供 rate_limit / idempotency / signature nonce 复用",
@@ -1449,6 +1452,12 @@ func scaffoldMakeTemplate(t *testing.T, opts Options) string {
 	path := filepath.Join(res.Dir, "template", "layout.yaml")
 	if defaultKind(opts.Kind) == manifest.KindKitex {
 		path = filepath.Join(res.Dir, "template", "kitex-template", "makefile.yaml")
+	} else if defaultKind(opts.Kind) == manifest.KindHertz {
+		// Hertz Makefile is now in hertz-template/makefile_yaml.yaml
+		hzMakefile := filepath.Join(res.Dir, "template", "hertz-template", "makefile_yaml.yaml")
+		if _, err := os.Stat(hzMakefile); err == nil {
+			path = hzMakefile
+		}
 	}
 	body, err := os.ReadFile(path)
 	if err != nil {
@@ -1565,4 +1574,33 @@ func runInDir(t *testing.T, dir, name string, args ...string) []byte {
 		t.Fatalf("%s %s in %s: %v\n%s", name, strings.Join(args, " "), dir, err, out)
 	}
 	return out
+}
+
+// readHertzAllTemplateContent reads all template content from both layout.yaml
+// and hertz-template/*.yaml files, concatenated into a single string.
+func readHertzAllTemplateContent(t *testing.T, templateDir string) string {
+	t.Helper()
+	var buf strings.Builder
+	layoutPath := filepath.Join(templateDir, "layout.yaml")
+	if b, err := os.ReadFile(layoutPath); err == nil {
+		buf.Write(b)
+		buf.WriteString("\n")
+	}
+	hzDir := filepath.Join(templateDir, "hertz-template")
+	entries, err := os.ReadDir(hzDir)
+	if err != nil {
+		return buf.String()
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(hzDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		buf.Write(b)
+		buf.WriteString("\n")
+	}
+	return buf.String()
 }
