@@ -11,16 +11,22 @@ body: |-
   debug: true
   # 服务监听配置
   server:
-    # 服务名：用于服务注册、日志、指标等
-    name: {{ToLower .ServiceInfo.ServiceName}}
-    # 监听地址，格式 host:port；例如 ":8888"
-    addr: ":8888"
-    # 连接读写超时，单位秒
-    # 运维建议：应覆盖正常请求耗时，但也不要大到掩盖下游故障
-    read_write_timeout_seconds: 30
-    # 优雅停机等待中的最大退出时间，单位秒
-    # 运维建议：发布摘流后应预留足够时间处理完在途请求
-    exit_wait_time_seconds: 10
+    # RPC 监听配置（由 go-framework/config/kitex.ServerConfig 驱动）
+    rpc:
+      # 监听端口，格式 :port
+      port: ":8888"
+      # 网络类型，固定 "tcp"
+      network: "tcp"
+    # 服务注册信息
+    registry:
+      # 服务名：用于服务注册、日志、指标等
+      name: {{ToLower .ServiceInfo.ServiceName}}
+    # 超时配置（使用 Go time.Duration 字符串格式，如 "30s"/"1m"）
+    timeout:
+      # 连接读写超时
+      read_write_timeout: "30s"
+      # 优雅停机等待中的最大退出时间
+      exit_wait_timeout: "10s"
   # RPC 调用默认超时配置
   rpc:
     # 下游 RPC 请求默认超时时间，单位秒；建议小于上游 HTTP 超时
@@ -37,6 +43,14 @@ body: |-
       allowed_callers: []
       # 是否允许请求头缺失；false 时缺失会被拒绝
       allow_missing: false
+  # 日志配置（由 go-common/log 读取）
+  log:
+    # 日志级别：debug/info/warn/error
+    level: "info"
+    # 日志格式：json/console
+    format: "json"
+    # 输出模式：console/file/both
+    mode: "both"
   # 数据库配置
   database:
     # 是否启用数据库连接

@@ -20,6 +20,9 @@ body: |-
       "github.com/jackc/pgx/v5/pgxpool"
       "github.com/samber/do/v2"
 
+      "github.com/byx-darwin/go-tools/go-framework/config"
+      "github.com/byx-darwin/go-tools/go-framework/kitex/observability"
+
       "{{.Module}}/internal/base/conf"
       "{{.Module}}/internal/base/data"
       handler "{{.Module}}/internal/handler/{{ToLower .ServiceInfo.ServiceName}}"
@@ -35,6 +38,24 @@ body: |-
       if cfg == nil {
           cfg = conf.Default()
       }
+
+      // OTel tracing — enabled when jaeger config is present
+      if cfg.Jaeger != nil && cfg.Jaeger.Enable {
+          provider, err := observability.NewProvider(context.Background(), config.ObservabilityConfig{
+              Enabled:     true,
+              Endpoint:    cfg.Jaeger.Endpoint,
+              ServiceName: cfg.Server.Registry.Name,
+          })
+          if err != nil {
+              log.Fatalf("init observability: %+v", err)
+          }
+          defer func() {
+              if shutdownErr := provider.Shutdown(); shutdownErr != nil {
+                  log.Printf("shutdown observability: %v", shutdownErr)
+              }
+          }()
+      }
+
       // ncgo:wire:logging:init
 
       injector := do.New()
@@ -49,16 +70,16 @@ body: |-
       }
       uc := usecase.New(repo)
 
-      addr, err := net.ResolveTCPAddr("tcp", cfg.Server.Addr)
+      addr, err := net.ResolveTCPAddr("tcp", cfg.Server.RPC.Port)
       if err != nil {
-          log.Fatalf("resolve server addr %q: %v", cfg.Server.Addr, err)
+          log.Fatalf("resolve server addr %q: %v", cfg.Server.RPC.Port, err)
       }
 
       opts := []kitexserver.Option{
           kitexserver.WithServiceAddr(addr),
-          kitexserver.WithServerBasicInfo(&rpcinfo.EndpointBasicInfo{ServiceName: cfg.Server.Name}),
-          kitexserver.WithReadWriteTimeout(durationSeconds(cfg.Server.ReadWriteTimeoutSeconds)),
-          kitexserver.WithExitWaitTime(durationSeconds(cfg.Server.ExitWaitTimeSeconds)),
+          kitexserver.WithServerBasicInfo(&rpcinfo.EndpointBasicInfo{ServiceName: cfg.Server.Registry.Name}),
+          kitexserver.WithReadWriteTimeout(cfg.Server.Timeout.ReadWriteTimeout),
+          kitexserver.WithExitWaitTime(cfg.Server.Timeout.ExitWaitTimeout),
           kitexserver.WithMetaHandler(transmeta.ServerTTHeaderHandler),
           kitexserver.WithMiddleware(endpoint.Chain(
               // Optional structured logging wiring (after `ncgo add infra logging`):

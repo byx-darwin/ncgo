@@ -17,8 +17,8 @@ body: |-
       "github.com/bytedance/gopkg/cloud/metainfo"
       "github.com/cloudwego/kitex/pkg/endpoint"
       "github.com/cloudwego/kitex/pkg/klog"
-      "github.com/cloudwego/kitex/pkg/rpcinfo"
 
+      "github.com/byx-darwin/go-tools/go-framework/kitex/middleware"
       "{{.Module}}/internal/pkg/rpcerror"
   )
 
@@ -38,20 +38,9 @@ body: |-
       }
   }
 
+  // AccessLog delegates to go-framework/kitex/middleware for standardized access logging.
   func AccessLog() endpoint.Middleware {
-      return func(next endpoint.Endpoint) endpoint.Endpoint {
-          return func(ctx context.Context, req, resp interface{}) error {
-              started := time.Now()
-              err := next(ctx, req, resp)
-              service, method := rpcNames(ctx)
-              if err != nil {
-                  klog.CtxWarnf(ctx, "rpc service=%s method=%s latency=%s request_id=%s err=%v %s", service, method, time.Since(started), RequestIDFromContext(ctx), err, rpcerror.FormatBiz(err))
-                  return err
-              }
-              klog.CtxInfof(ctx, "rpc service=%s method=%s latency=%s request_id=%s", service, method, time.Since(started), RequestIDFromContext(ctx))
-              return nil
-          }
-      }
+      return middleware.AccessLog()
   }
 
   func Recovery() endpoint.Middleware {
@@ -125,14 +114,6 @@ body: |-
           return value
       }
       return ""
-  }
-
-  func rpcNames(ctx context.Context) (string, string) {
-      ri := rpcinfo.GetRPCInfo(ctx)
-      if ri == nil || ri.Invocation() == nil {
-          return "unknown", "unknown"
-      }
-      return ri.Invocation().ServiceName(), ri.Invocation().MethodName()
   }
 
   func newRequestID() string {
