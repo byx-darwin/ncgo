@@ -1273,8 +1273,8 @@ func TestGenerateKitexTemplateIncludesChineseConfigComments(t *testing.T) {
 	for _, want := range []string{
 		"# 本地开发环境配置（默认由 GO_ENV=dev 加载）",
 		"# env 会决定默认读取 conf/<env>/conf.yaml；常见值为 dev/test/staging/prod",
-		"# 连接读写超时，单位秒",
-		"# 运维建议：应覆盖正常请求耗时，但也不要大到掩盖下游故障",
+		"# 连接读写超时",
+		"# 优雅停机等待中的最大退出时间",
 		"# 从哪个请求头读取调用方服务名",
 		"# allowed_callers 中填写允许访问当前服务的上游服务名",
 		"# 运维建议：开启 enabled 且 allow_missing=false 时，这里必须显式配置",
