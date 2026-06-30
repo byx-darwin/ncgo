@@ -114,6 +114,12 @@ func writeHertzTemplate(dir string, opts Options) error {
 	if err := os.WriteFile(filepath.Join(tplDir, "data.json"), data, 0o644); err != nil {
 		return fmt.Errorf("scaffold: write data.json: %w", err)
 	}
+	// Copy hertz-template/*.yaml from embedded assets to <dir>/template/hertz-template/.
+	// These per-file yaml templates override hz-generated files with go-tools
+	// integrated versions via template.Apply().
+	if err := copyHertzTemplateYAML(dir, srcFS); err != nil {
+		return fmt.Errorf("scaffold: copy hertz-template: %w", err)
+	}
 	// Generate rule center client when address is provided
 	if opts.RuleCenterAddr != "" {
 		b, err := fs.ReadFile(srcFS, "hertz/optional/rule_center_client.go")
@@ -208,6 +214,35 @@ func writeKitexTemplate(dir string, preset string) error {
 		}
 		if err := os.WriteFile(filepath.Join(layoutDir, "layout.yaml"), b, 0o644); err != nil {
 			return fmt.Errorf("scaffold: write layout.yaml: %w", err)
+		}
+	}
+	return nil
+}
+
+// copyHertzTemplateYAML copies every embedded hertz/hertz-template/*.yaml verbatim
+// into <dir>/template/hertz-template/ so that template.Apply() can override
+// hz-generated files with go-tools integrated versions.
+func copyHertzTemplateYAML(dir string, srcFS fs.FS) error {
+	hertzDir := filepath.Join(dir, "template", "hertz-template")
+	if err := os.MkdirAll(hertzDir, 0o755); err != nil {
+		return fmt.Errorf("scaffold: mkdir %s: %w", hertzDir, err)
+	}
+	entries, err := fs.ReadDir(srcFS, "hertz/hertz-template")
+	if err != nil {
+		// hertz-template directory doesn't exist — nothing to copy
+		return nil
+	}
+	for _, e := range entries {
+		if e.IsDir() {
+			continue
+		}
+		name := e.Name()
+		b, err := fs.ReadFile(srcFS, "hertz/hertz-template/"+name)
+		if err != nil {
+			return fmt.Errorf("scaffold: read embedded hertz/hertz-template/%s: %w", name, err)
+		}
+		if err := os.WriteFile(filepath.Join(hertzDir, name), b, 0o644); err != nil {
+			return fmt.Errorf("scaffold: write %s: %w", name, err)
 		}
 	}
 	return nil
