@@ -490,6 +490,74 @@ func TestNextStepsSequenceShapes(t *testing.T) {
 	}
 }
 
+// TestGenerateHertzTemplateApplied verifies that writeHertzTemplate() copies
+// the hertz-template/*.yaml assets into template/hertz-template/ of the
+// generated project. These yaml files are per-file overrides consumed by
+// template.Apply() to produce go-tools-integrated source code.
+func TestGenerateHertzTemplateApplied(t *testing.T) {
+	opts := baseOpts(t)
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	hzDir := filepath.Join(res.Dir, "template", "hertz-template")
+	info, err := os.Stat(hzDir)
+	if err != nil {
+		t.Fatalf("template/hertz-template/ does not exist: %v", err)
+	}
+	if !info.IsDir() {
+		t.Fatalf("template/hertz-template is not a directory")
+	}
+
+	entries, err := os.ReadDir(hzDir)
+	if err != nil {
+		t.Fatalf("readdir hertz-template: %v", err)
+	}
+
+	wantFiles := []string{
+		"conf_dev_yaml.yaml",
+		"conf_go.yaml",
+		"data_go.yaml",
+		"errcode_go.yaml",
+		"main_go.yaml",
+		"makefile_yaml.yaml",
+		"middleware_go.yaml",
+		"repository_go.yaml",
+		"response_go.yaml",
+		"server_go.yaml",
+		"sqlc_yaml.yaml",
+		"usecase_go.yaml",
+	}
+	var gotFiles []string
+	for _, e := range entries {
+		if !e.IsDir() && strings.HasSuffix(e.Name(), ".yaml") {
+			gotFiles = append(gotFiles, e.Name())
+		}
+	}
+	sort.Strings(gotFiles)
+	if !equal(gotFiles, wantFiles) {
+		t.Fatalf("hertz-template yaml files mismatch\n got: %v\nwant: %v", gotFiles, wantFiles)
+	}
+
+	// Spot-check main_go.yaml: it must reference go-tools structured logging
+	// so the generated main.go uses the go-common/log integration.
+	mainYAML, err := os.ReadFile(filepath.Join(hzDir, "main_go.yaml"))
+	if err != nil {
+		t.Fatalf("read main_go.yaml: %v", err)
+	}
+	body := string(mainYAML)
+	for _, want := range []string{
+		"path: main.go",
+		"go-tools/go-common/log",
+		"goclog.Init",
+	} {
+		if !strings.Contains(body, want) {
+			t.Errorf("main_go.yaml missing %q", want)
+		}
+	}
+}
+
 func TestGenerateHertzTemplateIncludesSafeOptionalWiringAnchors(t *testing.T) {
 	opts := baseOpts(t)
 	res, err := Generate(context.Background(), opts)
