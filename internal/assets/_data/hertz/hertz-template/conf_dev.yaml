@@ -1,0 +1,21 @@
+# Hertz custom template — conf/dev/conf.yaml
+# Dev environment configuration sample.
+path: conf/dev/conf.yaml
+update_behavior:
+  type: skip
+body: |-
+  env: dev
+  debug: true
+  server:
+    http:
+      port: "8080"
+      network: "tcp"
+      mode: 0
+    registry:
+      name: "{{ToLower .ServiceName}}"
+  database:
+    enabled: false
+  log:
+    level: "info"
+    format: "json"
+    mode: "both"
