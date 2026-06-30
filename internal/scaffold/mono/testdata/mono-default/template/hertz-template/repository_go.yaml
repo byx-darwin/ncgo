@@ -1,0 +1,78 @@
+# Hertz custom template — repository per service
+# Generates internal/repository/{service}/repo.go when WithDatabase is enabled.
+# update_behavior: skip protects user DB logic from overwrites.
+path: /internal/repository/{{ToLower .ServiceName}}/repo.go
+update_behavior:
+  type: skip
+loop_service: true
+condition: WithDatabase
+body: |-
+  {{ $svc := exportName .ServiceName -}}
+  package {{ToLower .ServiceName}}repo
+
+  import (
+      "context"
+
+      "github.com/jackc/pgx/v5"
+      "github.com/jackc/pgx/v5/pgxpool"
+      "github.com/samber/oops"
+
+      "{{.Module}}/internal/db/gen"
+  )
+
+  // Repo implements the usecase port interface using sqlc-generated queries.
+  // See internal/usecase/{{ToLower .ServiceName}}/ for the interface definition.
+  type Repo struct {
+      q    *gen.Queries
+      pool *pgxpool.Pool
+  }
+
+  // New creates a Repo backed by the given sqlc Queries and pgx pool.
+  func New(q *gen.Queries, pool *pgxpool.Pool) *Repo {
+      return &Repo{q: q, pool: pool}
+  }
+
+  // WithTx executes fn inside a database transaction.
+  func (r *Repo) WithTx(ctx context.Context, fn func(*Repo) error) (err error) {
+      tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
+      if err != nil {
+          return oops.
+              In("{{ToLower .ServiceName}}.repository").
+              Tags("database", "postgres", "transaction").
+              Code(10000).
+              Public("database transaction failed").
+              Wrapf(err, "begin transaction")
+      }
+      committed := false
+      defer func() {
+          if committed {
+              return
+          }
+          if p := recover(); p != nil {
+              _ = tx.Rollback(ctx)
+              panic(p)
+          }
+          if err != nil {
+              _ = tx.Rollback(ctx)
+          }
+      }()
+      txRepo := &Repo{q: r.q.WithTx(tx), pool: r.pool}
+      if ferr := fn(txRepo); ferr != nil {
+          return oops.
+              In("{{ToLower .ServiceName}}.repository").
+              Tags("database", "postgres", "transaction").
+              Code(10000).
+              Public("database transaction failed").
+              Wrapf(ferr, "transaction callback")
+      }
+      if cerr := tx.Commit(ctx); cerr != nil {
+          return oops.
+              In("{{ToLower .ServiceName}}.repository").
+              Tags("database", "postgres", "transaction").
+              Code(10000).
+              Public("database transaction failed").
+              Wrapf(cerr, "commit transaction")
+      }
+      committed = true
+      return nil
+  }
