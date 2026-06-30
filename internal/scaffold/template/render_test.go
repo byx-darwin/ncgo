@@ -96,3 +96,46 @@ func TestExportName(t *testing.T) {
 		}
 	}
 }
+
+func TestHasInfra(t *testing.T) {
+	tests := []struct {
+		name  string
+		infra []string
+		query string
+		want  bool
+	}{
+		{"empty slice", nil, "redis", false},
+		{"empty non-nil", []string{}, "redis", false},
+		{"match first", []string{"redis", "kafka"}, "redis", true},
+		{"match last", []string{"kafka", "es"}, "es", true},
+		{"match middle", []string{"redis", "kafka", "es"}, "kafka", true},
+		{"no match", []string{"redis", "kafka"}, "es", false},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := hasInfra(tt.infra, tt.query); got != tt.want {
+				t.Errorf("hasInfra(%v, %q) = %v, want %v", tt.infra, tt.query, got, tt.want)
+			}
+		})
+	}
+}
+
+func TestRender_HasInfra(t *testing.T) {
+	body := `{{if hasInfra .Infra "redis"}}redis_enabled{{else}}no_redis{{end}}`
+
+	got, err := Render(body, RenderData{Infra: []string{"redis", "kafka"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "redis_enabled" {
+		t.Errorf("got %q, want %q", got, "redis_enabled")
+	}
+
+	got, err = Render(body, RenderData{Infra: []string{"kafka"}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+	if got != "no_redis" {
+		t.Errorf("got %q, want %q", got, "no_redis")
+	}
+}

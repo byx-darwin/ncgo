@@ -14,6 +14,7 @@ func FuncMap() template.FuncMap {
 		"ToUpper":    strings.ToUpper,
 		"LowerFirst": lowerFirst,
 		"exportName": exportName,
+		"hasInfra":   hasInfra,
 	}
 }
 
@@ -40,6 +41,15 @@ func exportName(s string) string {
 		upper = false
 	}
 	return string(out)
+}
+
+func hasInfra(infra []string, name string) bool {
+	for _, kind := range infra {
+		if kind == name {
+			return true
+		}
+	}
+	return false
 }
 
 // Render executes a template body with the given data.
