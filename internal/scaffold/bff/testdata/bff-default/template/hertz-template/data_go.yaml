@@ -6,6 +6,7 @@ update_behavior:
   type: cover
 condition: WithDatabase
 body: |-
+  {{ if .WithDatabase}}
   package data
 
   import (
@@ -38,3 +39,4 @@ body: |-
           Queries: queries,
       }, cleanup, nil
   }
+  {{ end -}}

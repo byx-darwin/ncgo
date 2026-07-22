@@ -17,11 +17,11 @@ body: |-
   )
 
   var (
-      CodeInternalError    = frameworkerror.CodeSystem
+      CodeInternalError    int32 = frameworkerror.CodeSystem
       CodeNotImplemented   int32 = 10010
-      CodePermissionDenied = frameworkerror.CodeAuthFailed
-      CodeRPCTimeout       = frameworkerror.CodeRPCTimeout
-      CodeConfigInvalid    = frameworkerror.CodeConfigInvalid
+      CodePermissionDenied int32 = frameworkerror.CodeAuthFailed
+      CodeRPCTimeout       int32 = frameworkerror.CodeRPCTimeout
+      CodeConfigInvalid    int32 = frameworkerror.CodeConfigInvalid
   )
 
   func ToBizError(err error) error {

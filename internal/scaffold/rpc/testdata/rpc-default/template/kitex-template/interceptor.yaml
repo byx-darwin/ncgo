@@ -18,7 +18,7 @@ body: |-
       "github.com/cloudwego/kitex/pkg/endpoint"
       "github.com/cloudwego/kitex/pkg/klog"
 
-      "github.com/byx-darwin/go-tools/go-framework/kitex/middleware"
+      "github.com/byx-darwin/go-tools/go-framework/kitex/middleware/compat"
       "{{.Module}}/internal/pkg/rpcerror"
   )
 
@@ -38,9 +38,9 @@ body: |-
       }
   }
 
-  // AccessLog delegates to go-framework/kitex/middleware for standardized access logging.
+  // AccessLog delegates to go-framework/kitex/middleware/compat for standardized access logging.
   func AccessLog() endpoint.Middleware {
-      return middleware.AccessLog()
+      return compat.AccessLog()
   }
 
   func Recovery() endpoint.Middleware {

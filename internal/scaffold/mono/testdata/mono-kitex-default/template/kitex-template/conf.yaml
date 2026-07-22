@@ -177,14 +177,14 @@ body: |-
           Env:   Env(),
           Debug: Env() != "prod",
           Server: kitexconfig.ServerConfig{
-              RPC: kitexconfig.RPCConfig{
+              RPC: &kitexconfig.RPCOption{
                   Port:    ":8888",
                   Network: "tcp",
               },
-              Registry: kitexconfig.RegistryConfig{
+              Registry: &config.RegistryOption{
                   Name: "{{ToLower .ServiceInfo.ServiceName}}",
               },
-              Timeout: kitexconfig.TimeoutConfig{
+              Timeout: &kitexconfig.ServerTimeout{
                   ReadWriteTimeout: 30 * time.Second,
                   ExitWaitTimeout:  10 * time.Second,
               },

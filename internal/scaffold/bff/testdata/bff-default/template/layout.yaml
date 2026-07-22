@@ -1804,14 +1804,6 @@ layouts:
     delims: ["", ""]
     body: ""
 
-  - path: internal/base/data/redis_shared.go
-    delims: ["", ""]
-    body: ""
-
-  - path: internal/base/data/redis_shared_test.go
-    delims: ["", ""]
-    body: ""
-
   - path: internal/pkg/middleware/redis_client.go
     delims: ["", ""]
     body: ""
