@@ -42,7 +42,8 @@
 // Required dependency:
 //
 //	go get github.com/ClickHouse/clickhouse-go/v2
-//	go get github.com/samber/oops
+//	go get github.com/byx-darwin/go-tools/go-common
+//	go get github.com/byx-darwin/go-tools/go-framework
 
 package data
 
@@ -51,8 +52,18 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/samber/oops"
+	goerror "github.com/byx-darwin/go-tools/go-common/error"
+	frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
 )
+
+// CodeDatabaseUnavailable is the project-segment error code (>=40100) for
+// database unavailability. go-framework has no equivalent code, so a project
+// code is defined here and mapped to HTTP 503 at init time.
+const CodeDatabaseUnavailable = 40503
+
+func init() {
+	goerror.RegisterHTTPStatuses(map[int]int{CodeDatabaseUnavailable: 503})
+}
 
 // ClickHouse wraps a native ClickHouse driver connection.
 type ClickHouse struct {
@@ -63,37 +74,37 @@ type ClickHouse struct {
 // and pings the cluster with the injected startup context.
 func NewClickHouse(ctx context.Context, opts *clickhouse.Options) (*ClickHouse, func(), error) {
 	if opts == nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("clickhouse").
 			Tags("analytics", "clickhouse", "configuration").
-			Code(10308).
+			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
 			New("clickhouse.Options is nil")
 	}
 	if len(opts.Addr) == 0 {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("clickhouse").
 			Tags("analytics", "clickhouse", "configuration").
-			Code(10308).
+			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
 			New("clickhouse.Options.Addr is empty")
 	}
 	conn, err := clickhouse.Open(opts)
 	if err != nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("clickhouse").
 			Tags("analytics", "clickhouse", "connection").
-			Code(10303).
+			Code(CodeDatabaseUnavailable).
 			Public("database_unavailable").
 			With("addrs_count", len(opts.Addr)).
 			Wrapf(err, "clickhouse.Open")
 	}
 	if err := conn.Ping(ctx); err != nil {
 		_ = conn.Close()
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("clickhouse").
 			Tags("analytics", "clickhouse", "connection").
-			Code(10303).
+			Code(CodeDatabaseUnavailable).
 			Public("database_unavailable").
 			With("addrs_count", len(opts.Addr)).
 			Wrapf(err, "clickhouse.Ping")

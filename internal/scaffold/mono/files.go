@@ -225,6 +225,24 @@ func writeKitexTemplate(dir string, preset string) error {
 	return nil
 }
 
+// writeKitexGoMod pre-writes the project go.mod for a kitex scaffold so the
+// generated module pins `go 1.26.5` and requires the go-tools modules at
+// v0.1.0. The kitex tool only runs `go mod init` when go.mod is absent (which
+// leaves the go-tools versions unpinned until `go mod tidy` resolves them);
+// when go.mod already exists with a matching module path, kitex reuses it
+// as-is and skips its own init. This mirrors the Hertz layout.yaml go.mod
+// entry so the version is template-locked and reproducible. `go mod tidy`
+// (run later) preserves these directives and only appends the kitex-runtime
+// requires; go-middleware is added by tidy when WithDatabase imports it.
+func writeKitexGoMod(dir, module string) error {
+	body := fmt.Sprintf("module %s\n\ngo 1.26.5\n\nrequire (\n\tgithub.com/byx-darwin/go-tools/go-common v0.1.0\n\tgithub.com/byx-darwin/go-tools/go-framework v0.1.0\n)\n", module)
+	full := filepath.Join(dir, "go.mod")
+	if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+		return fmt.Errorf("scaffold: write %s: %w", full, err)
+	}
+	return nil
+}
+
 // writeHertzRootTemplates reads hertz-template files whose target path is at
 // the project root (e.g. Makefile) and writes them directly to the scaffold
 // directory with template variables rendered. This ensures make targets like

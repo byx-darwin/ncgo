@@ -21,6 +21,12 @@ Hertz 模板族支撑 `ncgo new --mode mono`(HTTP 服务),由
 `go build ./...` 忽略 `optional/*.go` —— 这些文件是模板素材,不是参与
 ncgo 二进制编译的 Go 源码。
 
+生成的项目构建在 **go-tools v0.1.0** 之上(是其上的薄业务层):`go.mod` 声明
+`go 1.26.5`,并 require `go-common v0.1.0` + `go-framework v0.1.0`
+(`go-middleware v0.1.0` 在 `WithDatabase=true` 时由 `go mod tidy` 补齐)。
+响应使用 `go-framework/hertz.Responder`,配置使用 `go-framework/config`,
+日志使用 `go-common/log`,错误码 re-export `go-framework/error` 的框架码。
+
 资产版本见 `_data/VERSION`;当前嵌入资产版本由 `assets.Version()` 暴露。
 
 ## 2. 生成项目架构
@@ -80,7 +86,8 @@ repository/*    (不得 import usecase;端口在 usecase 包里定义)
 - handler 严禁 import `internal/repository/*` 或 `internal/base/data`。
 - usecase 严禁 import `github.com/cloudwego/hertz/...`。
 - repository / adapter 实现严禁 import `internal/usecase/*`。
-- 所有返回错误必须是带 `Code` + `Public` 的 `samber/oops` 链。
+- 所有返回错误必须是带 `Code` + `Public` 的 `go-common/error`(`goerror`)链。
+  (`goerror` 内部包装 `samber/oops`;不要直接 `import "samber/oops"` 构造错误。)
 
 ### 2.3 依赖注入(`samber/do`)
 
@@ -146,7 +153,8 @@ HTTP 请求
 - 环境识别:`GO_ENV`,缺省 `dev`。
 - 文件解析:`CONFIG_PATH` 优先,否则 `conf/<env>/conf.yaml`。
 - 解析路径不存在 **且** 未设 `CONFIG_PATH` 时使用 `Default()`;否则报
-  `oops.Code(10308) Public("config_invalid")`。
+  `goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid")`
+  (`frameworkerror.CodeConfigInvalid` = 10004)。
 - `Init()` 由 `main.go` 调用一次(`sync.Once`),`Get()` 返回缓存的
   `*Config`。
 - `Validate()` 校验:超时非负、签名 / 令牌密钥、CORS 通配 +
@@ -155,19 +163,30 @@ HTTP 请求
 
 ### 3.2 响应与错误码(`internal/pkg/response`)
 
-- `Reply` / `OK` / `Err` / `ErrorCode` / `BindError` 根据 `Accept` 头返回
-  JSON 或 Protobuf(payload 实现 `proto.Message` 时优先 protobuf)。
-- 内置 5 位错误码:
-  - `1xxxx` —— 请求 / 认证 / 限流 / 依赖错误。
-  - 脚手架保留段:`10000–10399`(在此区间 `Register` 会 panic)。
+- `Reply` / `OK` / `Err` / `ErrorCode` / `BindError` 委托给
+  `go-framework/hertz.Responder`(HTTP 状态由错误码派生),并根据 `Accept` 头
+  返回 JSON 或 Protobuf(payload 实现 `proto.Message` 时优先 protobuf)。
+- 错误码遵循 go-tools 码段:
+  - Framework `10000–10499` —— `go-framework/error` 框架码,由
+    `internal/pkg/errcode` 与 `internal/pkg/response` re-export:
+    `CodeSystem=10000`、`CodeParamInvalid=10001`、`CodeAuthFailed=10002`、
+    `CodeConfigInvalid=10004`、`CodeRPCUnavailable=10010`、
+    `CodeRPCTimeout=10011`。
+  - Middleware `20000–20699`、Auth `40000–40099`。
+  - Project `40100–59999` —— 业务自定义码。**业务码必须 `>= 40100`
+    (`goerror.ProjectCodeMin`)。**
 - 业务码注册写在进程启动期:
   ```go
   var CodeOrderConflict = response.MustRegister(response.Definition{
-      Code: 39001, Msg: "order_conflict", Status: consts.StatusConflict,
+      Code: 40101, Msg: "order_conflict", Status: consts.StatusConflict,
   }).Code
   ```
-- 错误生产端用 `oops.In("...").Code(code).Public("msg")…`;
+- 错误生产端用 `goerror.In("...").Code(code).Public("msg")…`
+  (`goerror` = `go-common/error`,内部包装 `samber/oops`);
   `response.Err` 提取 `(code, msg)` 并经 `StatusFromCode` 映射 HTTP 状态。
+- **行为说明:** 业务码(`>= 40100`)经 `goerror.HTTPStatus` 兜底返回
+  **HTTP 200** —— go-tools 将其视为「业务错误、RPC 调用成功」。如需非 200
+  响应,请用 `goerror.RegisterHTTPStatuses` 注册细粒度 HTTP 状态。
 - `internal/pkg/i18n` 根据 `Accept-Language` 选择 `en` / `zh-CN` / `zh-TW` /
   `ja-JP` / `ko-KR` / `fr-FR` / `de-DE` / `es-ES`,并由 `response` 对 JSON 响应的
   `msg` 做翻译、写入 `Content-Language`。
@@ -183,12 +202,16 @@ HTTP 请求
 
 | 中间件 | 触发条件 | 后端 | 失败码 |
 |---|---|---|---|
-| `SignatureAuth` | `cfg.Auth.Signature.Enabled` | HMAC-SHA256(`method\npath\nquery\nts\nnonce\nbody`);nonce 存储 `memory`(LRU)或 `redis` | `10101 signature_missing` / `10102 signature_expired` / `10103 signature_invalid` / `10202 replay_request` |
-| `JWTAuth` | `cfg.Auth.Token.Enabled` | `golang-jwt/jwt/v5` HS256;读 `cfg.Auth.Token.Header`;claims 写入 context key `tokenClaims` | `10104 token_missing` / `10105 token_invalid` / `10106 token_expired` / `10107 claims_invalid` |
-| `RateLimit` | `cfg.RateLimit.Enabled` + 分阶段开关 | 动态规则解析(`config` / `grpc` / `database`) + `fixed_window` / `token_bucket`;执行状态落 `memory`(samber/hot LRU)或 `redis` | `10200 rate_limited`(`fail_open=false` 且后端故障时报 `10304 cache_unavailable`) |
-| `Idempotency` | `cfg.Idempotency.Enabled` | 重放缓存,key = `header + method + path + body-hash`;`memory` 或 `redis` | `10203 idempotency_key_missing` / `10204 idempotency_conflict` |
-| `InternalOnly` | 始终启用 | CIDR + 路径白名单 | `10108 permission_denied` |
+| `SignatureAuth` | `cfg.Auth.Signature.Enabled` | HMAC-SHA256(`method\npath\nquery\nts\nnonce\nbody`);nonce 存储 `memory`(LRU)或 `redis` | signature missing / expired / invalid → `CodeAuthFailed`(10002);replay → `CodeReplayRequest`(10202) |
+| `JWTAuth` | `cfg.Auth.Token.Enabled` | `golang-jwt/jwt/v5` HS256;读 `cfg.Auth.Token.Header`;claims 写入 context key `tokenClaims` | token missing / invalid / expired / claims invalid → `CodeAuthFailed`(10002) |
+| `RateLimit` | `cfg.RateLimit.Enabled` + 分阶段开关 | 动态规则解析(`config` / `grpc` / `database`) + `fixed_window` / `token_bucket`;执行状态落 `memory`(samber/hot LRU)或 `redis` | `CodeRateLimited`(10200,HTTP 429);`fail_open=false` 且后端故障时 → `CodeCacheUnavailable`(10304,HTTP 503) |
+| `Idempotency` | `cfg.Idempotency.Enabled` | 重放缓存,key = `header + method + path + body-hash`;`memory` 或 `redis` | `CodeIdempotencyKeyMissing`(10203,HTTP 400)/ `CodeIdempotencyConflict`(10204,HTTP 409) |
+| `InternalOnly` | 始终启用 | CIDR + 路径白名单 | `CodePermissionDenied`(10108,HTTP 403) |
 | `CORS` | `cfg.CORS.Enabled` | 静态配置;通配 origin 与 credentials 互斥 | n/a |
+
+认证失败统一收敛到 `frameworkerror.CodeAuthFailed`(10002);限流 / 幂等 /
+权限 / 缓存类错误码保留各自的脚手架数值(10108、10200–10204、10304),HTTP
+映射经 `StatusFromCode`。
 
 `Unless(mw, skipper)` 与 `PathSkipper(paths...)` 包住认证中间件,使
 public 路径(默认 `/healthz`、`/readyz`,加上 `cfg.Auth.PublicPaths`)
@@ -296,9 +319,11 @@ query 文件。
 
 - 暴露:`*data.Redis{ Client redis.UniversalClient }`(`UniversalOptions`
   自动判定 single / cluster / sentinel)。
-- 依赖:`github.com/redis/go-redis/v9`。
-- 错误码:`10308 config_invalid`(cfg/opts 为 nil)、
-  `10304 cache_unavailable`(`Ping` 失败)。
+- 依赖:`github.com/redis/go-redis/v9`、`go-tools/go-common`(goerror)、
+  `go-tools/go-framework`(frameworkerror)。
+- 错误码:`frameworkerror.CodeConfigInvalid`(10004,cfg/opts 为 nil)、
+  `CodeCacheUnavailable`(40504,`Ping` 失败;经 `goerror.RegisterHTTPStatuses`
+  注册为 HTTP 503)。
 - 默认接线(复用顶层 `cfg.Redis` 与 middleware 共用 client):
   ```go
   do.ProvideValue[context.Context](inj, startupCtx)
@@ -313,9 +338,10 @@ query 文件。
 
 - 暴露:`*data.KafkaWriter{ W *kafka.Writer }` 与/或
   `*data.KafkaReader{ R *kafka.Reader }`(segmentio/kafka-go)。
-- 依赖:`github.com/segmentio/kafka-go`。
-- 错误码:`10308 config_invalid`(Writer 为 nil / 缺 `Addr` / `Topic` /
-  `Brokers`)。
+- 依赖:`github.com/segmentio/kafka-go`、`go-tools/go-common`(goerror)、
+  `go-tools/go-framework`(frameworkerror)。
+- 错误码:`frameworkerror.CodeConfigInvalid`(10004,Writer 为 nil / 缺
+  `Addr` / `Topic` / `Brokers`)。
 - 接线(producer):
   ```go
   do.ProvideValue(inj, &kafka.Writer{Addr: kafka.TCP(cfg.Kafka.Brokers...), Topic: cfg.Kafka.Topic})
@@ -325,9 +351,11 @@ query 文件。
 #### Elasticsearch(`es.go`)
 
 - 暴露:`*data.ES{ Client *elasticsearch.Client }`(go-elasticsearch v8)。
-- 依赖:`github.com/elastic/go-elasticsearch/v8`。
-- 错误码:`10308 config_invalid`(`Addresses` 空)、
-  `10306 search_unavailable`(`NewClient` / `Ping` 失败)。
+- 依赖:`github.com/elastic/go-elasticsearch/v8`、`go-tools/go-common`
+  (goerror)、`go-tools/go-framework`(frameworkerror)。
+- 错误码:`frameworkerror.CodeConfigInvalid`(10004,`Addresses` 空)、
+  `CodeSearchUnavailable`(40506,`NewClient` / `Ping` 失败;经
+  `goerror.RegisterHTTPStatuses` 注册为 HTTP 503)。
 - 接线:
   ```go
   do.ProvideValue[context.Context](inj, startupCtx)
@@ -338,9 +366,11 @@ query 文件。
 #### ClickHouse(`clickhouse.go`)
 
 - 暴露:`*data.ClickHouse{ Conn driver.Conn }`(clickhouse-go v2 原生协议)。
-- 依赖:`github.com/ClickHouse/clickhouse-go/v2`。
-- 错误码:`10308 config_invalid`(opts 为 nil / `Addr` 空)、
-  `10303 database_unavailable`(`Open` / `Ping` 失败)。
+- 依赖:`github.com/ClickHouse/clickhouse-go/v2`、`go-tools/go-common`
+  (goerror)、`go-tools/go-framework`(frameworkerror)。
+- 错误码:`frameworkerror.CodeConfigInvalid`(10004,opts 为 nil / `Addr` 空)、
+  `CodeDatabaseUnavailable`(40503,`Open` / `Ping` 失败;经
+  `goerror.RegisterHTTPStatuses` 注册为 HTTP 503)。
 - 接线:
   ```go
   do.ProvideValue[context.Context](inj, startupCtx)

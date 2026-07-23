@@ -33,12 +33,51 @@ body: |-
     max_conn_idle_time_seconds: 300
     # 连接健康检查周期，单位秒
     health_check_period_seconds: 30
-  # Redis 连接配置
+  # ncgo:add-infra:start redis
+  # Redis 连接配置：作为共享默认值供 rate_limit / idempotency / signature nonce 复用
+  # 如需给某个模块单独走另一套 Redis，可在对应模块的 redis 字段内覆盖
+  # 结构与 `ncgo add infra redis` 注入的块一致；已带 add-infra 标记，重复添加保持幂等。
   redis:
     addrs:
       - 127.0.0.1:6379
+    client_name: ""
     db: 0
+    username: ""
+    password: ""
+    master_name: ""
+    sentinel_username: ""
+    sentinel_password: ""
+    max_retries: 3
+    min_retry_backoff_milliseconds: 8
+    max_retry_backoff_milliseconds: 512
+    dial_timeout_seconds: 5
+    dialer_retries: 5
+    dialer_retry_timeout_milliseconds: 100
+    read_timeout_seconds: 3
+    write_timeout_seconds: 3
+    context_timeout_enabled: true
+    read_buffer_size: 32768
+    write_buffer_size: 32768
+    pool_fifo: false
     pool_size: 10
+    min_idle_conns: 2
+    max_idle_conns: 0
+    max_active_conns: 0
+    max_concurrent_dials: 0
+    pool_timeout_seconds: 4
+    conn_max_idle_time_seconds: 300
+    conn_max_lifetime_seconds: 1800
+    conn_max_lifetime_jitter_seconds: 0
+    max_redirects: 3
+    read_only: false
+    route_by_latency: false
+    route_randomly: false
+    disable_identity: false
+    identity_suffix: ""
+    unstable_resp3: false
+    protocol: 3
+    failing_timeout_seconds: 15
+  # ncgo:add-infra:end redis
   log:
     level: "info"
     format: "json"
@@ -60,6 +99,9 @@ body: |-
   # 限流配置
   rate_limit:
     enabled: false
+    # 可选：仅当需要覆盖顶层 redis 连接时填写；留空则复用顶层 redis
+    # 结构与顶层 redis 完全一致
+    redis: {}
   # 鉴权配置
   auth:
     public_paths:

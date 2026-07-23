@@ -57,12 +57,14 @@
 // Required dependency:
 //
 //	go get github.com/segmentio/kafka-go
-//	go get github.com/samber/oops
+//	go get github.com/byx-darwin/go-tools/go-common
+//	go get github.com/byx-darwin/go-tools/go-framework
 
 package data
 
 import (
-	"github.com/samber/oops"
+	goerror "github.com/byx-darwin/go-tools/go-common/error"
+	frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
 	"github.com/segmentio/kafka-go"
 )
 
@@ -80,26 +82,26 @@ type KafkaReader struct {
 // The caller passes the fully-populated Writer struct via do.ProvideValue.
 func NewKafkaWriter(w *kafka.Writer) (*KafkaWriter, func(), error) {
 	if w == nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("kafka").
 			Tags("message-bus", "kafka", "producer", "configuration").
-			Code(10308).
+			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
 			New("kafka.Writer is nil")
 	}
 	if w.Addr == nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("kafka").
 			Tags("message-bus", "kafka", "producer", "configuration").
-			Code(10308).
+			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
 			New("kafka.Writer.Addr is nil")
 	}
 	if w.Topic == "" {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("kafka").
 			Tags("message-bus", "kafka", "producer", "configuration").
-			Code(10308).
+			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
 			New("kafka.Writer.Topic is empty")
 	}
@@ -110,18 +112,18 @@ func NewKafkaWriter(w *kafka.Writer) (*KafkaWriter, func(), error) {
 // NewKafkaReader builds a Reader from the full kafka.ReaderConfig.
 func NewKafkaReader(cfg kafka.ReaderConfig) (*KafkaReader, func(), error) {
 	if len(cfg.Brokers) == 0 {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("kafka").
 			Tags("message-bus", "kafka", "consumer", "configuration").
-			Code(10308).
+			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
 			New("kafka.ReaderConfig.Brokers is empty")
 	}
 	if cfg.Topic == "" {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("kafka").
 			Tags("message-bus", "kafka", "consumer", "configuration").
-			Code(10308).
+			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
 			With("brokers_count", len(cfg.Brokers)).
 			New("kafka.ReaderConfig.Topic is empty")

@@ -12,7 +12,7 @@ body: |-
   import (
       "context"
 
-      "github.com/samber/oops"
+      goerror "github.com/byx-darwin/go-tools/go-common/error"
   )
 
   // {{$svc}}Repo defines the data-access port for this usecase.
@@ -35,5 +35,7 @@ body: |-
   // Add HTTP methods to the IDL proto, then rerun `make update`.
   // Implement handler methods here as:
   //   func (uc *UseCase) Ping(ctx context.Context, req *pb.PingReq) (*pb.PingResp, error) {
-  //       return nil, oops.In("{{ToLower .ServiceName}}.usecase").Code(10010).Public("not_implemented").Errorf("Ping: not implemented")
+  //       // Placeholder code 10010 shares its value with frameworkerror.CodeRPCUnavailable;
+  //       // replace with a domain-specific error code when implementing.
+  //       return nil, goerror.In("{{ToLower .ServiceName}}.usecase").Code(10010).Public("not_implemented").Errorf("Ping: not implemented")
   //   }

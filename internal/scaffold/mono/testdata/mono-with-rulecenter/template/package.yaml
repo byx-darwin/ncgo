@@ -18,7 +18,7 @@ layouts:
           "context"
 
           "github.com/cloudwego/hertz/pkg/app"
-          "github.com/samber/oops"
+          goerror "github.com/byx-darwin/go-tools/go-common/error"
 
           "{{$.ProjPackage}}/internal/pkg/response"
 
@@ -46,7 +46,7 @@ layouts:
       func (notImplementedUseCase) {{$m.Name}}(ctx context.Context, req *{{$m.RequestTypeName}}) (*{{$m.ReturnTypeName}}, error) {
           _ = ctx
           _ = req
-          return nil, oops.
+          return nil, goerror.
               In("{{$.PackageName}}.usecase").
                   Code(response.CodeNotImplemented).
                   Public("not_implemented").

@@ -14,7 +14,7 @@ body: |-
       "context"
 
       "github.com/jackc/pgx/v5/pgxpool"
-      "github.com/samber/oops"
+      goerror "github.com/byx-darwin/go-tools/go-common/error"
 
       "{{.Module}}/internal/db/gen"
   )
@@ -45,7 +45,7 @@ body: |-
   // Pass the full *pgxpool.Config via samber/do so every pool option is available.
   func NewPostgres(ctx context.Context, cfg *pgxpool.Config) (*pgxpool.Pool, error) {
       if cfg == nil {
-          return nil, oops.
+          return nil, goerror.
               In("postgres").
               Tags("database", "postgres", "connection").
               Code("postgres_config_missing").
@@ -54,7 +54,7 @@ body: |-
       }
       pool, err := pgxpool.NewWithConfig(ctx, cfg)
       if err != nil {
-          return nil, oops.
+          return nil, goerror.
               In("postgres").
               Tags("database", "postgres", "connection").
               Code("postgres_pool_open_failed").
@@ -65,7 +65,7 @@ body: |-
       }
       if err := pool.Ping(ctx); err != nil {
           pool.Close()
-          return nil, oops.
+          return nil, goerror.
               In("postgres").
               Tags("database", "postgres", "connection").
               Code("postgres_ping_failed").
@@ -82,7 +82,7 @@ body: |-
   // MaxConnLifetime, MaxConnIdleTime, HealthCheckPeriod, ConnConfig, hooks, etc.
   func NewPostgresConfig(dsn string) (*pgxpool.Config, error) {
       if dsn == "" {
-          return nil, oops.
+          return nil, goerror.
               In("postgres").
               Tags("database", "postgres", "configuration").
               Code("postgres_dsn_missing").
@@ -91,7 +91,7 @@ body: |-
       }
       cfg, err := pgxpool.ParseConfig(dsn)
       if err != nil {
-          return nil, oops.
+          return nil, goerror.
               In("postgres").
               Tags("database", "postgres", "configuration").
               Code("postgres_config_parse_failed").

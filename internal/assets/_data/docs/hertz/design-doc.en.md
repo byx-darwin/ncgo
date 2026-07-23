@@ -22,6 +22,14 @@ Files ship inside the ncgo binary via `//go:embed all:_data` (see
 underscore) makes `go build ./...` ignore the `optional/*.go` files —
 they are template snippets, not Go source compiled into ncgo itself.
 
+Generated projects build on **go-tools v0.1.0** (a thin business layer on top
+of it): their `go.mod` declares `go 1.26.5` and requires
+`go-common v0.1.0` + `go-framework v0.1.0` (`go-middleware v0.1.0` is added by
+`go mod tidy` when `WithDatabase=true`). Responses use
+`go-framework/hertz.Responder`, config uses `go-framework/config`, logging uses
+`go-common/log`, and error codes re-export the framework codes from
+`go-framework/error`.
+
 Asset version: see `_data/VERSION`; the current embedded asset version is
 surfaced via `assets.Version()`.
 
@@ -83,8 +91,9 @@ Rules surfaced by `ncgo doctor` (anchored to
 - Handlers MUST NOT import `internal/repository/*` or `internal/base/data`.
 - Usecases MUST NOT import `github.com/cloudwego/hertz/...`.
 - Repository / adapter implementations MUST NOT import `internal/usecase/*`.
-- All returned errors are `samber/oops` chains carrying a numeric `Code`
-  and a `Public` message.
+- All returned errors are `go-common/error` (`goerror`) chains carrying a
+  numeric `Code` and a `Public` message. (`goerror` wraps `samber/oops`
+  internally; do not construct errors with `samber/oops` directly.)
 
 ### 2.3 Dependency Injection (`samber/do`)
 
@@ -153,7 +162,8 @@ not by adding imports.
 - File resolution: `CONFIG_PATH` env var, otherwise `conf/<env>/conf.yaml`.
 - If the resolved file is missing **and** `CONFIG_PATH` was not set, the
   defaults from `Default()` are used; otherwise loading fails with
-  `oops.Code(10308) Public("config_invalid")`.
+  `goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid")`
+  (`frameworkerror.CodeConfigInvalid` = 10004).
 - `Init()` is called once from `main.go` (`sync.Once`); `Get()` returns the
   cached `*Config`.
 - `Validate()` enforces non-negative timeouts, signature/token secrets,
@@ -162,22 +172,33 @@ not by adding imports.
 
 ### 3.2 Response & Error Codes (`internal/pkg/response`)
 
-- `Reply` / `OK` / `Err` / `ErrorCode` / `BindError` write JSON or
-  Protobuf based on the `Accept` header (`application/x-protobuf`
-  preferred when the payload implements `proto.Message`).
-- Built-in 5-digit codes:
-  - `1xxxx` — request / auth / rate-limit / dependency errors.
-  - Reserved scaffold range: `10000–10399` (registering inside this range
-    via `Register` panics).
+- `Reply` / `OK` / `Err` / `ErrorCode` / `BindError` delegate to
+  `go-framework/hertz.Responder` (HTTP status derived from the error code) and
+  write JSON or Protobuf based on the `Accept` header
+  (`application/x-protobuf` preferred when the payload implements
+  `proto.Message`).
+- Error codes follow the go-tools segments:
+  - Framework `10000–10499` — `go-framework/error` framework codes, re-exported
+    by `internal/pkg/errcode` and `internal/pkg/response`:
+    `CodeSystem=10000`, `CodeParamInvalid=10001`, `CodeAuthFailed=10002`,
+    `CodeConfigInvalid=10004`, `CodeRPCUnavailable=10010`,
+    `CodeRPCTimeout=10011`.
+  - Middleware `20000–20699`, Auth `40000–40099`.
+  - Project `40100–59999` — business-defined codes. **Business codes must be
+    `>= 40100` (`goerror.ProjectCodeMin`).**
 - Business code registration happens at process start:
   ```go
   var CodeOrderConflict = response.MustRegister(response.Definition{
-      Code: 39001, Msg: "order_conflict", Status: consts.StatusConflict,
+      Code: 40101, Msg: "order_conflict", Status: consts.StatusConflict,
   }).Code
   ```
-- Producers raise errors as `oops.In("...").Code(code).Public("msg")…`;
-  `response.Err` extracts `(code, msg)` and maps to HTTP status via
-  `StatusFromCode`.
+- Producers raise errors as `goerror.In("...").Code(code).Public("msg")…`
+  (`goerror` = `go-common/error`, which wraps `samber/oops`); `response.Err`
+  extracts `(code, msg)` and maps to HTTP status via `StatusFromCode`.
+- **Behavior note:** business codes (`>= 40100`) fall back to **HTTP 200** via
+  `goerror.HTTPStatus` — go-tools treats them as "business error, RPC call
+  succeeded". Register fine-grained HTTP statuses with
+  `goerror.RegisterHTTPStatuses` when a non-200 response is required.
 - `internal/pkg/i18n` negotiates `en` / `zh-CN` / `zh-TW` / `ja-JP` / `ko-KR` /
   `fr-FR` / `de-DE` / `es-ES` from `Accept-Language`; `response` translates JSON
   response `msg` values and sets `Content-Language`. Missing translations fall
@@ -196,12 +217,17 @@ not by adding imports.
 
 | Middleware | Trigger | Backend | Failure Code |
 |---|---|---|---|
-| `SignatureAuth` | `cfg.Auth.Signature.Enabled` | HMAC-SHA256 over `method\npath\nquery\nts\nnonce\nbody`; nonce store `memory` (LRU) or `redis` | `10101 signature_missing` / `10102 signature_expired` / `10103 signature_invalid` / `10202 replay_request` |
-| `JWTAuth` | `cfg.Auth.Token.Enabled` | `golang-jwt/jwt/v5` HS256; reads `cfg.Auth.Token.Header`; claims pinned to context key `tokenClaims` | `10104 token_missing` / `10105 token_invalid` / `10106 token_expired` / `10107 claims_invalid` |
-| `RateLimit` | `cfg.RateLimit.Enabled` + per-phase flag | Dynamic rule resolution (`config` / `grpc` / `database`) with `fixed_window` or `token_bucket`; enforcement state in `memory` (samber/hot LRU) or `redis` | `10200 rate_limited` (or `10304 cache_unavailable` when `fail_open=false` and store errors) |
-| `Idempotency` | `cfg.Idempotency.Enabled` | Replay cache keyed by `header + method + path + body-hash`; `memory` or `redis` | `10203 idempotency_key_missing` / `10204 idempotency_conflict` |
-| `InternalOnly` | always | CIDR + path allowlist | `10108 permission_denied` |
+| `SignatureAuth` | `cfg.Auth.Signature.Enabled` | HMAC-SHA256 over `method\npath\nquery\nts\nnonce\nbody`; nonce store `memory` (LRU) or `redis` | signature missing / expired / invalid → `CodeAuthFailed` (10002); replay → `CodeReplayRequest` (10202) |
+| `JWTAuth` | `cfg.Auth.Token.Enabled` | `golang-jwt/jwt/v5` HS256; reads `cfg.Auth.Token.Header`; claims pinned to context key `tokenClaims` | token missing / invalid / expired / claims invalid → `CodeAuthFailed` (10002) |
+| `RateLimit` | `cfg.RateLimit.Enabled` + per-phase flag | Dynamic rule resolution (`config` / `grpc` / `database`) with `fixed_window` or `token_bucket`; enforcement state in `memory` (samber/hot LRU) or `redis` | `CodeRateLimited` (10200, HTTP 429); store errors with `fail_open=false` → `CodeCacheUnavailable` (10304, HTTP 503) |
+| `Idempotency` | `cfg.Idempotency.Enabled` | Replay cache keyed by `header + method + path + body-hash`; `memory` or `redis` | `CodeIdempotencyKeyMissing` (10203, HTTP 400) / `CodeIdempotencyConflict` (10204, HTTP 409) |
+| `InternalOnly` | always | CIDR + path allowlist | `CodePermissionDenied` (10108, HTTP 403) |
 | `CORS` | `cfg.CORS.Enabled` | Static config; rejects wildcard origin + credentials | n/a |
+
+Auth failures collapse onto `frameworkerror.CodeAuthFailed` (10002); the
+rate-limit / idempotency / permission / cache codes keep their dedicated
+scaffold numeric values (10108, 10200–10204, 10304) and HTTP mappings via
+`StatusFromCode`.
 
 `Unless(mw, skipper)` and `PathSkipper(paths...)` wrap auth middleware so
 that public paths (default `/healthz`, `/readyz` plus
@@ -281,9 +307,11 @@ write. Data clients drop under
 
 - Provides: `*data.Redis{ Client redis.UniversalClient }`
   (`UniversalOptions` auto-selects single / cluster / sentinel).
-- Dep: `github.com/redis/go-redis/v9`.
-- Failure codes: `10308 config_invalid` (nil cfg / nil opts),
-  `10304 cache_unavailable` (`Ping` failed).
+- Deps: `github.com/redis/go-redis/v9`, `go-tools/go-common` (goerror),
+  `go-tools/go-framework` (frameworkerror).
+- Failure codes: `frameworkerror.CodeConfigInvalid` (10004, nil cfg / nil
+  opts), `CodeCacheUnavailable` (40504, `Ping` failed — registered to HTTP 503
+  via `goerror.RegisterHTTPStatuses`).
 - Default wiring (reuses top-level `cfg.Redis` and the same client as middleware):
   ```go
   do.ProvideValue[context.Context](inj, startupCtx)
@@ -298,9 +326,10 @@ write. Data clients drop under
 
 - Provides: `*data.KafkaWriter{ W *kafka.Writer }` and/or
   `*data.KafkaReader{ R *kafka.Reader }` (segmentio/kafka-go).
-- Dep: `github.com/segmentio/kafka-go`.
-- Failure codes: `10308 config_invalid` (nil writer / missing `Addr` /
-  `Topic` / `Brokers`).
+- Deps: `github.com/segmentio/kafka-go`, `go-tools/go-common` (goerror),
+  `go-tools/go-framework` (frameworkerror).
+- Failure codes: `frameworkerror.CodeConfigInvalid` (10004, nil writer /
+  missing `Addr` / `Topic` / `Brokers`).
 - Wiring (producer side):
   ```go
   do.ProvideValue(inj, &kafka.Writer{Addr: kafka.TCP(cfg.Kafka.Brokers...), Topic: cfg.Kafka.Topic})
@@ -311,9 +340,11 @@ write. Data clients drop under
 
 - Provides: `*data.ES{ Client *elasticsearch.Client }`
   (go-elasticsearch v8).
-- Dep: `github.com/elastic/go-elasticsearch/v8`.
-- Failure codes: `10308 config_invalid` (empty `Addresses`),
-  `10306 search_unavailable` (`NewClient` / `Ping` failed).
+- Deps: `github.com/elastic/go-elasticsearch/v8`, `go-tools/go-common`
+  (goerror), `go-tools/go-framework` (frameworkerror).
+- Failure codes: `frameworkerror.CodeConfigInvalid` (10004, empty
+  `Addresses`), `CodeSearchUnavailable` (40506, `NewClient` / `Ping` failed —
+  registered to HTTP 503 via `goerror.RegisterHTTPStatuses`).
 - Wiring:
   ```go
   do.ProvideValue[context.Context](inj, startupCtx)
@@ -325,9 +356,11 @@ write. Data clients drop under
 
 - Provides: `*data.ClickHouse{ Conn driver.Conn }` (clickhouse-go v2
   native protocol).
-- Dep: `github.com/ClickHouse/clickhouse-go/v2`.
-- Failure codes: `10308 config_invalid` (nil opts / empty `Addr`),
-  `10303 database_unavailable` (`Open` / `Ping` failed).
+- Deps: `github.com/ClickHouse/clickhouse-go/v2`, `go-tools/go-common`
+  (goerror), `go-tools/go-framework` (frameworkerror).
+- Failure codes: `frameworkerror.CodeConfigInvalid` (10004, nil opts / empty
+  `Addr`), `CodeDatabaseUnavailable` (40503, `Open` / `Ping` failed —
+  registered to HTTP 503 via `goerror.RegisterHTTPStatuses`).
 - Wiring:
   ```go
   do.ProvideValue[context.Context](inj, startupCtx)

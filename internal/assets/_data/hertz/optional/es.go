@@ -35,16 +35,27 @@
 // Required dependency:
 //
 //	go get github.com/elastic/go-elasticsearch/v8
-//	go get github.com/samber/oops
+//	go get github.com/byx-darwin/go-tools/go-common
+//	go get github.com/byx-darwin/go-tools/go-framework
 
 package data
 
 import (
 	"context"
 
+	goerror "github.com/byx-darwin/go-tools/go-common/error"
+	frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
 	"github.com/elastic/go-elasticsearch/v8"
-	"github.com/samber/oops"
 )
+
+// CodeSearchUnavailable is the project-segment error code (>=40100) for search
+// backend unavailability. go-framework has no equivalent code, so a project
+// code is defined here and mapped to HTTP 503 at init time.
+const CodeSearchUnavailable = 40506
+
+func init() {
+	goerror.RegisterHTTPStatuses(map[int]int{CodeSearchUnavailable: 503})
+}
 
 // ES wraps the official Elasticsearch v8 client.
 type ES struct {
@@ -55,28 +66,28 @@ type ES struct {
 // and validates connectivity with the injected startup context.
 func NewES(ctx context.Context, cfg elasticsearch.Config) (*ES, func(), error) {
 	if len(cfg.Addresses) == 0 {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("elasticsearch").
 			Tags("search", "elasticsearch", "configuration").
-			Code(10308).
+			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
 			New("elasticsearch.Config.Addresses is empty")
 	}
 	cli, err := elasticsearch.NewClient(cfg)
 	if err != nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("elasticsearch").
 			Tags("search", "elasticsearch", "connection").
-			Code(10306).
+			Code(CodeSearchUnavailable).
 			Public("search_unavailable").
 			With("addresses_count", len(cfg.Addresses)).
 			Wrapf(err, "elasticsearch.NewClient")
 	}
 	if _, err := cli.Ping(cli.Ping.WithContext(ctx)); err != nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("elasticsearch").
 			Tags("search", "elasticsearch", "connection").
-			Code(10306).
+			Code(CodeSearchUnavailable).
 			Public("search_unavailable").
 			With("addresses_count", len(cfg.Addresses)).
 			Wrapf(err, "elasticsearch.Ping")

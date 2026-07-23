@@ -12,7 +12,7 @@ body: |-
       "regexp"
       "strings"
 
-      "github.com/samber/oops"
+      goerror "github.com/byx-darwin/go-tools/go-common/error"
       ratelimitv1 "{{.Module}}/api/ratelimit/v1"
       "{{.Module}}/internal/db/gen"
   )

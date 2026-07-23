@@ -12,16 +12,27 @@
 // Required dependency:
 //
 //	go get github.com/redis/go-redis/v9
-//	go get github.com/samber/oops
+//	go get github.com/byx-darwin/go-tools/go-common
+//	go get github.com/byx-darwin/go-tools/go-framework
 
 package data
 
 import (
 	"context"
 
+	goerror "github.com/byx-darwin/go-tools/go-common/error"
+	frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
 	"github.com/redis/go-redis/v9"
-	"github.com/samber/oops"
 )
+
+// CodeCacheUnavailable is the project-segment error code (>=40100) for cache
+// backend unavailability. go-framework has no equivalent code, so a project
+// code is defined here and mapped to HTTP 503 at init time.
+const CodeCacheUnavailable = 40504
+
+func init() {
+	goerror.RegisterHTTPStatuses(map[int]int{CodeCacheUnavailable: 503})
+}
 
 // Redis wraps a go-redis UniversalClient (single / cluster / sentinel).
 type Redis struct {
@@ -33,20 +44,20 @@ type Redis struct {
 // function for samber/do.
 func NewRedis(ctx context.Context, cfg *Config) (*Redis, func(), error) {
 	if cfg == nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("redis").
 			Tags("cache", "redis", "configuration").
-			Code(10308).
+			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
 			New("data.Config is nil")
 	}
 	cli := SharedRedisClient(cfg.Redis)
 	if err := cli.Ping(ctx).Err(); err != nil {
 		CloseSharedRedisClient(cfg.Redis)
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("redis").
 			Tags("cache", "redis", "connection").
-			Code(10304).
+			Code(CodeCacheUnavailable).
 			Public("cache_unavailable").
 			With("addrs_count", len(cfg.Redis.Addrs)).
 			Wrapf(err, "redis.Ping")
@@ -59,20 +70,20 @@ func NewRedis(ctx context.Context, cfg *Config) (*Redis, func(), error) {
 // Use it only when you intentionally want a different connection pool than cfg.Redis.
 func NewRedisWithOptions(ctx context.Context, opts *redis.UniversalOptions) (*Redis, func(), error) {
 	if opts == nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("redis").
 			Tags("cache", "redis", "configuration").
-			Code(10308).
+			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
 			New("redis.UniversalOptions is nil")
 	}
 	cli := redis.NewUniversalClient(opts)
 	if err := cli.Ping(ctx).Err(); err != nil {
 		_ = cli.Close()
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("redis").
 			Tags("cache", "redis", "connection").
-			Code(10304).
+			Code(CodeCacheUnavailable).
 			Public("cache_unavailable").
 			With("addrs_count", len(opts.Addrs)).
 			Wrapf(err, "redis.Ping")

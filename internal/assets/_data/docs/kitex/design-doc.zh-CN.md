@@ -24,6 +24,12 @@ Kitex 模板族支撑 `ncgo new --mode mono --kind kitex`(RPC 服务),由
 `go build ./...` 忽略 `optional/*.go` —— 这些文件是模板素材,不是参与
 ncgo 二进制编译的 Go 源码。
 
+生成的项目构建在 **go-tools v0.1.0** 之上(是其上的薄业务层):`go.mod` 声明
+`go 1.26.5`,并 require `go-common v0.1.0` + `go-framework v0.1.0`
+(`go-middleware v0.1.0` 在项目使用数据库时由 `go mod tidy` 补齐)。配置使用
+`go-framework/config`(+ `config/kitex`),日志使用 `go-common/log`,RPC 错误
+映射使用 `go-framework/kitex/rpcerror`,框架码来自 `go-framework/error`。
+
 资产版本见 `_data/VERSION`;当前嵌入资产版本由 `assets.Version()` 暴露。
 
 ## 2. 生成项目架构
@@ -50,7 +56,7 @@ ncgo 二进制编译的 Go 源码。
 │   ├── db/{schema,query,migrations,gen}/
 │   └── pkg/
 │       ├── interceptor/                # RequestID、AccessLog、Recovery、RequestTimeout、CallerAllowlist
-│       └── rpcerror/                   # oops → kitex BizStatusError 映射
+│       └── rpcerror/                   # goerror → kitex BizStatusError 映射
 ├── pkg/client/<service>/               # 调用端客户端工厂 + Retry/熔断 配置
 ├── kitex_gen/                          # kitex 生成的 server 桩(不要改)
 ├── Makefile                            # build / dev / update / sqlc / migrate / lint / test
@@ -134,7 +140,8 @@ RPC 请求(TTHeader)
 - 环境识别:`GO_ENV`,缺省 `dev`。
 - 文件解析:`CONFIG_PATH` 优先,否则 `conf/<env>/conf.yaml`。
 - 解析路径不存在 **且** 未设 `CONFIG_PATH` 时使用 `Default()`;否则报
-  `oops.Code(10308) Public("config_invalid")`。
+  `goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid")`
+  (`frameworkerror.CodeConfigInvalid` = 10004)。
 - `Init()` 由 `main.go` 调用一次(`sync.Once`),`Get()` 返回缓存的
   `*Config`。
 - `Validate()` 校验:`server.name` / `server.addr` 非空、超时非负、
@@ -144,21 +151,31 @@ RPC 请求(TTHeader)
 
 ### 3.2 RPC 错误映射(`internal/pkg/rpcerror`)
 
-- `ToBizError(err)` 是 `samber/oops` 错误转 `kerrors.BizStatusError`
-  的唯一入口。已经是 `BizStatusError` 的直接透传。
-- 脚手架保留码:
-  - `10000 internal_error` —— 非 oops / panic 兜底。
-  - `10010 not_implemented` —— usecase 桩。
-  - `10108 permission_denied` —— caller allowlist 拒绝。
-  - `10302 rpc_timeout` —— 请求超时。
-  - `10308 config_invalid` —— 配置加载 / 校验失败。
-- 错误生产端用 `oops.In("...").Code(code).Public("msg")…`。
-  `codeFromOops` 接受 `int`、`int32`、`int64`,超出 `int32` 范围回落到
-  `CodeInternalError`。
+- `ToBizError(err)` 是 `go-common/error`(`goerror`)错误转
+  `kerrors.BizStatusError` 的唯一入口,委托给
+  `go-framework/kitex/rpcerror.OopsStatusAdapter`。已经是 `BizStatusError`
+  的直接透传。
+- 脚手架保留码(常量 re-export `go-framework/error`):
+  - `CodeInternalError` = `frameworkerror.CodeSystem`(10000)—— 非 goerror /
+    panic 兜底。
+  - `CodeNotImplemented` = 10010 —— usecase 桩(占位;有意与
+    `frameworkerror.CodeRPCUnavailable` 同值)。
+  - `CodePermissionDenied` = `frameworkerror.CodeAuthFailed`(10002)—— caller
+    allowlist 拒绝(go-tools v0.1.0 无 `CodePermissionDenied`,映射到
+    `CodeAuthFailed`)。
+  - `CodeRPCTimeout` = `frameworkerror.CodeRPCTimeout`(10011)—— 请求超时。
+  - `CodeConfigInvalid` = `frameworkerror.CodeConfigInvalid`(10004)—— 配置
+    加载 / 校验失败。
+- 错误生产端用 `goerror.In("...").Code(code).Public("msg")…`
+  (`goerror` = `go-common/error`,内部包装 `samber/oops`;不要直接
+  `import "samber/oops"` 构造错误)。
 - 辅助函数:`InternalErrorf`、`TimeoutError`、`PermissionDenied`、
   `BizCode(err)`、`FormatBiz(err)`(`AccessLog` 使用)。
-- 码段约定与 Hertz `pkg/response` 注册表对齐:脚手架占用
-  `10000–10399`,业务码从 `10400+` 开始(注册写法见 Hertz §3.2)。
+- 码段遵循 go-tools:Framework `10000–10499`、Middleware `20000–20699`、
+  Auth `40000–40099`、Project `40100–59999`。**业务自定义码必须 `>= 40100`
+  (`goerror.ProjectCodeMin`)。** 业务码经 `goerror.HTTPStatus` 兜底返回
+  **HTTP 200**(「业务错误、RPC 调用成功」);如需细粒度 HTTP 状态,用
+  `goerror.RegisterHTTPStatuses` 注册。
 
 ### 3.3 服务端拦截器(`internal/pkg/interceptor`)
 
@@ -166,9 +183,9 @@ RPC 请求(TTHeader)
 |---|---|---|
 | `RequestID` | 读 metainfo `x-request-id`,缺失时生成 16 字节十六进制并 `WithPersistentValue` 写回 | n/a |
 | `AccessLog` | 包住 `next`,记录 service / method / latency / request_id;失败用 `rpcerror.FormatBiz(err)` 警告 | n/a |
-| `Recovery` | `defer recover()`;panic 转 `rpcerror.InternalErrorf` 再 `ToBizError` | `10000 internal_error` |
-| `RequestTimeout(d)` | `context.WithTimeout(ctx, d)`;`DeadlineExceeded` 且无错误时返回 `TimeoutError` 经 `ToBizError` | `10302 rpc_timeout` |
-| `CallerAllowlist(enabled, header, allowed, allowMissing)` | 校验 metainfo header(默认 `x-caller-service`)是否在白名单 | `10108 permission_denied` |
+| `Recovery` | `defer recover()`;panic 转 `rpcerror.InternalErrorf` 再 `ToBizError` | `CodeInternalError`(10000) |
+| `RequestTimeout(d)` | `context.WithTimeout(ctx, d)`;`DeadlineExceeded` 且无错误时返回 `TimeoutError` 经 `ToBizError` | `CodeRPCTimeout`(10011) |
+| `CallerAllowlist(enabled, header, allowed, allowMissing)` | 校验 metainfo header(默认 `x-caller-service`)是否在白名单 | `CodePermissionDenied`(= `frameworkerror.CodeAuthFailed`,10002) |
 
 链路通过 `endpoint.Chain(...)` 在 `server.Run` 里组合,经
 `kitexserver.WithMiddleware` 注册。caller allowlist 默认 header 是
@@ -183,7 +200,7 @@ RPC 请求(TTHeader)
   `cfg.Database` 中的 `MaxConns / MinConns / MaxConnLifetime /
   MaxConnIdleTime / HealthCheckPeriod` 复制到 `*pgxpool.Config`。
 - `data.NewPostgres(ctx, cfg)` 打开并 ping 连接池。失败带
-  `oops.Code("postgres_pool_open_failed" | "postgres_ping_failed")`。
+  `goerror.Code("postgres_pool_open_failed" | "postgres_ping_failed")`。
 - `internal/db/{schema,query,gen,migrations}` 形态与 Hertz 一致(共用
   `sqlc.yaml` 结构、共用 goose 迁移目录)。
 - 事务由 repository 通过 `WithTx(ctx, fn)` 持有;辅助函数在错误或 panic
@@ -200,8 +217,10 @@ RPC 请求(TTHeader)
   返回的 `WithFailureRetry` 与一个把 `x-caller-service` 写入出站 metainfo
   的中间件。
 - `Validate()` 在超时非法、backoff 配置错、缺 service name 时返回
-  `oops.Code(10308) Public("config_invalid")`。
-- `NewClient` 失败时包装为 `oops.Code(10301) Public("rpc_failed")`。
+  `goerror.In("kitex.client").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid")`。
+- `NewClient` 失败时包装为
+  `goerror.In("kitex.client").Code(frameworkerror.CodeRPCUnavailable).Public("rpc_failed")`
+  (`frameworkerror.CodeRPCUnavailable` = 10010)。
 
 ### 3.6 运维
 
@@ -226,7 +245,7 @@ RPC 请求(TTHeader)
 构造函数;Agent 需要把 config struct 与构造函数一起注册到 `server.Run`
 内的 `samber/do` injector(`registry` / `observability` 两个 add-on
 直接当 kitex server option 接入,不走 `do`)。Kitex 侧 add-on 的
-`oops.Code` 用字符串(`<kind>_<reason>`),与 Hertz 的数字 errcode 注册
+`goerror.Code` 用字符串(`<kind>_<reason>`),与 Hertz 的数字 errcode 注册
 表不同。
 
 #### Redis(`data/redis.go`)
@@ -277,7 +296,7 @@ RPC 请求(TTHeader)
 - 接线(`server.Run` 内):
   ```go
   r, err := registry.NewEtcdRegistry(cfg.Registry)
-  if err != nil { return oops.Wrapf(err, "etcd registry") }
+  if err != nil { return goerror.In("kitex.registry").Wrap(err) }
   // 把 kitexserver.WithRegistry(r) 加进 kitex server option
   ```
 

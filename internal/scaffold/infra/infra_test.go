@@ -364,6 +364,24 @@ func TestAddRequiresManifest(t *testing.T) {
 	}
 }
 
+func TestGoGetDepsIncludeGoCommon(t *testing.T) {
+	for _, kind := range []string{KindRedis, KindKafka, KindES, KindClickHouse, KindRegistryEtcd, KindObservabilityLog} {
+		deps := goGetDeps[kind]
+		found := false
+		for _, d := range deps {
+			if d == "github.com/byx-darwin/go-tools/go-common" {
+				found = true
+			}
+			if d == "github.com/samber/oops" {
+				t.Errorf("goGetDeps[%s] must not list samber/oops (indirect dep of go-common): %v", kind, deps)
+			}
+		}
+		if !found {
+			t.Errorf("goGetDeps[%s] missing go-common: %v", kind, deps)
+		}
+	}
+}
+
 func TestAddNextStepsContainGoGet(t *testing.T) {
 	root := seedProject(t, nil)
 	res, err := Add(Options{Root: root, Kind: KindRedis})
@@ -373,12 +391,15 @@ func TestAddNextStepsContainGoGet(t *testing.T) {
 	joined := strings.Join(res.NextSteps, "\n")
 	for _, want := range []string{
 		"go get github.com/redis/go-redis/v9",
-		"go get github.com/samber/oops",
+		"go get github.com/byx-darwin/go-tools/go-common",
 		"go mod tidy",
 	} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("NextSteps missing %q in:\n%s", want, joined)
 		}
+	}
+	if strings.Contains(joined, "go get github.com/samber/oops") {
+		t.Errorf("NextSteps should not hint samber/oops (oops is an indirect dep of go-common):\n%s", joined)
 	}
 }
 
@@ -511,7 +532,7 @@ func TestAddObservabilityLoggingForHertz(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read logging file: %v", err)
 	}
-	for _, want := range []string{"package logging", "type Config struct", "func ErrorAttrs", "lumberjack.Logger", "oops.AsOops"} {
+	for _, want := range []string{"package logging", "type Config struct", "func ErrorAttrs", "lumberjack.Logger", "goerror.AsOopsError"} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("logging template missing %q", want)
 		}
@@ -526,7 +547,7 @@ func TestAddObservabilityLoggingForHertz(t *testing.T) {
 		}
 	}
 	joined := strings.Join(res.NextSteps, "\n")
-	for _, want := range []string{"go get github.com/samber/oops", "go get gopkg.in/natefinch/lumberjack.v2", "go get go.opentelemetry.io/otel/trace", "go mod tidy"} {
+	for _, want := range []string{"go get github.com/byx-darwin/go-tools/go-common", "go get gopkg.in/natefinch/lumberjack.v2", "go get go.opentelemetry.io/otel/trace", "go mod tidy"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("next steps missing %q in:\n%s", want, joined)
 		}

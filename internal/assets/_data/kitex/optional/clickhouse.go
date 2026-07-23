@@ -45,7 +45,7 @@
 // Required dependency:
 //
 //	go get github.com/ClickHouse/clickhouse-go/v2
-//	go get github.com/samber/oops
+//	go get github.com/byx-darwin/go-tools/go-common
 
 package data
 
@@ -54,7 +54,7 @@ import (
 
 	"github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
-	"github.com/samber/oops"
+	goerror "github.com/byx-darwin/go-tools/go-common/error"
 )
 
 // ClickHouse wraps a native ClickHouse driver connection.
@@ -66,7 +66,7 @@ type ClickHouse struct {
 // and pings the cluster with the injected startup context.
 func NewClickHouse(ctx context.Context, opts *clickhouse.Options) (*ClickHouse, func(), error) {
 	if opts == nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("clickhouse").
 			Tags("analytics", "clickhouse", "configuration").
 			Code("clickhouse_config_missing").
@@ -74,7 +74,7 @@ func NewClickHouse(ctx context.Context, opts *clickhouse.Options) (*ClickHouse, 
 			New("clickhouse.Options is nil")
 	}
 	if len(opts.Addr) == 0 {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("clickhouse").
 			Tags("analytics", "clickhouse", "configuration").
 			Code("clickhouse_addresses_missing").
@@ -83,7 +83,7 @@ func NewClickHouse(ctx context.Context, opts *clickhouse.Options) (*ClickHouse, 
 	}
 	conn, err := clickhouse.Open(opts)
 	if err != nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("clickhouse").
 			Tags("analytics", "clickhouse", "connection").
 			Code("clickhouse_open_failed").
@@ -93,7 +93,7 @@ func NewClickHouse(ctx context.Context, opts *clickhouse.Options) (*ClickHouse, 
 	}
 	if err := conn.Ping(ctx); err != nil {
 		_ = conn.Close()
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("clickhouse").
 			Tags("analytics", "clickhouse", "connection").
 			Code("clickhouse_ping_failed").

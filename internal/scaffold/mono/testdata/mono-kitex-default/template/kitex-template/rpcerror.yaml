@@ -11,17 +11,17 @@ body: |-
       "fmt"
 
       goerror "github.com/byx-darwin/go-tools/go-common/error"
+      frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
       "github.com/byx-darwin/go-tools/go-framework/kitex/rpcerror"
       "github.com/cloudwego/kitex/pkg/kerrors"
-      "github.com/samber/oops"
   )
 
   var (
-      CodeInternalError    = goerror.CodeSystem
+      CodeInternalError    int32 = frameworkerror.CodeSystem
       CodeNotImplemented   int32 = 10010
-      CodePermissionDenied = goerror.CodePermissionDenied
-      CodeRPCTimeout       = goerror.CodeRPCTimeout
-      CodeConfigInvalid    = goerror.CodeConfigInvalid
+      CodePermissionDenied int32 = frameworkerror.CodeAuthFailed
+      CodeRPCTimeout       int32 = frameworkerror.CodeRPCTimeout
+      CodeConfigInvalid    int32 = frameworkerror.CodeConfigInvalid
   )
 
   func ToBizError(err error) error {
@@ -35,18 +35,18 @@ body: |-
   }
 
   func InternalErrorf(format string, args ...any) error {
-      return oops.In("kitex.server").Code(CodeInternalError).Public("internal_error").Errorf(format, args...)
+      return goerror.In("kitex.server").Code(CodeInternalError).Public("internal_error").Errorf(format, args...)
   }
 
   func TimeoutError() error {
-      return oops.In("kitex.server").Code(CodeRPCTimeout).Public("rpc_timeout").New("rpc request timeout")
+      return goerror.In("kitex.server").Code(CodeRPCTimeout).Public("rpc_timeout").New("rpc request timeout")
   }
 
   func PermissionDenied(message string) error {
       if message == "" {
           message = "permission denied"
       }
-      return oops.In("kitex.server").Code(CodePermissionDenied).Public("permission_denied").New(message)
+      return goerror.In("kitex.server").Code(CodePermissionDenied).Public("permission_denied").New(message)
   }
 
   func BizCode(err error) (int32, bool) {

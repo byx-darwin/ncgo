@@ -2,11 +2,11 @@
 //
 // It provides slog-based console/file logging, category-specific rotated files,
 // gzip compression through lumberjack, request/trace/release context fields, and
-// samber/oops metadata extraction.
+// go-common/error (goerror) metadata extraction.
 //
 // Required dependencies:
 //
-//  go get github.com/samber/oops
+//  go get github.com/byx-darwin/go-tools/go-common
 //  go get gopkg.in/natefinch/lumberjack.v2
 //  go get go.opentelemetry.io/otel/trace
 
@@ -22,7 +22,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/samber/oops"
+	goerror "github.com/byx-darwin/go-tools/go-common/error"
 	oteltrace "go.opentelemetry.io/otel/trace"
 	lumberjack "gopkg.in/natefinch/lumberjack.v2"
 )
@@ -179,7 +179,7 @@ func ErrorAttrs(err error) []slog.Attr {
 		return nil
 	}
 	attrs := []slog.Attr{slog.String("error.message", err.Error())}
-	if oe, ok := oops.AsOops(err); ok {
+	if oe, ok := goerror.AsOopsError(err); ok {
 		attrs = append(attrs,
 			slog.Any("error.code", oe.Code()),
 			slog.String("error.public", oe.Public()),

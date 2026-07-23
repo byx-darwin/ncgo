@@ -10,10 +10,10 @@ import (
 	"log/slog"
 	"time"
 
+	goerror "github.com/byx-darwin/go-tools/go-common/error"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/middlewares/server/recovery"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
-	"github.com/samber/oops"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -58,7 +58,7 @@ func HertzAccessLog() app.HandlerFunc {
 
 func HertzRecovery() app.HandlerFunc {
 	return recovery.Recovery(recovery.WithRecoveryHandler(func(ctx context.Context, c *app.RequestContext, recovered interface{}, stack []byte) {
-		err := oops.In("hertz.recovery").
+		err := goerror.In("hertz.recovery").
 			Tags("panic", "hertz").
 			Code("panic_recovered").
 			With("panic", fmt.Sprint(recovered)).

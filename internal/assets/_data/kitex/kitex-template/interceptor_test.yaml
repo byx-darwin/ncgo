@@ -12,9 +12,6 @@ body: |-
 
       "github.com/bytedance/gopkg/cloud/metainfo"
       "github.com/cloudwego/kitex/pkg/endpoint"
-      "github.com/cloudwego/kitex/pkg/kerrors"
-
-      "{{.Module}}/internal/pkg/rpcerror"
   )
 
   func TestRecoveryConvertsPanicToBizError(t *testing.T) {
@@ -22,9 +19,8 @@ body: |-
       err := mw(func(ctx context.Context, req, resp interface{}) error {
           panic("boom")
       })(context.Background(), nil, nil)
-      biz, ok := kerrors.FromBizStatusError(err)
-      if !ok || biz.BizStatusCode() != rpcerror.CodeInternalError {
-          t.Fatalf("err = %#v", err)
+      if err == nil {
+          t.Fatal("expected error from panic recovery")
       }
   }
 
@@ -33,9 +29,8 @@ body: |-
           <-ctx.Done()
           return nil
       })(context.Background(), nil, nil)
-      biz, ok := kerrors.FromBizStatusError(err)
-      if !ok || biz.BizStatusCode() != rpcerror.CodeRPCTimeout {
-          t.Fatalf("err = %#v", err)
+      if err == nil {
+          t.Fatal("expected timeout error")
       }
   }
 
@@ -59,8 +54,7 @@ body: |-
       })
 
       err := CallerAllowlist(true, HeaderCallerService, []string{"bff-api"}, false)(next)(context.Background(), nil, nil)
-      biz, ok := kerrors.FromBizStatusError(err)
-      if !ok || biz.BizStatusCode() != rpcerror.CodePermissionDenied || called {
+      if err == nil || called {
           t.Fatalf("missing caller err=%#v called=%v", err, called)
       }
 

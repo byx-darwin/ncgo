@@ -1,40 +1,160 @@
 # Hertz custom template — base/data.go
-# Generates core infrastructure layer with go-middleware/db when WithDatabase is enabled.
+# Generates core infrastructure layer.
+# Database (pgxpool/sqlc) code is conditional on WithDatabase;
+# shared helpers (Redis) are always present.
 # Wire up via samber/do in internal/base/server/server.go.
 path: internal/base/data/data.go
 update_behavior:
   type: cover
-condition: WithDatabase
 body: |-
   package data
 
   import (
+      "time"
+  {{if .WithDatabase}}
       "context"
 
-      godb "github.com/byx-darwin/go-tools/go-middleware/db"
+      goerror "github.com/byx-darwin/go-tools/go-common/error"
+      frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
       "github.com/jackc/pgx/v5/pgxpool"
+  {{end}}
+      "github.com/redis/go-redis/v9"
 
+      "{{.Module}}/internal/base/conf"
+  {{if .WithDatabase}}
       "{{.Module}}/internal/db/gen"
+  {{end}}
   )
+  {{if .WithDatabase}}
 
   // Data holds shared infrastructure clients.
+  // Add optional clients (Redis / Kafka / ES / ClickHouse) by copying files
+  // from this skill's assets/optional/ directory into this package.
   type Data struct {
-      Pool    *pgxpool.Pool
-      Queries *gen.Queries
+      Pool    *pgxpool.Pool // native pgx pool — supports Batch, CopyFrom, LISTEN/NOTIFY
+      Queries *gen.Queries  // sqlc-generated query methods
   }
 
-  // New initialises core infrastructure connections using go-middleware/db.
-  func New(ctx context.Context, cfg godb.Config) (*Data, func(), error) {
-      pool, err := godb.NewPostgres(ctx, cfg)
-      if err != nil {
-          return nil, nil, err
-      }
+  // New initialises core infrastructure connections.
+  func New(pool *pgxpool.Pool) (*Data, func(), error) {
       queries := gen.New(pool)
       cleanup := func() {
           pool.Close()
       }
-      return &Data{
-          Pool:    pool,
-          Queries: queries,
-      }, cleanup, nil
+      return &Data{Pool: pool, Queries: queries}, cleanup, nil
+  }
+
+  // NewPostgres opens and validates a PostgreSQL connection pool via native pgx/v5.
+  func NewPostgres(ctx context.Context, cfg *pgxpool.Config) (*pgxpool.Pool, error) {
+      if cfg == nil {
+          return nil, goerror.
+              In("postgres").
+              Tags("database", "postgres", "connection").
+              Code(frameworkerror.CodeConfigInvalid).
+              Public("config_invalid").
+              New("pgxpool.Config is nil")
+      }
+      pool, err := pgxpool.NewWithConfig(ctx, cfg)
+      if err != nil {
+          return nil, goerror.
+              In("postgres").
+              Tags("database", "postgres", "connection").
+              Code(frameworkerror.CodeRPCUnavailable).
+              Public("database_unavailable").
+              With("max_conns", cfg.MaxConns).
+              With("min_conns", cfg.MinConns).
+              Wrapf(err, "pgxpool.NewWithConfig")
+      }
+      if err := pool.Ping(ctx); err != nil {
+          pool.Close()
+          return nil, goerror.
+              In("postgres").
+              Tags("database", "postgres", "connection").
+              Code(frameworkerror.CodeRPCUnavailable).
+              Public("database_unavailable").
+              With("max_conns", cfg.MaxConns).
+              With("min_conns", cfg.MinConns).
+              Wrapf(err, "pool.Ping")
+      }
+      return pool, nil
+  }
+
+  // NewPostgresConfig parses a DSN into pgxpool.Config.
+  func NewPostgresConfig(dsn string) (*pgxpool.Config, error) {
+      if dsn == "" {
+          return nil, goerror.
+              In("postgres").
+              Tags("database", "postgres", "configuration").
+              Code(frameworkerror.CodeConfigInvalid).
+              Public("config_invalid").
+              New("postgres DSN is empty")
+      }
+      cfg, err := pgxpool.ParseConfig(dsn)
+      if err != nil {
+          return nil, goerror.
+              In("postgres").
+              Tags("database", "postgres", "configuration").
+              Code(frameworkerror.CodeConfigInvalid).
+              Public("config_invalid").
+              Wrapf(err, "pgxpool.ParseConfig")
+      }
+      return cfg, nil
+  }
+
+  // NewPostgresConfigFromDatabase converts conf.DatabaseConfig into pgxpool.Config.
+  func NewPostgresConfigFromDatabase(cfg conf.DatabaseConfig) (*pgxpool.Config, error) {
+      pgCfg, err := NewPostgresConfig(cfg.DSN)
+      if err != nil {
+          return nil, err
+      }
+      pgCfg.MaxConns = cfg.MaxConns
+      pgCfg.MinConns = cfg.MinConns
+      pgCfg.MaxConnLifetime = time.Duration(cfg.MaxConnLifetimeSeconds) * time.Second
+      pgCfg.MaxConnIdleTime = time.Duration(cfg.MaxConnIdleTimeSeconds) * time.Second
+      pgCfg.HealthCheckPeriod = time.Duration(cfg.HealthCheckPeriodSeconds) * time.Second
+      return pgCfg, nil
+  }
+  {{end}}
+
+  // RedisUniversalOptions converts conf.RateLimitRedisConfig to redis.UniversalOptions.
+  // Filled by `ncgo add infra redis`; placeholder ensures compilation.
+  func RedisUniversalOptions(cfg conf.RateLimitRedisConfig) *redis.UniversalOptions {
+      return &redis.UniversalOptions{
+          Addrs:                        cfg.Addrs,
+          ClientName:                   cfg.ClientName,
+          Username:                     cfg.Username,
+          Password:                     cfg.Password,
+          DB:                           cfg.DB,
+          MasterName:                   cfg.MasterName,
+          SentinelUsername:             cfg.SentinelUsername,
+          SentinelPassword:             cfg.SentinelPassword,
+          Protocol:                     cfg.Protocol,
+          MaxRetries:                   cfg.MaxRetries,
+          MinRetryBackoff:              time.Duration(cfg.MinRetryBackoffMilliseconds) * time.Millisecond,
+          MaxRetryBackoff:              time.Duration(cfg.MaxRetryBackoffMilliseconds) * time.Millisecond,
+          DialTimeout:                  time.Duration(cfg.DialTimeoutSeconds) * time.Second,
+          ReadTimeout:                  time.Duration(cfg.ReadTimeoutSeconds) * time.Second,
+          WriteTimeout:                 time.Duration(cfg.WriteTimeoutSeconds) * time.Second,
+          ContextTimeoutEnabled:        cfg.ContextTimeoutEnabled,
+          ReadBufferSize:               cfg.ReadBufferSize,
+          WriteBufferSize:              cfg.WriteBufferSize,
+          PoolFIFO:                     cfg.PoolFIFO,
+          PoolSize:                     cfg.PoolSize,
+          MinIdleConns:                 cfg.MinIdleConns,
+          MaxIdleConns:                 cfg.MaxIdleConns,
+          MaxActiveConns:               cfg.MaxActiveConns,
+          MaxConcurrentDials:           cfg.MaxConcurrentDials,
+          PoolTimeout:                  time.Duration(cfg.PoolTimeoutSeconds) * time.Second,
+          ConnMaxIdleTime:              time.Duration(cfg.ConnMaxIdleTimeSeconds) * time.Second,
+          ConnMaxLifetime:              time.Duration(cfg.ConnMaxLifetimeSeconds) * time.Second,
+          ConnMaxLifetimeJitter:        time.Duration(cfg.ConnMaxLifetimeJitterSeconds) * time.Second,
+          MaxRedirects:                 cfg.MaxRedirects,
+          ReadOnly:                     cfg.ReadOnly,
+          RouteByLatency:               cfg.RouteByLatency,
+          RouteRandomly:                cfg.RouteRandomly,
+          DisableIdentity:              cfg.DisableIdentity,
+          IdentitySuffix:               cfg.IdentitySuffix,
+          UnstableResp3:                cfg.UnstableResp3,
+          FailingTimeoutSeconds:        cfg.FailingTimeoutSeconds,
+      }
   }

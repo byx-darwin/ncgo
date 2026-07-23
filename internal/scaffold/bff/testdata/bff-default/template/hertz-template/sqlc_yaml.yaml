@@ -6,23 +6,17 @@ update_behavior:
 condition: WithDatabase
 body: |
   version: "2"
-  cloud:
-    organization: ""
-    project: ""
-    hostname: ""
-  servers: []
-  project:
-    id: ""
   sql:
     - engine: "postgresql"
-      queries: "internal/db/query"
-      schema: "internal/db/schema"
-      database:
-        managed: true
+      # Paths resolve relative to this file's directory (internal/db/),
+      # so use ./query, ./schema, ./gen — NOT internal/db/... (that would
+      # double-nest to internal/db/internal/db/... and break `make sqlc`).
+      queries: "./query"
+      schema: "./schema"
       gen:
         go:
           package: "gen"
-          out: "internal/db/gen"
+          out: "./gen"
           sql_package: "pgx/v5"
           emit_prepared_queries: true
           emit_interface: false

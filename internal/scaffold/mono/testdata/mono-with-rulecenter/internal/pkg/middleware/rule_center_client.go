@@ -9,7 +9,7 @@
 //
 //	go get google.golang.org/grpc
 //	go get google.golang.org/grpc/credentials/insecure
-//	go get github.com/samber/oops
+//	go get github.com/byx-darwin/go-tools/go-common
 //
 // TODO(baoyx): This standalone gRPC client is a temporary bridge solution.
 // It should eventually be replaced by consuming the Kitex-generated client

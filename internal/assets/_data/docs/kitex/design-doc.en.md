@@ -26,6 +26,14 @@ Files ship inside the ncgo binary via `//go:embed all:_data` (see
 underscore) makes `go build ./...` ignore the `optional/*.go` files —
 they are template snippets, not Go source compiled into ncgo itself.
 
+Generated projects build on **go-tools v0.1.0** (a thin business layer on top
+of it): their `go.mod` declares `go 1.26.5` and requires
+`go-common v0.1.0` + `go-framework v0.1.0` (`go-middleware v0.1.0` is added by
+`go mod tidy` when the project uses a database). Config uses
+`go-framework/config` (+ `config/kitex`), logging uses `go-common/log`, RPC
+error mapping uses `go-framework/kitex/rpcerror`, and framework codes come from
+`go-framework/error`.
+
 Asset version: see `_data/VERSION`; the current embedded asset version is
 surfaced via `assets.Version()`.
 
@@ -54,7 +62,7 @@ invocation, the project looks like this:
 │   ├── db/{schema,query,migrations,gen}/
 │   └── pkg/
 │       ├── interceptor/                # RequestID, AccessLog, Recovery, RequestTimeout, CallerAllowlist
-│       └── rpcerror/                   # oops → kitex BizStatusError mapping
+│       └── rpcerror/                   # goerror → kitex BizStatusError mapping
 ├── pkg/client/<service>/               # caller-side client factory + Retry/Circuit-Breaker config
 ├── kitex_gen/                          # kitex-generated server stubs (do not edit)
 ├── Makefile                            # build / dev / update / sqlc / migrate / lint / test
@@ -141,7 +149,8 @@ always a `BizStatusError`.
 - File resolution: `CONFIG_PATH` env var, otherwise `conf/<env>/conf.yaml`.
 - If the resolved file is missing **and** `CONFIG_PATH` was not set, the
   defaults from `Default()` are used; otherwise loading fails with
-  `oops.Code(10308) Public("config_invalid")`.
+  `goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid")`
+  (`frameworkerror.CodeConfigInvalid` = 10004).
 - `Init()` is called once from `main.go` (`sync.Once`); `Get()` returns
   the cached `*Config`.
 - `Validate()` enforces non-empty `server.name` / `server.addr`,
@@ -151,24 +160,33 @@ always a `BizStatusError`.
 
 ### 3.2 RPC Error Mapping (`internal/pkg/rpcerror`)
 
-- `ToBizError(err)` is the single conversion point from `samber/oops`
-  errors to `kerrors.BizStatusError`. If the error is already a
+- `ToBizError(err)` is the single conversion point from `go-common/error`
+  (`goerror`) errors to `kerrors.BizStatusError`, delegated to
+  `go-framework/kitex/rpcerror.OopsStatusAdapter`. If the error is already a
   `BizStatusError` it passes through unchanged.
-- Reserved scaffold codes:
-  - `10000 internal_error` — fallback for non-oops / panic.
-  - `10010 not_implemented` — usecase stubs.
-  - `10108 permission_denied` — caller allowlist rejects.
-  - `10302 rpc_timeout` — request deadline exceeded.
-  - `10308 config_invalid` — config load / validate failure.
-- Producers raise errors as
-  `oops.In("...").Code(code).Public("msg")…`. `codeFromOops` accepts
-  `int`, `int32`, `int64` codes and falls back to `CodeInternalError`
-  outside `int32` range.
+- Reserved scaffold codes (constants re-export `go-framework/error`):
+  - `CodeInternalError` = `frameworkerror.CodeSystem` (10000) — fallback for
+    non-goerror / panic.
+  - `CodeNotImplemented` = 10010 — usecase stubs (placeholder; it intentionally
+    shares its value with `frameworkerror.CodeRPCUnavailable`).
+  - `CodePermissionDenied` = `frameworkerror.CodeAuthFailed` (10002) — caller
+    allowlist rejects (go-tools v0.1.0 has no `CodePermissionDenied`; it maps to
+    `CodeAuthFailed`).
+  - `CodeRPCTimeout` = `frameworkerror.CodeRPCTimeout` (10011) — request
+    deadline exceeded.
+  - `CodeConfigInvalid` = `frameworkerror.CodeConfigInvalid` (10004) — config
+    load / validate failure.
+- Producers raise errors as `goerror.In("...").Code(code).Public("msg")…`
+  (`goerror` = `go-common/error`, which wraps `samber/oops`; do not construct
+  errors with `samber/oops` directly).
 - Helpers: `InternalErrorf`, `TimeoutError`, `PermissionDenied`,
   `BizCode(err)`, `FormatBiz(err)` (used by `AccessLog`).
-- Code reservations align with the Hertz `pkg/response` registry:
-  scaffold owns `10000–10399`, business codes start at `10400+` (see
-  Hertz §3.2 for the registration pattern).
+- Code segments follow go-tools: Framework `10000–10499`, Middleware
+  `20000–20699`, Auth `40000–40099`, Project `40100–59999`. **Business-defined
+  codes must be `>= 40100` (`goerror.ProjectCodeMin`).** Business codes fall
+  back to **HTTP 200** via `goerror.HTTPStatus` ("business error, RPC call
+  succeeded"); register fine-grained HTTP statuses with
+  `goerror.RegisterHTTPStatuses` when needed.
 
 ### 3.3 Server-Side Interceptors (`internal/pkg/interceptor`)
 
@@ -176,9 +194,9 @@ always a `BizStatusError`.
 |---|---|---|
 | `RequestID` | Reads `x-request-id` from metainfo; if absent generates 16-byte hex and writes `WithPersistentValue` | n/a |
 | `AccessLog` | Wraps `next`, logs service / method / latency / request_id; warns on error with `rpcerror.FormatBiz(err)` | n/a |
-| `Recovery` | `defer recover()`; converts panic to `rpcerror.InternalErrorf` then `ToBizError` | `10000 internal_error` |
-| `RequestTimeout(d)` | `context.WithTimeout(ctx, d)`; on `DeadlineExceeded` with no error, returns `TimeoutError` via `ToBizError` | `10302 rpc_timeout` |
-| `CallerAllowlist(enabled, header, allowed, allowMissing)` | Checks metainfo header (default `x-caller-service`) against allowlist | `10108 permission_denied` |
+| `Recovery` | `defer recover()`; converts panic to `rpcerror.InternalErrorf` then `ToBizError` | `CodeInternalError` (10000) |
+| `RequestTimeout(d)` | `context.WithTimeout(ctx, d)`; on `DeadlineExceeded` with no error, returns `TimeoutError` via `ToBizError` | `CodeRPCTimeout` (10011) |
+| `CallerAllowlist(enabled, header, allowed, allowMissing)` | Checks metainfo header (default `x-caller-service`) against allowlist | `CodePermissionDenied` (= `frameworkerror.CodeAuthFailed`, 10002) |
 
 The chain is composed via `endpoint.Chain(...)` inside
 `server.Run` and registered with `kitexserver.WithMiddleware`. The
@@ -194,7 +212,7 @@ default header for the caller allowlist is `x-caller-service`
   copies `MaxConns / MinConns / MaxConnLifetime / MaxConnIdleTime /
   HealthCheckPeriod` from `cfg.Database` onto the `*pgxpool.Config`.
 - `data.NewPostgres(ctx, cfg)` opens + pings the pool. Errors come back
-  with `oops.Code("postgres_pool_open_failed" | "postgres_ping_failed")`.
+  with `goerror.Code("postgres_pool_open_failed" | "postgres_ping_failed")`.
 - `internal/db/{schema,query,gen,migrations}` is identical in shape to
   the Hertz layout (same `sqlc.yaml`, same goose migration directory).
 - Repositories own transactions via `WithTx(ctx, fn)`; the helper
@@ -212,10 +230,12 @@ gateways to call this RPC:
 - `New(ctx, cfg, opts...)` builds the kitex client, optionally adds
   `WithFailureRetry` from `failurePolicy()` and a caller-service
   middleware that injects `x-caller-service` into outgoing metainfo.
-- `Validate()` raises `oops.Code(10308) Public("config_invalid")` for
-  bad timeouts, bad backoff config, or missing service name.
+- `Validate()` raises
+  `goerror.In("kitex.client").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid")`
+  for bad timeouts, bad backoff config, or missing service name.
 - Errors during `NewClient` are wrapped as
-  `oops.Code(10301) Public("rpc_failed")`.
+  `goerror.In("kitex.client").Code(frameworkerror.CodeRPCUnavailable).Public("rpc_failed")`
+  (`frameworkerror.CodeRPCUnavailable` = 10010).
 
 ### 3.6 Operations
 
@@ -241,7 +261,7 @@ Each file ships only the typed constructor; the agent registers the
 config struct and the constructor into the `samber/do` injector inside
 `server.Run` (`registry` / `observability` add-ons are wired directly as
 kitex server options, not through `do`). Kitex add-ons use string
-`oops.Code` values (`<kind>_<reason>`), unlike Hertz which uses the
+`goerror.Code` values (`<kind>_<reason>`), unlike Hertz which uses the
 numeric errcode registry.
 
 #### Redis (`data/redis.go`)
@@ -292,7 +312,7 @@ numeric errcode registry.
 - Wiring at bootstrap (in `server.Run`):
   ```go
   r, err := registry.NewEtcdRegistry(cfg.Registry)
-  if err != nil { return oops.Wrapf(err, "etcd registry") }
+  if err != nil { return goerror.In("kitex.registry").Wrap(err) }
   // pass kitexserver.WithRegistry(r) into kitex server options
   ```
 
