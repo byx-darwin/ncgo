@@ -1847,6 +1847,7 @@ layouts:
           "github.com/cloudwego/hertz/pkg/app"
           "github.com/redis/go-redis/v9"
               "github.com/samber/hot"
+          config "github.com/byx-darwin/go-tools/go-framework/config"
           goerror "github.com/byx-darwin/go-tools/go-common/error"
 
           "{{.GoModule}}/internal/base/conf"
@@ -1886,7 +1887,7 @@ layouts:
       func SignatureAuth(cfg conf.SignatureConfig, resolver SecretResolver) app.HandlerFunc {
           cfg = normalizeSignatureConfig(cfg)
           nonceStore := newSignatureNonceStore(cfg.Nonce)
-          nonceTTL := durationSeconds(cfg.Nonce.TTLSeconds)
+          nonceTTL := cfg.Nonce.TTLSeconds.Duration
           return func(ctx context.Context, c *app.RequestContext) {
               if !cfg.Enabled {
                   c.Next(ctx)
@@ -1900,7 +1901,7 @@ layouts:
                   abort(c, response.CodeSignatureMissing)
                   return
               }
-              if !validTimestamp(timestamp, cfg.MaxClockSkewSeconds) {
+              if !validTimestamp(timestamp, int64(cfg.MaxClockSkewSeconds.Seconds())) {
                   abort(c, response.CodeSignatureExpired)
                   return
               }
@@ -2024,8 +2025,8 @@ layouts:
           if cfg.HeaderSignature == "" {
               cfg.HeaderSignature = "X-Signature"
           }
-          if cfg.MaxClockSkewSeconds <= 0 {
-              cfg.MaxClockSkewSeconds = 300
+          if cfg.MaxClockSkewSeconds.Duration <= 0 {
+              cfg.MaxClockSkewSeconds = config.Duration{Duration: 300 * time.Second}
           }
           cfg.Nonce = normalizeSignatureNonceConfig(cfg.Nonce)
           return cfg
@@ -2038,8 +2039,8 @@ layouts:
           if cfg.KeyPrefix == "" {
               cfg.KeyPrefix = "signature_nonce"
           }
-          if cfg.TTLSeconds <= 0 {
-              cfg.TTLSeconds = 300
+          if cfg.TTLSeconds.Duration <= 0 {
+              cfg.TTLSeconds = config.Duration{Duration: 300 * time.Second}
           }
               if cfg.Memory.MaxEntries <= 0 {
                   cfg.Memory.MaxEntries = defaultMemoryCacheMaxEntries
@@ -2454,9 +2455,11 @@ layouts:
           "context"
           "strconv"
           "strings"
+          "time"
 
           "github.com/cloudwego/hertz/pkg/app"
           "github.com/cloudwego/hertz/pkg/protocol/consts"
+          config "github.com/byx-darwin/go-tools/go-framework/config"
 
           "{{.GoModule}}/internal/base/conf"
           "{{.GoModule}}/internal/pkg/response"
@@ -2511,8 +2514,8 @@ layouts:
           if cfg.AllowCredentials {
               c.Response.Header.Set("Access-Control-Allow-Credentials", "true")
           }
-          if cfg.MaxAgeSeconds > 0 {
-              c.Response.Header.Set("Access-Control-Max-Age", strconv.Itoa(cfg.MaxAgeSeconds))
+          if cfg.MaxAgeSeconds.Duration > 0 {
+              c.Response.Header.Set("Access-Control-Max-Age", strconv.Itoa(int(cfg.MaxAgeSeconds.Seconds())))
           }
       }
 
@@ -2536,8 +2539,8 @@ layouts:
           if len(cfg.AllowHeaders) == 0 {
               cfg.AllowHeaders = []string{"Content-Type", "Authorization", "X-Authorization", "X-Request-ID"}
           }
-          if cfg.MaxAgeSeconds == 0 {
-              cfg.MaxAgeSeconds = 600
+          if cfg.MaxAgeSeconds.Duration == 0 {
+              cfg.MaxAgeSeconds = config.Duration{Duration: 600 * time.Second}
           }
           return cfg
       }
@@ -2616,6 +2619,8 @@ layouts:
           "sync"
           "time"
 
+          config "github.com/byx-darwin/go-tools/go-framework/config"
+
           "{{.GoModule}}/internal/base/conf"
       )
 
@@ -2685,14 +2690,14 @@ layouts:
           var dynamic source
           switch cfg.Source.Type {
           case "grpc":
-              dynamic = &grpcSource{client: opts.GRPC, timeout: durationMilliseconds(cfg.GRPC.TimeoutMilliseconds)}
+              dynamic = &grpcSource{client: opts.GRPC, timeout: cfg.GRPC.TimeoutMilliseconds.Duration}
           case "database":
-              dynamic = &databaseSource{hook: opts.Database, timeout: durationMilliseconds(cfg.Database.QueryTimeoutMilliseconds)}
+              dynamic = &databaseSource{hook: opts.Database, timeout: cfg.Database.QueryTimeoutMilliseconds.Duration}
           case "rule_center":
-              dynamic = &grpcSource{client: opts.RuleCenter, timeout: durationMilliseconds(cfg.RuleCenter.QueryTimeoutMilliseconds)}
+              dynamic = &grpcSource{client: opts.RuleCenter, timeout: cfg.RuleCenter.QueryTimeoutMilliseconds.Duration}
           }
           if dynamic != nil {
-              dynamic = newCachedSource(cfg.Source.CacheTTLSeconds, dynamic)
+              dynamic = newCachedSource(int(cfg.Source.CacheTTLSeconds.Seconds()), dynamic)
           }
           return &Resolver{cfg: cfg, dynamic: dynamic}
       }
@@ -2744,18 +2749,18 @@ layouts:
           if cfg.Memory.MaxEntries <= 0 {
               cfg.Memory.MaxEntries = 100000
           }
-          if cfg.Source.CacheTTLSeconds <= 0 {
-              cfg.Source.CacheTTLSeconds = 60
+          if cfg.Source.CacheTTLSeconds.Duration <= 0 {
+              cfg.Source.CacheTTLSeconds = config.Duration{Duration: 60 * time.Second}
           }
-          if cfg.GRPC.TimeoutMilliseconds <= 0 {
-              cfg.GRPC.TimeoutMilliseconds = 200
+          if cfg.GRPC.TimeoutMilliseconds.Duration <= 0 {
+              cfg.GRPC.TimeoutMilliseconds = config.Duration{Duration: 200 * time.Millisecond}
           }
           cfg.GRPC.ServiceName = strings.TrimSpace(cfg.GRPC.ServiceName)
-          if cfg.Database.QueryTimeoutMilliseconds <= 0 {
-              cfg.Database.QueryTimeoutMilliseconds = 200
+          if cfg.Database.QueryTimeoutMilliseconds.Duration <= 0 {
+              cfg.Database.QueryTimeoutMilliseconds = config.Duration{Duration: 200 * time.Millisecond}
           }
-          if cfg.RuleCenter.QueryTimeoutMilliseconds <= 0 {
-              cfg.RuleCenter.QueryTimeoutMilliseconds = 200
+          if cfg.RuleCenter.QueryTimeoutMilliseconds.Duration <= 0 {
+              cfg.RuleCenter.QueryTimeoutMilliseconds = config.Duration{Duration: 200 * time.Millisecond}
           }
           return cfg
       }
@@ -2764,8 +2769,8 @@ layouts:
           if len(rule.KeyBy) == 0 {
               rule.KeyBy = []string{"ip"}
           }
-          if rule.ClientTTLSeconds <= 0 {
-              rule.ClientTTLSeconds = 300
+          if rule.ClientTTLSeconds.Duration <= 0 {
+              rule.ClientTTLSeconds = config.Duration{Duration: 300 * time.Second}
           }
           if rule.Strategy == "" {
               if rule.RequestsPerSecond > 0 || rule.Burst > 0 {
@@ -2785,8 +2790,8 @@ layouts:
               }
           default:
               rule.Strategy = "fixed_window"
-              if rule.WindowSeconds <= 0 {
-                  rule.WindowSeconds = 60
+              if rule.WindowSeconds.Duration <= 0 {
+                  rule.WindowSeconds = config.Duration{Duration: 60 * time.Second}
               }
               if rule.MaxRequests <= 0 {
                   rule.MaxRequests = 100
@@ -3089,13 +3094,6 @@ layouts:
           return strings.Join([]string{lookup.Service, lookup.Phase, lookup.Method, lookup.Path, lookup.AppKey}, "|")
       }
 
-      func durationMilliseconds(value int) time.Duration {
-          if value <= 0 {
-              return 0
-          }
-          return time.Duration(value) * time.Millisecond
-      }
-
   - path: internal/pkg/ratelimit/resolver_test.go
     delims: ["{{", "}}"]
     body: |-
@@ -3107,11 +3105,13 @@ layouts:
           "testing"
           "time"
 
+          config "github.com/byx-darwin/go-tools/go-framework/config"
+
           "{{.GoModule}}/internal/base/conf"
       )
 
       func TestResolverMatchesLocalRuleByAppKeyAndPath(t *testing.T) {
-          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {AppKey: "app-1", MatchKind: "exact", Path: "/orders", Priority: 100, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 2}} } }}, Options{})
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {AppKey: "app-1", MatchKind: "exact", Path: "/orders", Priority: 100, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 2}} } }}, Options{})
           got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
           if err != nil {
               t.Fatalf("Resolve: %v", err)
@@ -3122,7 +3122,7 @@ layouts:
       }
 
       func TestResolverPrefersMoreSpecificLocalRule(t *testing.T) {
-          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {MatchKind: "prefix", PathPattern: "/orders", Priority: 10, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 8}}, {MatchKind: "exact", Path: "/orders", Priority: 20, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 6}}, {AppKey: "app-1", MatchKind: "exact", Path: "/orders", Priority: 30, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 4}}, {AppKey: "app-1", Method: "GET", MatchKind: "exact", Path: "/orders", Priority: 40, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 2}} } }}, Options{})
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {MatchKind: "prefix", PathPattern: "/orders", Priority: 10, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 8}}, {MatchKind: "exact", Path: "/orders", Priority: 20, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 6}}, {AppKey: "app-1", MatchKind: "exact", Path: "/orders", Priority: 30, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 4}}, {AppKey: "app-1", Method: "GET", MatchKind: "exact", Path: "/orders", Priority: 40, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 2}} } }}, Options{})
           got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
           if err != nil {
               t.Fatalf("Resolve: %v", err)
@@ -3133,7 +3133,7 @@ layouts:
       }
 
       func TestResolverFallsBackToDefaultRule(t *testing.T) {
-          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 9}}}, Options{})
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 9}}}, Options{})
           got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "missing", Path: "/unknown"})
           if err != nil {
               t.Fatalf("Resolve: %v", err)
@@ -3144,9 +3144,9 @@ layouts:
       }
 
       func TestResolverSupportsGlobAndRegexLocalRules(t *testing.T) {
-          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 100}, Rules: []conf.RateLimitMatchConfig{
-              {MatchKind: "glob", PathPattern: "/orders/*/items", Priority: 20, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 8}},
-              {MatchKind: "regex", PathPattern: "^/orders/[0-9]+$", Priority: 10, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 6}},
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 100}, Rules: []conf.RateLimitMatchConfig{
+              {MatchKind: "glob", PathPattern: "/orders/*/items", Priority: 20, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 8}},
+              {MatchKind: "regex", PathPattern: "^/orders/[0-9]+$", Priority: 10, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 6}},
           }}}, Options{})
 
           got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", Method: "GET", Path: "/orders/42/items"})
@@ -3159,8 +3159,8 @@ layouts:
       }
 
       func TestResolverSupportsPathPrefixCompatibilityAlias(t *testing.T) {
-          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{
-              {PathPrefix: "/orders/", Priority: 5, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 3}},
+          resolver := NewResolver(conf.RateLimitConfig{PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{
+              {PathPrefix: "/orders/", Priority: 5, Rule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 3}},
           }}}, Options{})
 
           got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", Method: "GET", Path: "/orders/42"})
@@ -3173,7 +3173,7 @@ layouts:
       }
 
       func TestResolverUsesDynamicRuleWhenPresent(t *testing.T) {
-          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}}, Options{GRPC: fakeGRPCClient{rule: &conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 3}, found: true}})
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: config.Duration{Duration: 60 * time.Second}, FallbackOnError: true}}, Options{GRPC: fakeGRPCClient{rule: &conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 3}, found: true}})
           got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
           if err != nil {
               t.Fatalf("Resolve: %v", err)
@@ -3184,7 +3184,7 @@ layouts:
       }
 
       func TestResolverFallsBackWhenDynamicSourceErrors(t *testing.T) {
-          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}, PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 8}}}, Options{GRPC: fakeGRPCClient{err: errors.New("boom")}})
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: config.Duration{Duration: 60 * time.Second}, FallbackOnError: true}, PreAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 8}}}, Options{GRPC: fakeGRPCClient{err: errors.New("boom")}})
           got, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
           if err != nil {
               t.Fatalf("Resolve: %v", err)
@@ -3195,7 +3195,7 @@ layouts:
       }
 
       func TestResolverReturnsErrorWhenDynamicSourceErrorsAndFallbackDisabled(t *testing.T) {
-          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: false}}, Options{GRPC: fakeGRPCClient{err: errors.New("boom")}})
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: config.Duration{Duration: 60 * time.Second}, FallbackOnError: false}}, Options{GRPC: fakeGRPCClient{err: errors.New("boom")}})
           if _, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"}); err == nil {
               t.Fatalf("Resolve error = nil, want propagated dynamic source error")
           }
@@ -3204,7 +3204,7 @@ layouts:
       func TestResolverInjectsConfiguredServiceNameIntoDynamicLookup(t *testing.T) {
           gotService := ""
           resolver := NewResolver(conf.RateLimitConfig{
-              Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true},
+              Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: config.Duration{Duration: 60 * time.Second}, FallbackOnError: true},
               GRPC:   conf.RateLimitGRPCConfig{ServiceName: " order-api "},
           }, Options{GRPC: ResolveFunc(func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
               _ = ctx
@@ -3222,7 +3222,7 @@ layouts:
 
       func TestResolverCachesNegativeLookup(t *testing.T) {
           client := &countingGRPCClient{}
-          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}}, Options{GRPC: client})
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: config.Duration{Duration: 60 * time.Second}, FallbackOnError: true}}, Options{GRPC: client})
           _, _ = resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
           _, _ = resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
           if client.calls != 1 {
@@ -3233,11 +3233,11 @@ layouts:
       func TestResolverCachesPositiveLookupUntilTTLExpires(t *testing.T) {
           calls := 0
           maxRequests := 3
-          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 1, FallbackOnError: true}}, Options{GRPC: ResolveFunc(func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: config.Duration{Duration: 1 * time.Second}, FallbackOnError: true}}, Options{GRPC: ResolveFunc(func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
               _ = ctx
               _ = lookup
               calls++
-              return &conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: maxRequests}, true, nil
+              return &conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: maxRequests}, true, nil
           })})
 
           first, err := resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Path: "/orders"})
@@ -3276,10 +3276,10 @@ layouts:
 
       func TestResolverCacheKeySeparatesPhaseAndMethod(t *testing.T) {
           calls := 0
-          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}}, Options{GRPC: ResolveFunc(func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: config.Duration{Duration: 60 * time.Second}, FallbackOnError: true}}, Options{GRPC: ResolveFunc(func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
               _ = ctx
               calls++
-              return &conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: len(lookup.Phase) + len(lookup.Method)}, true, nil
+              return &conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: len(lookup.Phase) + len(lookup.Method)}, true, nil
           })})
 
           _, _ = resolver.Resolve(context.Background(), Lookup{Phase: "pre_auth", AppKey: "app-1", Method: "GET", Path: "/orders"})
@@ -3616,11 +3616,11 @@ layouts:
               Enabled:           record.Enabled,
               KeyBy:             append([]string(nil), record.KeyBy...),
               Strategy:          record.Strategy,
-              WindowSeconds:     record.WindowSeconds,
+              WindowSeconds:     config.Duration{Duration: time.Duration(record.WindowSeconds) * time.Second},
               MaxRequests:       record.MaxRequests,
               RequestsPerSecond: record.RequestsPerSecond,
               Burst:             record.Burst,
-              ClientTTLSeconds:  record.ClientTTLSeconds,
+              ClientTTLSeconds:  config.Duration{Duration: time.Duration(record.ClientTTLSeconds) * time.Second},
           }
       }
 
@@ -3747,7 +3747,7 @@ layouts:
           if err != nil || !found || rule == nil {
               t.Fatalf("got rule=%v found=%v err=%v, want mapped rule", rule, found, err)
           }
-          if rule.MaxRequests != 9 || rule.WindowSeconds != 60 || len(rule.KeyBy) != 1 || rule.KeyBy[0] != "ak_path" {
+          if rule.MaxRequests != 9 || rule.WindowSeconds.Duration != 60*time.Second || len(rule.KeyBy) != 1 || rule.KeyBy[0] != "ak_path" {
               t.Fatalf("unexpected mapped rule: %+v", rule)
           }
       }
@@ -3899,6 +3899,7 @@ layouts:
           "github.com/cloudwego/hertz/pkg/app"
           "github.com/redis/go-redis/v9"
           "github.com/samber/hot"
+          config "github.com/byx-darwin/go-tools/go-framework/config"
 
           "{{.GoModule}}/internal/base/data"
           "{{.GoModule}}/internal/base/conf"
@@ -4006,26 +4007,12 @@ layouts:
           return data.RedisUniversalOptions(cfg)
       }
 
-      func durationSeconds(value int) time.Duration {
-          if value <= 0 {
-              return 0
-          }
-          return time.Duration(value) * time.Second
-      }
-
-      func durationMilliseconds(value int) time.Duration {
-          if value <= 0 {
-              return 0
-          }
-          return time.Duration(value) * time.Millisecond
-      }
-
       func (s *memoryRateLimitStore) Allow(ctx context.Context, key string, rule conf.RateLimitRuleConfig) (bool, error) {
           switch strings.ToLower(strings.TrimSpace(rule.Strategy)) {
           case "token_bucket":
               return s.allowTokenBucket(ctx, key, rule.RequestsPerSecond, rule.Burst, ruleTTL(rule))
           default:
-              return s.allowFixedWindow(ctx, key, time.Duration(rule.WindowSeconds)*time.Second, rule.MaxRequests, ruleTTL(rule))
+              return s.allowFixedWindow(ctx, key, rule.WindowSeconds.Duration, rule.MaxRequests, ruleTTL(rule))
           }
       }
 
@@ -4148,12 +4135,12 @@ layouts:
           default:
               ttlSeconds := int(ruleTTL(rule).Seconds())
               if ttlSeconds <= 0 {
-                  ttlSeconds = rule.WindowSeconds
+                  ttlSeconds = int(rule.WindowSeconds.Seconds())
               }
               if ttlSeconds <= 0 {
                   ttlSeconds = 60
               }
-              allowed, err := redisFixedWindowScript.Run(ctx, s.client, []string{key}, rule.WindowSeconds, ttlSeconds, rule.MaxRequests, time.Now().Unix()).Int()
+              allowed, err := redisFixedWindowScript.Run(ctx, s.client, []string{key}, int(rule.WindowSeconds.Seconds()), ttlSeconds, rule.MaxRequests, time.Now().Unix()).Int()
               if err != nil {
                   return false, err
               }
@@ -4252,11 +4239,11 @@ layouts:
       }
 
       func ruleTTL(rule conf.RateLimitRuleConfig) time.Duration {
-          if rule.ClientTTLSeconds > 0 {
-              return time.Duration(rule.ClientTTLSeconds) * time.Second
+          if rule.ClientTTLSeconds.Duration > 0 {
+              return rule.ClientTTLSeconds.Duration
           }
-          if strings.EqualFold(strings.TrimSpace(rule.Strategy), "fixed_window") && rule.WindowSeconds > 0 {
-              return time.Duration(rule.WindowSeconds) * time.Second
+          if strings.EqualFold(strings.TrimSpace(rule.Strategy), "fixed_window") && rule.WindowSeconds.Duration > 0 {
+              return rule.WindowSeconds.Duration
           }
           return 300 * time.Second
       }
@@ -4275,13 +4262,14 @@ layouts:
           "github.com/cloudwego/hertz/pkg/app"
           "github.com/cloudwego/hertz/pkg/protocol"
           "github.com/cloudwego/hertz/pkg/protocol/consts"
+          config "github.com/byx-darwin/go-tools/go-framework/config"
 
           "{{.GoModule}}/internal/base/conf"
           "{{.GoModule}}/internal/pkg/ratelimit"
       )
 
       func TestRateLimitRejectsAfterBurst(t *testing.T) {
-          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "token_bucket", RequestsPerSecond: 1, Burst: 1, ClientTTLSeconds: 300}}
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "token_bucket", RequestsPerSecond: 1, Burst: 1, ClientTTLSeconds: config.Duration{Duration: 300 * time.Second}}}
           cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", PreAuth: phase}
           mw := RateLimit("pre_auth", cfg, phase, nil)
 
@@ -4302,7 +4290,7 @@ layouts:
       }
 
       func TestRateLimitRejectsAfterFixedWindowLimit(t *testing.T) {
-          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1, ClientTTLSeconds: 300}}
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 1, ClientTTLSeconds: config.Duration{Duration: 300 * time.Second}}}
           cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", PreAuth: phase}
           mw := RateLimit("pre_auth", cfg, phase, nil)
 
@@ -4320,7 +4308,7 @@ layouts:
       }
 
       func TestRateLimitSkipPath(t *testing.T) {
-          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}}
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 1}}
           cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", SkipPaths: []string{"/healthz"}, PreAuth: phase}
           mw := RateLimit("pre_auth", cfg, phase, nil)
           for i := 0; i < 3; i++ {
@@ -4333,7 +4321,7 @@ layouts:
       }
 
       func TestRateLimitUsesMostSpecificLocalRule(t *testing.T) {
-          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {MatchKind: "prefix", PathPattern: "/orders", Priority: 10, Rule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}, {AppKey: "app-1", MatchKind: "exact", Path: "/orders", Priority: 20, Rule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}} }}
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 10}, Rules: []conf.RateLimitMatchConfig{ {MatchKind: "prefix", PathPattern: "/orders", Priority: 10, Rule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 5}}, {AppKey: "app-1", MatchKind: "exact", Path: "/orders", Priority: 20, Rule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 1}} }}
           cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", PreAuth: phase}
           mw := RateLimit("pre_auth", cfg, phase, nil)
 
@@ -4353,8 +4341,8 @@ layouts:
       }
 
       func TestRateLimitUsesPostAuthPhaseConfig(t *testing.T) {
-          pre := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 10}}
-          post := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"user_uuid"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}}
+          pre := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 10}}
+          post := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"user_uuid"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 1}}
           cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", PreAuth: pre, PostAuth: post}
           mw := RateLimit("post_auth", cfg, post, nil)
 
@@ -4374,9 +4362,9 @@ layouts:
       }
 
       func TestRateLimitUsesDynamicResolverRule(t *testing.T) {
-          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}
-          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}, PreAuth: phase}
-          resolver := ratelimit.NewResolver(cfg, ratelimit.Options{GRPC: fakeMiddlewareGRPCClient{rule: &conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}, found: true}})
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 5}}
+          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: config.Duration{Duration: 60 * time.Second}, FallbackOnError: true}, PreAuth: phase}
+          resolver := ratelimit.NewResolver(cfg, ratelimit.Options{GRPC: fakeMiddlewareGRPCClient{rule: &conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 1}, found: true}})
           mw := RateLimit("pre_auth", cfg, phase, resolver)
 
           first := newRateLimitContext("/orders")
@@ -4395,12 +4383,12 @@ layouts:
       }
 
       func TestRateLimitUsesDatabaseResolverRule(t *testing.T) {
-          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}
-          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", Source: conf.RateLimitSourceConfig{Type: "database", CacheTTLSeconds: 60, FallbackOnError: true}, Database: conf.RateLimitDatabaseConfig{QueryTimeoutMilliseconds: 200}, PreAuth: phase}
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 5}}
+          cfg := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", AppKeyHeader: "X-App-Key", Source: conf.RateLimitSourceConfig{Type: "database", CacheTTLSeconds: config.Duration{Duration: 60 * time.Second}, FallbackOnError: true}, Database: conf.RateLimitDatabaseConfig{QueryTimeoutMilliseconds: config.Duration{Duration: 200 * time.Millisecond}}, PreAuth: phase}
           resolver := ratelimit.NewResolver(cfg, ratelimit.Options{Database: ratelimit.ResolveFunc(func(ctx context.Context, lookup ratelimit.Lookup) (*conf.RateLimitRuleConfig, bool, error) {
               _ = ctx
               _ = lookup
-              return &conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1}, true, nil
+              return &conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 1}, true, nil
           })})
           mw := RateLimit("pre_auth", cfg, phase, resolver)
 
@@ -4420,8 +4408,8 @@ layouts:
       }
 
       func TestRateLimitResolverErrorRespectsFailOpen(t *testing.T) {
-          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}
-          base := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: false}, PreAuth: phase}
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 5}}
+          base := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: config.Duration{Duration: 60 * time.Second}, FallbackOnError: false}, PreAuth: phase}
 
           closedResolver := ratelimit.NewResolver(base, ratelimit.Options{GRPC: fakeMiddlewareGRPCClient{err: errors.New("boom")}})
           closed := RateLimit("pre_auth", base, phase, closedResolver)
@@ -4449,7 +4437,7 @@ layouts:
       }
 
       func TestRateLimitStoreErrorRespectsFailOpen(t *testing.T) {
-          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5}}
+          phase := conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 5}}
           base := conf.RateLimitConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", PreAuth: phase}
 
           closedStore := &fakeRateLimitStore{err: errors.New("store boom")}
@@ -4512,7 +4500,7 @@ layouts:
 
       func TestMemoryRateLimitStoreEvictsLRU(t *testing.T) {
           store := newMemoryRateLimitStore(1)
-          rule := conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 1, ClientTTLSeconds: 60}
+          rule := conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 1, ClientTTLSeconds: config.Duration{Duration: 60 * time.Second}}
           if ok, err := store.Allow(context.Background(), "k1", rule); err != nil || !ok {
               t.Fatalf("allow k1 = %v, %v", ok, err)
           }
@@ -4611,6 +4599,7 @@ layouts:
           "github.com/cloudwego/hertz/pkg/app"
           "github.com/redis/go-redis/v9"
               "github.com/samber/hot"
+          config "github.com/byx-darwin/go-tools/go-framework/config"
 
           "{{.GoModule}}/internal/base/conf"
           "{{.GoModule}}/internal/pkg/response"
@@ -4651,7 +4640,7 @@ layouts:
           skipper := PathSkipper(cfg.SkipPaths...)
           methods := idempotencyMethods(cfg.Methods)
           store := newIdempotencyStore(cfg)
-          ttl := durationSeconds(cfg.TTLSeconds)
+          ttl := cfg.TTLSeconds.Duration
           return func(ctx context.Context, c *app.RequestContext) {
               if !cfg.Enabled || skipper(ctx, c) || !methods[string(c.Method())] {
                   c.Next(ctx)
@@ -4887,8 +4876,8 @@ layouts:
           if cfg.KeyPrefix == "" {
               cfg.KeyPrefix = "idempotency"
           }
-          if cfg.TTLSeconds <= 0 {
-              cfg.TTLSeconds = 86400
+          if cfg.TTLSeconds.Duration <= 0 {
+              cfg.TTLSeconds = config.Duration{Duration: 86400 * time.Second}
           }
           if cfg.MaxBodyBytes <= 0 {
               cfg.MaxBodyBytes = 1048576
