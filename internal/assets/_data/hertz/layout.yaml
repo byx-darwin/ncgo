@@ -2070,12 +2070,13 @@ layouts:
           "github.com/cloudwego/hertz/pkg/app"
           "github.com/cloudwego/hertz/pkg/protocol"
           "github.com/cloudwego/hertz/pkg/protocol/consts"
+          config "github.com/byx-darwin/go-tools/go-framework/config"
 
           "{{.GoModule}}/internal/base/conf"
       )
 
       func TestSignatureNonceRejectsReplay(t *testing.T) {
-          cfg := conf.SignatureConfig{Enabled: true, StaticSecret: "secret", Nonce: conf.SignatureNonceConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", TTLSeconds: 300}}
+          cfg := conf.SignatureConfig{Enabled: true, StaticSecret: "secret", Nonce: conf.SignatureNonceConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", TTLSeconds: config.Duration{Duration: 300 * time.Second}}}
           mw := SignatureAuth(cfg, StaticSecretResolver{SecretValue: "secret"})
           timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 
@@ -2096,7 +2097,7 @@ layouts:
       }
 
       func TestSignatureInvalidDoesNotConsumeNonce(t *testing.T) {
-          cfg := conf.SignatureConfig{Enabled: true, StaticSecret: "secret", Nonce: conf.SignatureNonceConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", TTLSeconds: 300}}
+          cfg := conf.SignatureConfig{Enabled: true, StaticSecret: "secret", Nonce: conf.SignatureNonceConfig{Enabled: true, Backend: "memory", KeyPrefix: "test", TTLSeconds: config.Duration{Duration: 300 * time.Second}}}
           mw := SignatureAuth(cfg, StaticSecretResolver{SecretValue: "secret"})
           timestamp := strconv.FormatInt(time.Now().Unix(), 10)
 
@@ -3295,7 +3296,7 @@ layouts:
 
       func TestResolverCacheKeySeparatesService(t *testing.T) {
           calls := 0
-          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: 60, FallbackOnError: true}}, Options{GRPC: ResolveFunc(func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+          resolver := NewResolver(conf.RateLimitConfig{Source: conf.RateLimitSourceConfig{Type: "grpc", CacheTTLSeconds: config.Duration{Duration: 60 * time.Second}, FallbackOnError: true}}, Options{GRPC: ResolveFunc(func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
               _ = ctx
               calls++
               return nil, false, nil
@@ -3342,6 +3343,9 @@ layouts:
       import (
           "context"
           "strings"
+          "time"
+
+          config "github.com/byx-darwin/go-tools/go-framework/config"
       {{ if .WithDatabase}}
           "errors"
 
@@ -3646,6 +3650,7 @@ layouts:
           "context"
           "errors"
           "testing"
+          "time"
 
       {{ if .WithDatabase}}
           "github.com/jackc/pgx/v5"
@@ -3899,7 +3904,6 @@ layouts:
           "github.com/cloudwego/hertz/pkg/app"
           "github.com/redis/go-redis/v9"
           "github.com/samber/hot"
-          config "github.com/byx-darwin/go-tools/go-framework/config"
 
           "{{.GoModule}}/internal/base/data"
           "{{.GoModule}}/internal/base/conf"
@@ -4524,16 +4528,16 @@ layouts:
               SentinelPassword:            "sentinel-secret",
               Protocol:                    3,
               MaxRetries:                  4,
-              MinRetryBackoffMilliseconds: 9,
-              MaxRetryBackoffMilliseconds: 600,
-              DialTimeoutSeconds:          6,
-              ReadTimeoutSeconds:          4,
-              WriteTimeoutSeconds:         5,
+              MinRetryBackoffMilliseconds: config.Duration{Duration: 9 * time.Millisecond},
+              MaxRetryBackoffMilliseconds: config.Duration{Duration: 600 * time.Millisecond},
+              DialTimeoutSeconds:          config.Duration{Duration: 6 * time.Second},
+              ReadTimeoutSeconds:          config.Duration{Duration: 4 * time.Second},
+              WriteTimeoutSeconds:         config.Duration{Duration: 5 * time.Second},
               PoolSize:                    20,
               MinIdleConns:                3,
-              PoolTimeoutSeconds:          7,
-              ConnMaxIdleTimeSeconds:      301,
-              ConnMaxLifetimeSeconds:      1801,
+              PoolTimeoutSeconds:          config.Duration{Duration: 7 * time.Second},
+              ConnMaxIdleTimeSeconds:      config.Duration{Duration: 301 * time.Second},
+              ConnMaxLifetimeSeconds:      config.Duration{Duration: 1801 * time.Second},
               MaxRedirects:                5,
               RouteByLatency:              true,
           })

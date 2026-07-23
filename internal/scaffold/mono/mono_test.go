@@ -833,7 +833,7 @@ func TestGenerateHertzWithDatabaseRendersTopLevelDatabaseConfig(t *testing.T) {
 		// "server_addr" — nacos config simplified,
 		// "addresses: []" — polaris config simplified,
 		"max_conns: 20",
-		"health_check_period_seconds: 30",
+		"health_check_period_seconds: \"30s\"",
 		"# Redis 连接配置：作为共享默认值供 rate_limit / idempotency / signature nonce 复用",
 		"context_timeout_enabled: true",
 		"# 可选：仅当需要覆盖顶层 redis 连接时填写；留空则复用顶层 redis",
@@ -872,7 +872,7 @@ func TestGenerateHertzWithDatabaseRendersTopLevelDatabaseConfig(t *testing.T) {
 	for _, want := range []string{
 		"func NewPostgresConfigFromDatabase(cfg conf.DatabaseConfig)",
 		"pgCfg.MaxConns = cfg.MaxConns",
-		"pgCfg.HealthCheckPeriod = time.Duration(cfg.HealthCheckPeriodSeconds) * time.Second",
+		"pgCfg.HealthCheckPeriod = cfg.HealthCheckPeriodSeconds.Duration",
 	} {
 		if !strings.Contains(string(dataBody), want) {
 			t.Fatalf("rendered internal/base/data/data.go missing %q\n---\n%s", want, dataBody)
