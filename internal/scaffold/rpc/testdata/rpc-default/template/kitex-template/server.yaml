@@ -107,7 +107,7 @@ body: |-
                   cfg.Auth.CallerAllowlist.AllowedCallers,
                   cfg.Auth.CallerAllowlist.AllowMissing,
               ),
-              interceptor.RequestTimeout(durationSeconds(cfg.RPC.RequestTimeoutSeconds)),
+              interceptor.RequestTimeout(cfg.RPC.RequestTimeoutSeconds.Duration),
           )),
           kitexserver.WithErrorHandler(func(ctx context.Context, err error) error {
               _ = ctx
@@ -151,14 +151,7 @@ body: |-
       if cfg.MinConns > 0 {
           pgCfg.MinConns = cfg.MinConns
       }
-      pgCfg.MaxConnLifetime = durationSeconds(cfg.MaxConnLifetimeSeconds)
-      pgCfg.MaxConnIdleTime = durationSeconds(cfg.MaxConnIdleTimeSeconds)
-      pgCfg.HealthCheckPeriod = durationSeconds(cfg.HealthCheckPeriodSeconds)
-  }
-
-  func durationSeconds(value int) time.Duration {
-      if value <= 0 {
-          return 0
-      }
-      return time.Duration(value) * time.Second
+      pgCfg.MaxConnLifetime = cfg.MaxConnLifetimeSeconds.Duration
+      pgCfg.MaxConnIdleTime = cfg.MaxConnIdleTimeSeconds.Duration
+      pgCfg.HealthCheckPeriod = cfg.HealthCheckPeriodSeconds.Duration
   }

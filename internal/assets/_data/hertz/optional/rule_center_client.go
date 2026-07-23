@@ -27,6 +27,7 @@ import (
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
 
+	"github.com/byx-darwin/go-tools/go-framework/config"
 	"{{.GoModule}}/internal/base/conf"
 	"{{.GoModule}}/internal/pkg/ratelimit"
 	"{{.GoModule}}/kitex_gen/ratelimit/v1"
@@ -169,10 +170,10 @@ func (c *RuleCenterClient) ResolveRateLimitRule(ctx context.Context, lookup rate
 	cfg := &conf.RateLimitRuleConfig{
 		Enabled:          true,
 		Strategy:         rule.GetStrategy(),
-		WindowSeconds:    int(rule.GetWindowSeconds()),
+		WindowSeconds:    config.Duration{Duration: time.Duration(rule.GetWindowSeconds()) * time.Second},
 		MaxRequests:      int(rule.GetMaxRequests()),
 		KeyBy:            rule.GetKeyBy(),
-		ClientTTLSeconds: int(rule.GetClientTtlSeconds()),
+		ClientTTLSeconds: config.Duration{Duration: time.Duration(rule.GetClientTtlSeconds()) * time.Second},
 	}
 	return cfg, true, nil
 }

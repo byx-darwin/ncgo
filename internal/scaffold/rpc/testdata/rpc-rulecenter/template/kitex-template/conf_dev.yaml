@@ -30,7 +30,7 @@ body: |-
   # RPC 调用默认超时配置
   rpc:
     # 下游 RPC 请求默认超时时间，单位秒；建议小于上游 HTTP 超时
-    request_timeout_seconds: 3
+    request_timeout_seconds: "3s"
   # 调用方鉴权配置
   auth:
     caller_allowlist:
@@ -64,10 +64,10 @@ body: |-
     min_conns: 2
     # 单连接最大生命周期，单位秒
     # 运维建议：略小于数据库或代理层连接回收时间，避免同时批量失效
-    max_conn_lifetime_seconds: 1800
+    max_conn_lifetime_seconds: "1800s"
     # 单连接最大空闲时间，单位秒
     # 运维建议：用于及时回收长时间不用的连接，降低空闲连接占用
-    max_conn_idle_time_seconds: 300
+    max_conn_idle_time_seconds: "300s"
     # 连接健康检查周期，单位秒
     # 运维建议：不要过小，否则会增加额外探测开销
-    health_check_period_seconds: 30
+    health_check_period_seconds: "30s"

@@ -11,6 +11,7 @@ body: |-
       "os"
       "strings"
       "sync"
+      "time"
 
       goerror "github.com/byx-darwin/go-tools/go-common/error"
       frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
@@ -52,7 +53,7 @@ body: |-
       Enabled             bool                      `yaml:"enabled"`
       Provider            string                    `yaml:"provider"`
       DataType            string                    `yaml:"data_type"`
-      TimeoutMilliseconds int                       `yaml:"timeout_milliseconds"`
+      TimeoutMilliseconds config.Duration           `yaml:"timeout_milliseconds"`
       FailFast            bool                      `yaml:"fail_fast"`
       AllowEmpty          bool                      `yaml:"allow_empty"`
       Nacos               ConfigCenterNacosConfig   `yaml:"nacos"`
@@ -87,24 +88,24 @@ body: |-
   }
 
   type CORSConfig struct {
-      Enabled          bool     `yaml:"enabled"`
-      AllowOrigins     []string `yaml:"allow_origins"`
-      AllowMethods     []string `yaml:"allow_methods"`
-      AllowHeaders     []string `yaml:"allow_headers"`
-      ExposeHeaders    []string `yaml:"expose_headers"`
-      AllowCredentials bool     `yaml:"allow_credentials"`
-      MaxAgeSeconds    int      `yaml:"max_age_seconds"`
+      Enabled          bool            `yaml:"enabled"`
+      AllowOrigins     []string        `yaml:"allow_origins"`
+      AllowMethods     []string        `yaml:"allow_methods"`
+      AllowHeaders     []string        `yaml:"allow_headers"`
+      ExposeHeaders    []string        `yaml:"expose_headers"`
+      AllowCredentials bool            `yaml:"allow_credentials"`
+      MaxAgeSeconds    config.Duration `yaml:"max_age_seconds"`
   }
 
   {{if .WithDatabase}}
   type DatabaseConfig struct {
-      Enabled                  bool   `yaml:"enabled"`
-      DSN                      string `yaml:"dsn"`
-      MaxConns                 int32  `yaml:"max_conns"`
-      MinConns                 int32  `yaml:"min_conns"`
-      MaxConnLifetimeSeconds   int    `yaml:"max_conn_lifetime_seconds"`
-      MaxConnIdleTimeSeconds   int    `yaml:"max_conn_idle_time_seconds"`
-      HealthCheckPeriodSeconds int    `yaml:"health_check_period_seconds"`
+      Enabled                  bool            `yaml:"enabled"`
+      DSN                      string          `yaml:"dsn"`
+      MaxConns                 int32           `yaml:"max_conns"`
+      MinConns                 int32           `yaml:"min_conns"`
+      MaxConnLifetimeSeconds   config.Duration `yaml:"max_conn_lifetime_seconds"`
+      MaxConnIdleTimeSeconds   config.Duration `yaml:"max_conn_idle_time_seconds"`
+      HealthCheckPeriodSeconds config.Duration `yaml:"health_check_period_seconds"`
   }
   {{end}}
 
@@ -132,21 +133,21 @@ body: |-
   }
 
   type RateLimitSourceConfig struct {
-      Type            string `yaml:"type"`
-      CacheTTLSeconds int    `yaml:"cache_ttl_seconds"`
-      FallbackOnError bool   `yaml:"fallback_on_error"`
+      Type            string          `yaml:"type"`
+      CacheTTLSeconds config.Duration `yaml:"cache_ttl_seconds"`
+      FallbackOnError bool            `yaml:"fallback_on_error"`
   }
 
   type RateLimitGRPCConfig struct {
-      Target              string `yaml:"target"`
-      TimeoutMilliseconds int    `yaml:"timeout_milliseconds"`
-      AuthHeader          string `yaml:"auth_header"`
-      AuthToken           string `yaml:"auth_token"`
-      ServiceName         string `yaml:"service_name"`
+      Target              string          `yaml:"target"`
+      TimeoutMilliseconds config.Duration `yaml:"timeout_milliseconds"`
+      AuthHeader          string          `yaml:"auth_header"`
+      AuthToken           string          `yaml:"auth_token"`
+      ServiceName         string          `yaml:"service_name"`
   }
 
   type RateLimitDatabaseConfig struct {
-      QueryTimeoutMilliseconds int `yaml:"query_timeout_milliseconds"`
+      QueryTimeoutMilliseconds config.Duration `yaml:"query_timeout_milliseconds"`
   }
 
   type RateLimitPhaseConfig struct {
@@ -167,55 +168,55 @@ body: |-
   }
 
   type RateLimitRuleConfig struct {
-      Enabled           bool     `yaml:"enabled"`
-      KeyBy             []string `yaml:"key_by"`
-      Strategy          string   `yaml:"strategy"`
-      WindowSeconds     int      `yaml:"window_seconds"`
-      MaxRequests       int      `yaml:"max_requests"`
-      RequestsPerSecond float64  `yaml:"requests_per_second"`
-      Burst             int      `yaml:"burst"`
-      ClientTTLSeconds  int      `yaml:"client_ttl_seconds"`
+      Enabled           bool            `yaml:"enabled"`
+      KeyBy             []string        `yaml:"key_by"`
+      Strategy          string          `yaml:"strategy"`
+      WindowSeconds     config.Duration `yaml:"window_seconds"`
+      MaxRequests       int             `yaml:"max_requests"`
+      RequestsPerSecond float64         `yaml:"requests_per_second"`
+      Burst             int             `yaml:"burst"`
+      ClientTTLSeconds  config.Duration `yaml:"client_ttl_seconds"`
   }
 
   type RateLimitRedisConfig struct {
-      Addrs                         []string `yaml:"addrs"`
-      ClientName                    string   `yaml:"client_name"`
-      Username                      string   `yaml:"username"`
-      Password                      string   `yaml:"password"`
-      DB                            int      `yaml:"db"`
-      MasterName                    string   `yaml:"master_name"`
-      SentinelUsername              string   `yaml:"sentinel_username"`
-      SentinelPassword              string   `yaml:"sentinel_password"`
-      Protocol                      int      `yaml:"protocol"`
-      MaxRetries                    int      `yaml:"max_retries"`
-      MinRetryBackoffMilliseconds   int      `yaml:"min_retry_backoff_milliseconds"`
-      MaxRetryBackoffMilliseconds   int      `yaml:"max_retry_backoff_milliseconds"`
-      DialTimeoutSeconds            int      `yaml:"dial_timeout_seconds"`
-      DialerRetries                 int      `yaml:"dialer_retries"`
-      DialerRetryTimeoutMilliseconds int     `yaml:"dialer_retry_timeout_milliseconds"`
-      ReadTimeoutSeconds            int      `yaml:"read_timeout_seconds"`
-      WriteTimeoutSeconds           int      `yaml:"write_timeout_seconds"`
-      ContextTimeoutEnabled         bool     `yaml:"context_timeout_enabled"`
-      ReadBufferSize                int      `yaml:"read_buffer_size"`
-      WriteBufferSize               int      `yaml:"write_buffer_size"`
-      PoolFIFO                      bool     `yaml:"pool_fifo"`
-      PoolSize                      int      `yaml:"pool_size"`
-      MinIdleConns                  int      `yaml:"min_idle_conns"`
-      MaxIdleConns                  int      `yaml:"max_idle_conns"`
-      MaxActiveConns                int      `yaml:"max_active_conns"`
-      MaxConcurrentDials            int      `yaml:"max_concurrent_dials"`
-      PoolTimeoutSeconds            int      `yaml:"pool_timeout_seconds"`
-      ConnMaxIdleTimeSeconds        int      `yaml:"conn_max_idle_time_seconds"`
-      ConnMaxLifetimeSeconds        int      `yaml:"conn_max_lifetime_seconds"`
-      ConnMaxLifetimeJitterSeconds  int      `yaml:"conn_max_lifetime_jitter_seconds"`
-      MaxRedirects                  int      `yaml:"max_redirects"`
-      ReadOnly                      bool     `yaml:"read_only"`
-      RouteByLatency                bool     `yaml:"route_by_latency"`
-      RouteRandomly                 bool     `yaml:"route_randomly"`
-      DisableIdentity               bool     `yaml:"disable_identity"`
-      IdentitySuffix                string   `yaml:"identity_suffix"`
-      UnstableResp3                 bool     `yaml:"unstable_resp3"`
-      FailingTimeoutSeconds         int      `yaml:"failing_timeout_seconds"`
+      Addrs                         []string        `yaml:"addrs"`
+      ClientName                    string          `yaml:"client_name"`
+      Username                      string          `yaml:"username"`
+      Password                      string          `yaml:"password"`
+      DB                            int             `yaml:"db"`
+      MasterName                    string          `yaml:"master_name"`
+      SentinelUsername              string          `yaml:"sentinel_username"`
+      SentinelPassword              string          `yaml:"sentinel_password"`
+      Protocol                      int             `yaml:"protocol"`
+      MaxRetries                    int             `yaml:"max_retries"`
+      MinRetryBackoffMilliseconds   config.Duration `yaml:"min_retry_backoff_milliseconds"`
+      MaxRetryBackoffMilliseconds   config.Duration `yaml:"max_retry_backoff_milliseconds"`
+      DialTimeoutSeconds            config.Duration `yaml:"dial_timeout_seconds"`
+      DialerRetries                 int             `yaml:"dialer_retries"`
+      DialerRetryTimeoutMilliseconds config.Duration `yaml:"dialer_retry_timeout_milliseconds"`
+      ReadTimeoutSeconds            config.Duration `yaml:"read_timeout_seconds"`
+      WriteTimeoutSeconds           config.Duration `yaml:"write_timeout_seconds"`
+      ContextTimeoutEnabled         bool            `yaml:"context_timeout_enabled"`
+      ReadBufferSize                int             `yaml:"read_buffer_size"`
+      WriteBufferSize               int             `yaml:"write_buffer_size"`
+      PoolFIFO                      bool            `yaml:"pool_fifo"`
+      PoolSize                      int             `yaml:"pool_size"`
+      MinIdleConns                  int             `yaml:"min_idle_conns"`
+      MaxIdleConns                  int             `yaml:"max_idle_conns"`
+      MaxActiveConns                int             `yaml:"max_active_conns"`
+      MaxConcurrentDials            int             `yaml:"max_concurrent_dials"`
+      PoolTimeoutSeconds            config.Duration `yaml:"pool_timeout_seconds"`
+      ConnMaxIdleTimeSeconds        config.Duration `yaml:"conn_max_idle_time_seconds"`
+      ConnMaxLifetimeSeconds        config.Duration `yaml:"conn_max_lifetime_seconds"`
+      ConnMaxLifetimeJitterSeconds  config.Duration `yaml:"conn_max_lifetime_jitter_seconds"`
+      MaxRedirects                  int             `yaml:"max_redirects"`
+      ReadOnly                      bool            `yaml:"read_only"`
+      RouteByLatency                bool            `yaml:"route_by_latency"`
+      RouteRandomly                 bool            `yaml:"route_randomly"`
+      DisableIdentity               bool            `yaml:"disable_identity"`
+      IdentitySuffix                string          `yaml:"identity_suffix"`
+      UnstableResp3                 bool            `yaml:"unstable_resp3"`
+      FailingTimeoutSeconds         config.Duration `yaml:"failing_timeout_seconds"`
   }
 
   type RedisConfig = RateLimitRedisConfig
@@ -231,7 +232,7 @@ body: |-
       Header        string               `yaml:"header"`
       AppKeyHeader  string               `yaml:"app_key_header"`
       KeyPrefix     string               `yaml:"key_prefix"`
-      TTLSeconds    int                  `yaml:"ttl_seconds"`
+      TTLSeconds    config.Duration      `yaml:"ttl_seconds"`
       MaxBodyBytes  int                  `yaml:"max_body_bytes"`
       Methods       []string             `yaml:"methods"`
       SkipPaths     []string             `yaml:"skip_paths"`
@@ -252,7 +253,7 @@ body: |-
       HeaderNonce         string              `yaml:"header_nonce"`
       HeaderSignature     string              `yaml:"header_signature"`
       StaticSecret        string              `yaml:"static_secret"`
-      MaxClockSkewSeconds int64               `yaml:"max_clock_skew_seconds"`
+      MaxClockSkewSeconds config.Duration     `yaml:"max_clock_skew_seconds"`
       Nonce               SignatureNonceConfig `yaml:"nonce"`
   }
 
@@ -261,18 +262,18 @@ body: |-
       Backend    string               `yaml:"backend"`
       FailOpen   bool                 `yaml:"fail_open"`
       KeyPrefix  string               `yaml:"key_prefix"`
-      TTLSeconds int                  `yaml:"ttl_seconds"`
+      TTLSeconds config.Duration      `yaml:"ttl_seconds"`
       Memory     MemoryCacheConfig    `yaml:"memory"`
       Redis      RateLimitRedisConfig `yaml:"redis"`
   }
 
   type TokenConfig struct {
-      Enabled        bool   `yaml:"enabled"`
-      Header         string `yaml:"header"`
-      Issuer         string `yaml:"issuer"`
-      SigningKey     string `yaml:"signing_key"`
-      BufferSeconds  int64  `yaml:"buffer_seconds"`
-      ExpiresSeconds int64  `yaml:"expires_seconds"`
+      Enabled        bool            `yaml:"enabled"`
+      Header         string          `yaml:"header"`
+      Issuer         string          `yaml:"issuer"`
+      SigningKey     string          `yaml:"signing_key"`
+      BufferSeconds  config.Duration `yaml:"buffer_seconds"`
+      ExpiresSeconds config.Duration `yaml:"expires_seconds"`
   }
 
   type LoggingConfig struct {
@@ -426,7 +427,7 @@ body: |-
           Debug: Env() != "prod",
           ConfigCenter: ConfigCenterConfig{
               DataType:            "yaml",
-              TimeoutMilliseconds: 2000,
+              TimeoutMilliseconds: config.Duration{Duration: 2000 * time.Millisecond},
               Nacos: ConfigCenterNacosConfig{
                   GroupName: "DEFAULT_GROUP",
               },
@@ -439,9 +440,9 @@ body: |-
               Enabled:                  false,
               MaxConns:                 20,
               MinConns:                 2,
-              MaxConnLifetimeSeconds:   1800,
-              MaxConnIdleTimeSeconds:   300,
-              HealthCheckPeriodSeconds: 30,
+              MaxConnLifetimeSeconds:   config.Duration{Duration: 1800 * time.Second},
+              MaxConnIdleTimeSeconds:   config.Duration{Duration: 300 * time.Second},
+              HealthCheckPeriodSeconds: config.Duration{Duration: 30 * time.Second},
           },
           {{end}}
           Redis: defaultRedisConfig(),
@@ -463,20 +464,20 @@ body: |-
               AllowMethods:  []string{"GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"},
               AllowHeaders:  []string{"Content-Type", "Authorization", "X-Authorization", "X-Request-ID", "X-App-Key", "X-Timestamp", "X-Nonce", "X-Signature", "X-Idempotency-Key"},
               ExposeHeaders: []string{"X-Request-ID"},
-              MaxAgeSeconds: 600,
+              MaxAgeSeconds: config.Duration{Duration: 600 * time.Second},
           },
           RateLimit: RateLimitConfig{
               Source: RateLimitSourceConfig{
                   Type:            "config",
-                  CacheTTLSeconds: 60,
+                  CacheTTLSeconds: config.Duration{Duration: 60 * time.Second},
                   FallbackOnError: true,
               },
               GRPC: RateLimitGRPCConfig{
-                  TimeoutMilliseconds: 200,
+                  TimeoutMilliseconds: config.Duration{Duration: 200 * time.Millisecond},
                   AuthHeader:          "Authorization",
               },
               Database: RateLimitDatabaseConfig{
-                  QueryTimeoutMilliseconds: 200,
+                  QueryTimeoutMilliseconds: config.Duration{Duration: 200 * time.Millisecond},
               },
               Backend:      "memory",
               KeyPrefix:    "rate_limit",
@@ -489,9 +490,9 @@ body: |-
                       Enabled:          true,
                       KeyBy:            []string{"ak_path", "ip"},
                       Strategy:         "fixed_window",
-                      WindowSeconds:    60,
+                      WindowSeconds:    config.Duration{Duration: 60 * time.Second},
                       MaxRequests:      100,
-                      ClientTTLSeconds: 300,
+                      ClientTTLSeconds: config.Duration{Duration: 300 * time.Second},
                   },
               },
               PostAuth: RateLimitPhaseConfig{
@@ -499,9 +500,9 @@ body: |-
                       Enabled:          true,
                       KeyBy:            []string{"ak_user_uuid", "user_uuid", "ak"},
                       Strategy:         "fixed_window",
-                      WindowSeconds:    60,
+                      WindowSeconds:    config.Duration{Duration: 60 * time.Second},
                       MaxRequests:      50,
-                      ClientTTLSeconds: 300,
+                      ClientTTLSeconds: config.Duration{Duration: 300 * time.Second},
                   },
               },
           },
@@ -510,7 +511,7 @@ body: |-
               Header:       "X-Idempotency-Key",
               AppKeyHeader: "X-App-Key",
               KeyPrefix:    "idempotency",
-              TTLSeconds:   86400,
+              TTLSeconds:   config.Duration{Duration: 86400 * time.Second},
               MaxBodyBytes: 1048576,
               Memory:       MemoryCacheConfig{MaxEntries: 100000},
               Methods:      []string{"POST", "PUT", "PATCH", "DELETE"},
@@ -523,18 +524,18 @@ body: |-
                   HeaderTimestamp:     "X-Timestamp",
                   HeaderNonce:         "X-Nonce",
                   HeaderSignature:     "X-Signature",
-                  MaxClockSkewSeconds: 300,
+                  MaxClockSkewSeconds: config.Duration{Duration: 300 * time.Second},
                   Nonce: SignatureNonceConfig{
                       Backend:    "memory",
                       KeyPrefix:  "signature_nonce",
-                      TTLSeconds: 300,
+                      TTLSeconds: config.Duration{Duration: 300 * time.Second},
                       Memory:     MemoryCacheConfig{MaxEntries: 100000},
                   },
               },
               Token: TokenConfig{
                   Header:         "X-Authorization",
-                  BufferSeconds:  300,
-                  ExpiresSeconds: 7200,
+                  BufferSeconds:  config.Duration{Duration: 300 * time.Second},
+                  ExpiresSeconds: config.Duration{Duration: 7200 * time.Second},
               },
           },
           Logging: LoggingConfig{
@@ -590,23 +591,23 @@ body: |-
           Addrs:                          []string{"127.0.0.1:6379"},
           Protocol:                       3,
           MaxRetries:                     3,
-          MinRetryBackoffMilliseconds:    8,
-          MaxRetryBackoffMilliseconds:    512,
-          DialTimeoutSeconds:             5,
+          MinRetryBackoffMilliseconds:    config.Duration{Duration: 8 * time.Millisecond},
+          MaxRetryBackoffMilliseconds:    config.Duration{Duration: 512 * time.Millisecond},
+          DialTimeoutSeconds:             config.Duration{Duration: 5 * time.Second},
           DialerRetries:                  5,
-          DialerRetryTimeoutMilliseconds: 100,
-          ReadTimeoutSeconds:             3,
-          WriteTimeoutSeconds:            3,
+          DialerRetryTimeoutMilliseconds: config.Duration{Duration: 100 * time.Millisecond},
+          ReadTimeoutSeconds:             config.Duration{Duration: 3 * time.Second},
+          WriteTimeoutSeconds:            config.Duration{Duration: 3 * time.Second},
           ContextTimeoutEnabled:          true,
           ReadBufferSize:                 32768,
           WriteBufferSize:                32768,
           PoolSize:                       10,
           MinIdleConns:                   2,
-          PoolTimeoutSeconds:             4,
-          ConnMaxIdleTimeSeconds:         300,
-          ConnMaxLifetimeSeconds:         1800,
+          PoolTimeoutSeconds:             config.Duration{Duration: 4 * time.Second},
+          ConnMaxIdleTimeSeconds:         config.Duration{Duration: 300 * time.Second},
+          ConnMaxLifetimeSeconds:         config.Duration{Duration: 1800 * time.Second},
           MaxRedirects:                   3,
-          FailingTimeoutSeconds:          15,
+          FailingTimeoutSeconds:          config.Duration{Duration: 15 * time.Second},
       }
   }
 
@@ -658,25 +659,25 @@ body: |-
       if primary.MaxRetries == 0 {
           primary.MaxRetries = fallback.MaxRetries
       }
-      if primary.MinRetryBackoffMilliseconds == 0 {
+      if primary.MinRetryBackoffMilliseconds.Duration == 0 {
           primary.MinRetryBackoffMilliseconds = fallback.MinRetryBackoffMilliseconds
       }
-      if primary.MaxRetryBackoffMilliseconds == 0 {
+      if primary.MaxRetryBackoffMilliseconds.Duration == 0 {
           primary.MaxRetryBackoffMilliseconds = fallback.MaxRetryBackoffMilliseconds
       }
-      if primary.DialTimeoutSeconds == 0 {
+      if primary.DialTimeoutSeconds.Duration == 0 {
           primary.DialTimeoutSeconds = fallback.DialTimeoutSeconds
       }
       if primary.DialerRetries == 0 {
           primary.DialerRetries = fallback.DialerRetries
       }
-      if primary.DialerRetryTimeoutMilliseconds == 0 {
+      if primary.DialerRetryTimeoutMilliseconds.Duration == 0 {
           primary.DialerRetryTimeoutMilliseconds = fallback.DialerRetryTimeoutMilliseconds
       }
-      if primary.ReadTimeoutSeconds == 0 {
+      if primary.ReadTimeoutSeconds.Duration == 0 {
           primary.ReadTimeoutSeconds = fallback.ReadTimeoutSeconds
       }
-      if primary.WriteTimeoutSeconds == 0 {
+      if primary.WriteTimeoutSeconds.Duration == 0 {
           primary.WriteTimeoutSeconds = fallback.WriteTimeoutSeconds
       }
       if !primary.ContextTimeoutEnabled {
@@ -706,16 +707,16 @@ body: |-
       if primary.MaxConcurrentDials == 0 {
           primary.MaxConcurrentDials = fallback.MaxConcurrentDials
       }
-      if primary.PoolTimeoutSeconds == 0 {
+      if primary.PoolTimeoutSeconds.Duration == 0 {
           primary.PoolTimeoutSeconds = fallback.PoolTimeoutSeconds
       }
-      if primary.ConnMaxIdleTimeSeconds == 0 {
+      if primary.ConnMaxIdleTimeSeconds.Duration == 0 {
           primary.ConnMaxIdleTimeSeconds = fallback.ConnMaxIdleTimeSeconds
       }
-      if primary.ConnMaxLifetimeSeconds == 0 {
+      if primary.ConnMaxLifetimeSeconds.Duration == 0 {
           primary.ConnMaxLifetimeSeconds = fallback.ConnMaxLifetimeSeconds
       }
-      if primary.ConnMaxLifetimeJitterSeconds == 0 {
+      if primary.ConnMaxLifetimeJitterSeconds.Duration == 0 {
           primary.ConnMaxLifetimeJitterSeconds = fallback.ConnMaxLifetimeJitterSeconds
       }
       if primary.MaxRedirects == 0 {
@@ -739,7 +740,7 @@ body: |-
       if !primary.UnstableResp3 {
           primary.UnstableResp3 = fallback.UnstableResp3
       }
-      if primary.FailingTimeoutSeconds == 0 {
+      if primary.FailingTimeoutSeconds.Duration == 0 {
           primary.FailingTimeoutSeconds = fallback.FailingTimeoutSeconds
       }
       return primary
@@ -761,7 +762,7 @@ body: |-
           if c.Database.DSN == "" {
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("database.dsn is empty")
           }
-          if c.Database.MaxConns < 0 || c.Database.MinConns < 0 || c.Database.MaxConnLifetimeSeconds < 0 || c.Database.MaxConnIdleTimeSeconds < 0 || c.Database.HealthCheckPeriodSeconds < 0 {
+          if c.Database.MaxConns < 0 || c.Database.MinConns < 0 || c.Database.MaxConnLifetimeSeconds.Duration < 0 || c.Database.MaxConnIdleTimeSeconds.Duration < 0 || c.Database.HealthCheckPeriodSeconds.Duration < 0 {
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("database pool settings must not be negative")
           }
       }
@@ -792,7 +793,7 @@ body: |-
           if c.Auth.Signature.Nonce.Backend == "memory" && c.Auth.Signature.Nonce.Memory.MaxEntries < 0 {
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("auth.signature.nonce.memory.max_entries must not be negative")
           }
-          if c.Auth.Signature.Nonce.TTLSeconds < 0 {
+          if c.Auth.Signature.Nonce.TTLSeconds.Duration < 0 {
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("auth.signature.nonce.ttl_seconds must not be negative")
           }
       }
@@ -808,10 +809,10 @@ body: |-
           default:
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("rate_limit.source.type must be config, grpc, or database")
           }
-          if c.RateLimit.Source.Type == "grpc" && c.RateLimit.GRPC.TimeoutMilliseconds <= 0 {
+          if c.RateLimit.Source.Type == "grpc" && c.RateLimit.GRPC.TimeoutMilliseconds.Duration <= 0 {
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("rate_limit.grpc.timeout_milliseconds must be positive")
           }
-          if c.RateLimit.Source.Type == "database" && c.RateLimit.Database.QueryTimeoutMilliseconds <= 0 {
+          if c.RateLimit.Source.Type == "database" && c.RateLimit.Database.QueryTimeoutMilliseconds.Duration <= 0 {
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("rate_limit.database.query_timeout_milliseconds must be positive")
           }
           switch c.RateLimit.Backend {
@@ -847,7 +848,7 @@ body: |-
           if c.Idempotency.Backend == "memory" && c.Idempotency.Memory.MaxEntries < 0 {
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("idempotency.memory.max_entries must not be negative")
           }
-          if c.Idempotency.TTLSeconds < 0 {
+          if c.Idempotency.TTLSeconds.Duration < 0 {
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("idempotency.ttl_seconds must not be negative")
           }
           if c.Idempotency.MaxBodyBytes < 0 {
@@ -953,10 +954,10 @@ body: |-
       if len(rule.KeyBy) == 0 {
           return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New(name + ".key_by must not be empty")
       }
-      if rule.WindowSeconds <= 0 && rule.MaxRequests <= 0 && rule.RequestsPerSecond <= 0 {
+      if rule.WindowSeconds.Duration <= 0 && rule.MaxRequests <= 0 && rule.RequestsPerSecond <= 0 {
           return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New(name + " must specify window_seconds/max_requests or requests_per_second")
       }
-      if rule.ClientTTLSeconds < 0 {
+      if rule.ClientTTLSeconds.Duration < 0 {
           return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New(name + ".client_ttl_seconds must not be negative")
       }
       return nil

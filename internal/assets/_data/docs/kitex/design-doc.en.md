@@ -157,6 +157,11 @@ always a `BizStatusError`.
   non-negative timeouts, the `caller_allowlist` invariants
   (`header` set; `allowed_callers` non-empty unless `allow_missing`),
   and database pool settings non-negative when `Database.Enabled`.
+- Duration-typed fields on `Config` (for example `rpc.request_timeout_seconds`,
+  `database.health_check_period_seconds`, `rate_limit.rule.window_seconds`)
+  use `config.Duration` from `go-framework/config`. In `conf/dev/conf.yaml`
+  these keys are written as duration strings such as `"3s"` or `"30s"`
+  (parsed by `time.ParseDuration`); bare integers are no longer accepted.
 
 ### 3.2 RPC Error Mapping (`internal/pkg/rpcerror`)
 
