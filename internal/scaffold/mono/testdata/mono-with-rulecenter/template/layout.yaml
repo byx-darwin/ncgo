@@ -5094,7 +5094,8 @@ layouts:
 
   - path: internal/base/data/data.go
     delims: ["", ""]
-    body: ""
+    body: |-
+      package data
 
   - path: internal/base/data/tx.go
     delims: ["", ""]

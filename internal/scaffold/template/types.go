@@ -7,6 +7,7 @@ type TemplateFile struct {
 	Path           string         `yaml:"path"`
 	UpdateBehavior UpdateBehavior `yaml:"update_behavior"`
 	LoopService    bool           `yaml:"loop_service,omitempty"`
+	Condition      string         `yaml:"condition,omitempty"` // e.g. "WithDatabase"; empty means always apply
 	Body           string         `yaml:"body"`
 }
 

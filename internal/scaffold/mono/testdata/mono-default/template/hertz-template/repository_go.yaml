@@ -7,7 +7,6 @@ update_behavior:
 loop_service: true
 condition: WithDatabase
 body: |-
-  {{ if .WithDatabase -}}
   {{ $svc := exportName .ServiceName -}}
   package {{ToLower .ServiceName}}repo
 
@@ -77,4 +76,3 @@ body: |-
       committed = true
       return nil
   }
-  {{ end -}}

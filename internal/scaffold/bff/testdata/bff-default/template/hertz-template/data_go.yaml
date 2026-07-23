@@ -1,26 +1,31 @@
 # Hertz custom template — base/data.go
-# Generates core infrastructure layer with pgxpool.
+# Generates core infrastructure layer.
+# Database (pgxpool/sqlc) code is conditional on WithDatabase;
+# shared helpers (Redis) are always present.
 # Wire up via samber/do in internal/base/server/server.go.
 path: internal/base/data/data.go
 update_behavior:
   type: cover
-condition: WithDatabase
 body: |-
-  {{if .WithDatabase}}
   package data
 
   import (
-      "context"
       "time"
+  {{if .WithDatabase}}
+      "context"
 
       goerror "github.com/byx-darwin/go-tools/go-common/error"
       frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
       "github.com/jackc/pgx/v5/pgxpool"
+  {{end}}
       "github.com/redis/go-redis/v9"
 
       "{{.Module}}/internal/base/conf"
+  {{if .WithDatabase}}
       "{{.Module}}/internal/db/gen"
+  {{end}}
   )
+  {{if .WithDatabase}}
 
   // Data holds shared infrastructure clients.
   // Add optional clients (Redis / Kafka / ES / ClickHouse) by copying files
@@ -109,6 +114,7 @@ body: |-
       pgCfg.HealthCheckPeriod = time.Duration(cfg.HealthCheckPeriodSeconds) * time.Second
       return pgCfg, nil
   }
+  {{end}}
 
   // RedisUniversalOptions converts conf.RateLimitRedisConfig to redis.UniversalOptions.
   // Filled by `ncgo add infra redis`; placeholder ensures compilation.
@@ -152,4 +158,3 @@ body: |-
           FailingTimeoutSeconds:        cfg.FailingTimeoutSeconds,
       }
   }
-  {{end -}}

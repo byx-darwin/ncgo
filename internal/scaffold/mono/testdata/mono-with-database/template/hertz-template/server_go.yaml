@@ -10,17 +10,19 @@ body: |-
   import (
       "context"
       "log"
+  {{if .WithDatabase}}
       "time"
 
       "github.com/samber/do"
+  {{end}}
 
       hertzframework "github.com/byx-darwin/go-tools/go-framework/hertz"
 
       "{{.Module}}/internal/base/conf"
-      {{if .WithDatabase}}
+  {{if .WithDatabase}}
       "{{.Module}}/internal/base/data"
       "{{.Module}}/internal/repository"
-      {{end}}
+  {{end}}
       "{{.Module}}/internal/pkg/middleware"
       "{{.Module}}/internal/pkg/response"
   )

@@ -74,9 +74,31 @@ func readTemplateYAML(path string) (*TemplateFile, error) {
 	return &tpl, nil
 }
 
+// conditionMet evaluates a template condition string against opts.
+// An empty condition always returns true.
+func conditionMet(cond string, opts ApplyOptions) bool {
+	switch cond {
+	case "":
+		return true
+	case "WithDatabase":
+		return opts.WithDatabase
+	default:
+		return true // unknown conditions are permissive
+	}
+}
+
 func applySingle(root string, tpl *TemplateFile, opts ApplyOptions, result *ApplyResult) error {
+	// Skip the entire template when its condition is not met.
+	if !conditionMet(tpl.Condition, opts) {
+		result.Skipped = append(result.Skipped, tpl.Path)
+		return nil
+	}
+
 	// If loop_service is true, generate one file per proto service.
-	if tpl.LoopService && len(opts.Services) > 0 {
+	// When no services were parsed, skip entirely — falling through to
+	// the non-loop path would render with an empty ServiceName, producing
+	// broken Go files (e.g. "package " with no name).
+	if tpl.LoopService {
 		for _, si := range opts.Services {
 			if err := applyForService(root, tpl, opts, si, result); err != nil {
 				return err
