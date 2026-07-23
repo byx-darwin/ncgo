@@ -14,9 +14,10 @@ body: |-
       "sync"
       "time"
 
+      goerror "github.com/byx-darwin/go-tools/go-common/error"
       "github.com/byx-darwin/go-tools/go-framework/config"
       kitexconfig "github.com/byx-darwin/go-tools/go-framework/config/kitex"
-      "github.com/samber/oops"
+      frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
   )
 
   var (
@@ -163,7 +164,7 @@ body: |-
           if os.IsNotExist(err) && !fromEnv {
               return cfg, nil
           }
-          return nil, oops.In("config").Code(10308).Public("config_invalid").With("path", path).Wrap(err)
+          return nil, goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").With("path", path).Wrap(err)
       }
       *cfg = *loaded
       if err := cfg.Validate(); err != nil {
@@ -230,41 +231,41 @@ body: |-
 
   func (c *Config) Validate() error {
       if c.Server.Registry.Name == "" {
-          return oops.In("config").Code(10308).Public("config_invalid").New("server.registry.name is empty")
+          return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("server.registry.name is empty")
       }
       if c.Server.RPC.Port == "" {
-          return oops.In("config").Code(10308).Public("config_invalid").New("server.rpc.port is empty")
+          return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("server.rpc.port is empty")
       }
       if c.Server.Timeout.ReadWriteTimeout <= 0 || c.Server.Timeout.ExitWaitTimeout <= 0 || c.RPC.RequestTimeoutSeconds < 0 {
-          return oops.In("config").Code(10308).Public("config_invalid").New("timeout values must be positive")
+          return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("timeout values must be positive")
       }
       if c.Auth.CallerAllowlist.Enabled {
           if c.Auth.CallerAllowlist.Header == "" {
-              return oops.In("config").Code(10308).Public("config_invalid").New("auth.caller_allowlist.header is empty")
+              return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("auth.caller_allowlist.header is empty")
           }
           if !c.Auth.CallerAllowlist.AllowMissing && len(c.Auth.CallerAllowlist.AllowedCallers) == 0 {
-              return oops.In("config").Code(10308).Public("config_invalid").New("auth.caller_allowlist.allowed_callers is empty")
+              return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("auth.caller_allowlist.allowed_callers is empty")
           }
       }
       if c.Database.Enabled {
           if c.Database.DSN == "" {
-              return oops.In("config").Code(10308).Public("config_invalid").New("database.dsn is empty")
+              return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("database.dsn is empty")
           }
           if c.Database.MaxConns < 0 || c.Database.MinConns < 0 || c.Database.MaxConnLifetimeSeconds < 0 || c.Database.MaxConnIdleTimeSeconds < 0 || c.Database.HealthCheckPeriodSeconds < 0 {
-              return oops.In("config").Code(10308).Public("config_invalid").New("database pool settings must not be negative")
+              return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("database pool settings must not be negative")
           }
       }
       if c.RateLimit.Enabled {
           if c.RateLimit.Source.Type != "database" && c.RateLimit.Source.Type != "grpc" {
-              return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.source.type must be database or grpc")
+              return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("rate_limit.source.type must be database or grpc")
           }
           if c.RateLimit.Source.Type == "grpc" && c.RateLimit.GRPC.Target == "" {
-              return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.grpc.target is empty")
+              return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("rate_limit.grpc.target is empty")
           }
           switch c.RateLimit.Backend {
           case "memory", "redis":
           default:
-              return oops.In("config").Code(10308).Public("config_invalid").New("rate_limit.backend must be memory or redis")
+              return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("rate_limit.backend must be memory or redis")
           }
       }
       return nil

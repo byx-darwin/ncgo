@@ -13,12 +13,13 @@ body: |-
       "time"
 
       "github.com/bytedance/gopkg/cloud/metainfo"
+      goerror "github.com/byx-darwin/go-tools/go-common/error"
+      frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
       kitexclient "github.com/cloudwego/kitex/client"
       "github.com/cloudwego/kitex/pkg/endpoint"
       "github.com/cloudwego/kitex/pkg/klog"
       "github.com/cloudwego/kitex/pkg/retry"
       "github.com/cloudwego/kitex/pkg/transmeta"
-      "github.com/samber/oops"
 
       svc "{{.ServiceInfo.ImportPath}}/{{ToLower .ServiceInfo.ServiceName}}"
   )
@@ -103,7 +104,7 @@ body: |-
       rpcClient, err := svc.NewClient(cfg.ServiceName, options...)
       if err != nil {
           klog.CtxErrorf(ctx, "%s client connect failed: %v", cfg.ServiceName, err)
-          return nil, oops.In("kitex.client").Code(10301).Public("rpc_failed").With("service", cfg.ServiceName).Wrap(err)
+          return nil, goerror.In("kitex.client").Code(frameworkerror.CodeRPCUnavailable).Public("rpc_failed").With("service", cfg.ServiceName).Wrap(err)
       }
       klog.CtxDebugf(ctx, "%s client connected", cfg.ServiceName)
       return rpcClient, nil
@@ -119,10 +120,10 @@ body: |-
 
   func (c Config) Validate() error {
       if c.ServiceName == "" {
-          return oops.In("kitex.client").Code(10308).Public("config_invalid").New("client service_name is empty")
+          return goerror.In("kitex.client").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("client service_name is empty")
       }
       if c.RPCTimeoutSeconds < 0 || c.ConnectTimeoutMilliseconds < 0 {
-          return oops.In("kitex.client").Code(10308).Public("config_invalid").New("client timeout settings must not be negative")
+          return goerror.In("kitex.client").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("client timeout settings must not be negative")
       }
       if err := c.Retry.Validate(); err != nil {
           return err
@@ -148,27 +149,27 @@ body: |-
           return nil
       }
       if c.MaxRetryTimes <= 0 || c.MaxRetryTimes > 5 {
-          return oops.In("kitex.client").Code(10308).Public("config_invalid").New("retry max_retry_times must be between 1 and 5")
+          return goerror.In("kitex.client").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("retry max_retry_times must be between 1 and 5")
       }
       if c.MaxDurationMilliseconds < 0 {
-          return oops.In("kitex.client").Code(10308).Public("config_invalid").New("retry max_duration_milliseconds must not be negative")
+          return goerror.In("kitex.client").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("retry max_duration_milliseconds must not be negative")
       }
       if c.CircuitBreakerErrorRate < 0 || c.CircuitBreakerErrorRate > 0.3 {
-          return oops.In("kitex.client").Code(10308).Public("config_invalid").New("retry circuit_breaker_error_rate must be between 0 and 0.3")
+          return goerror.In("kitex.client").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("retry circuit_breaker_error_rate must be between 0 and 0.3")
       }
       switch c.Backoff {
       case "", "none":
           return nil
       case "fixed":
           if c.FixedBackoffMilliseconds <= 0 {
-              return oops.In("kitex.client").Code(10308).Public("config_invalid").New("retry fixed_backoff_milliseconds must be positive")
+              return goerror.In("kitex.client").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("retry fixed_backoff_milliseconds must be positive")
           }
       case "random":
           if c.RandomBackoffMinMilliseconds < 0 || c.RandomBackoffMaxMilliseconds <= c.RandomBackoffMinMilliseconds {
-              return oops.In("kitex.client").Code(10308).Public("config_invalid").New("retry random backoff range is invalid")
+              return goerror.In("kitex.client").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("retry random backoff range is invalid")
           }
       default:
-          return oops.In("kitex.client").Code(10308).Public("config_invalid").New("retry backoff must be one of: none, fixed, random")
+          return goerror.In("kitex.client").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("retry backoff must be one of: none, fixed, random")
       }
       return nil
   }

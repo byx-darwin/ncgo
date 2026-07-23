@@ -13,9 +13,10 @@ body: |-
   import (
       "context"
 
+      goerror "github.com/byx-darwin/go-tools/go-common/error"
+      frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
       "github.com/jackc/pgx/v5"
       "github.com/jackc/pgx/v5/pgxpool"
-      "github.com/samber/oops"
 
       "{{.Module}}/internal/db/gen"
   )
@@ -46,10 +47,10 @@ body: |-
   func (r *Repo) WithTx(ctx context.Context, fn func(*Repo) error) (err error) {
       tx, err := r.pool.BeginTx(ctx, pgx.TxOptions{})
       if err != nil {
-          return oops.
+          return goerror.
               In("{{.ServiceInfo.ServiceName | ToLower}}.repository").
               Tags("database", "postgres", "transaction").
-              Code(10000).
+              Code(frameworkerror.CodeSystem).
               Public("database transaction failed").
               Wrapf(err, "begin transaction")
       }
@@ -68,18 +69,18 @@ body: |-
       }()
       txRepo := &Repo{q: r.q.WithTx(tx), pool: r.pool}
       if err := fn(txRepo); err != nil {
-          return oops.
+          return goerror.
               In("{{.ServiceInfo.ServiceName | ToLower}}.repository").
               Tags("database", "postgres", "transaction").
-              Code(10000).
+              Code(frameworkerror.CodeSystem).
               Public("database transaction failed").
               Wrapf(err, "transaction callback")
       }
       if err := tx.Commit(ctx); err != nil {
-          return oops.
+          return goerror.
               In("{{.ServiceInfo.ServiceName | ToLower}}.repository").
               Tags("database", "postgres", "transaction").
-              Code(10000).
+              Code(frameworkerror.CodeSystem).
               Public("database transaction failed").
               Wrapf(err, "commit transaction")
       }

@@ -13,7 +13,7 @@ body: |-
   import (
       "context"
 
-      "github.com/samber/oops"
+      goerror "github.com/byx-darwin/go-tools/go-common/error"
       {{.ServiceInfo.PkgRefName}} "{{.ServiceInfo.ImportPath}}"
   )
   {{end}}
@@ -46,7 +46,10 @@ body: |-
       _ = ctx
       {{range .Args}}_ = {{LowerFirst .Name}}
       {{end}}
-    return nil, oops.
+      // Placeholder code 10010 ("not implemented"): it intentionally shares its
+      // value with frameworkerror.CodeRPCUnavailable; replace with a
+      // domain-specific error code once this method is implemented.
+    return nil, goerror.
           In("{{$.ServiceInfo.ServiceName | ToLower}}.usecase").
         Code(10010).
         Public("not_implemented").
