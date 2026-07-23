@@ -10,7 +10,6 @@ body: |-
   package data
 
   import (
-      "time"
   {{if .WithDatabase}}
       "context"
 
@@ -109,9 +108,9 @@ body: |-
       }
       pgCfg.MaxConns = cfg.MaxConns
       pgCfg.MinConns = cfg.MinConns
-      pgCfg.MaxConnLifetime = time.Duration(cfg.MaxConnLifetimeSeconds) * time.Second
-      pgCfg.MaxConnIdleTime = time.Duration(cfg.MaxConnIdleTimeSeconds) * time.Second
-      pgCfg.HealthCheckPeriod = time.Duration(cfg.HealthCheckPeriodSeconds) * time.Second
+      pgCfg.MaxConnLifetime = cfg.MaxConnLifetimeSeconds.Duration
+      pgCfg.MaxConnIdleTime = cfg.MaxConnIdleTimeSeconds.Duration
+      pgCfg.HealthCheckPeriod = cfg.HealthCheckPeriodSeconds.Duration
       return pgCfg, nil
   }
   {{end}}
@@ -130,11 +129,11 @@ body: |-
           SentinelPassword:             cfg.SentinelPassword,
           Protocol:                     cfg.Protocol,
           MaxRetries:                   cfg.MaxRetries,
-          MinRetryBackoff:              time.Duration(cfg.MinRetryBackoffMilliseconds) * time.Millisecond,
-          MaxRetryBackoff:              time.Duration(cfg.MaxRetryBackoffMilliseconds) * time.Millisecond,
-          DialTimeout:                  time.Duration(cfg.DialTimeoutSeconds) * time.Second,
-          ReadTimeout:                  time.Duration(cfg.ReadTimeoutSeconds) * time.Second,
-          WriteTimeout:                 time.Duration(cfg.WriteTimeoutSeconds) * time.Second,
+          MinRetryBackoff:              cfg.MinRetryBackoffMilliseconds.Duration,
+          MaxRetryBackoff:              cfg.MaxRetryBackoffMilliseconds.Duration,
+          DialTimeout:                  cfg.DialTimeoutSeconds.Duration,
+          ReadTimeout:                  cfg.ReadTimeoutSeconds.Duration,
+          WriteTimeout:                 cfg.WriteTimeoutSeconds.Duration,
           ContextTimeoutEnabled:        cfg.ContextTimeoutEnabled,
           ReadBufferSize:               cfg.ReadBufferSize,
           WriteBufferSize:              cfg.WriteBufferSize,
@@ -144,10 +143,10 @@ body: |-
           MaxIdleConns:                 cfg.MaxIdleConns,
           MaxActiveConns:               cfg.MaxActiveConns,
           MaxConcurrentDials:           cfg.MaxConcurrentDials,
-          PoolTimeout:                  time.Duration(cfg.PoolTimeoutSeconds) * time.Second,
-          ConnMaxIdleTime:              time.Duration(cfg.ConnMaxIdleTimeSeconds) * time.Second,
-          ConnMaxLifetime:              time.Duration(cfg.ConnMaxLifetimeSeconds) * time.Second,
-          ConnMaxLifetimeJitter:        time.Duration(cfg.ConnMaxLifetimeJitterSeconds) * time.Second,
+          PoolTimeout:                  cfg.PoolTimeoutSeconds.Duration,
+          ConnMaxIdleTime:              cfg.ConnMaxIdleTimeSeconds.Duration,
+          ConnMaxLifetime:              cfg.ConnMaxLifetimeSeconds.Duration,
+          ConnMaxLifetimeJitter:        cfg.ConnMaxLifetimeJitterSeconds.Duration,
           MaxRedirects:                 cfg.MaxRedirects,
           ReadOnly:                     cfg.ReadOnly,
           RouteByLatency:               cfg.RouteByLatency,
@@ -155,6 +154,6 @@ body: |-
           DisableIdentity:              cfg.DisableIdentity,
           IdentitySuffix:               cfg.IdentitySuffix,
           UnstableResp3:                cfg.UnstableResp3,
-          FailingTimeoutSeconds:        cfg.FailingTimeoutSeconds,
+          FailingTimeoutSeconds:        int(cfg.FailingTimeoutSeconds.Seconds()),
       }
   }

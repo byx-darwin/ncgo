@@ -28,11 +28,11 @@ body: |-
     min_conns: 2
     # 单连接最大生命周期，单位秒
     # 运维建议：略小于数据库或代理层连接回收时间，避免同时批量失效
-    max_conn_lifetime_seconds: 1800
+    max_conn_lifetime_seconds: "1800s"
     # 单连接最大空闲时间，单位秒
-    max_conn_idle_time_seconds: 300
+    max_conn_idle_time_seconds: "300s"
     # 连接健康检查周期，单位秒
-    health_check_period_seconds: 30
+    health_check_period_seconds: "30s"
   # ncgo:add-infra:start redis
   # Redis 连接配置：作为共享默认值供 rate_limit / idempotency / signature nonce 复用
   # 如需给某个模块单独走另一套 Redis，可在对应模块的 redis 字段内覆盖
@@ -48,13 +48,13 @@ body: |-
     sentinel_username: ""
     sentinel_password: ""
     max_retries: 3
-    min_retry_backoff_milliseconds: 8
-    max_retry_backoff_milliseconds: 512
-    dial_timeout_seconds: 5
+    min_retry_backoff_milliseconds: "8ms"
+    max_retry_backoff_milliseconds: "512ms"
+    dial_timeout_seconds: "5s"
     dialer_retries: 5
-    dialer_retry_timeout_milliseconds: 100
-    read_timeout_seconds: 3
-    write_timeout_seconds: 3
+    dialer_retry_timeout_milliseconds: "100ms"
+    read_timeout_seconds: "3s"
+    write_timeout_seconds: "3s"
     context_timeout_enabled: true
     read_buffer_size: 32768
     write_buffer_size: 32768
@@ -64,10 +64,10 @@ body: |-
     max_idle_conns: 0
     max_active_conns: 0
     max_concurrent_dials: 0
-    pool_timeout_seconds: 4
-    conn_max_idle_time_seconds: 300
-    conn_max_lifetime_seconds: 1800
-    conn_max_lifetime_jitter_seconds: 0
+    pool_timeout_seconds: "4s"
+    conn_max_idle_time_seconds: "300s"
+    conn_max_lifetime_seconds: "1800s"
+    conn_max_lifetime_jitter_seconds: "0s"
     max_redirects: 3
     read_only: false
     route_by_latency: false
@@ -76,7 +76,7 @@ body: |-
     identity_suffix: ""
     unstable_resp3: false
     protocol: 3
-    failing_timeout_seconds: 15
+    failing_timeout_seconds: "15s"
   # ncgo:add-infra:end redis
   log:
     level: "info"
