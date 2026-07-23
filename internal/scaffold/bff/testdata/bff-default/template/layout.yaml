@@ -1847,7 +1847,7 @@ layouts:
           "github.com/cloudwego/hertz/pkg/app"
           "github.com/redis/go-redis/v9"
               "github.com/samber/hot"
-          "github.com/samber/oops"
+          goerror "github.com/byx-darwin/go-tools/go-common/error"
 
           "{{.GoModule}}/internal/base/conf"
           "{{.GoModule}}/internal/pkg/response"
@@ -1878,7 +1878,7 @@ layouts:
           _ = ctx
           _ = appKey
           if r.SecretValue == "" {
-              return "", oops.In("signature").Code(response.CodeConfigInvalid).Public(response.MsgFromCode(response.CodeConfigInvalid)).New("signature secret is empty")
+              return "", goerror.In("signature").Code(response.CodeConfigInvalid).Public(response.MsgFromCode(response.CodeConfigInvalid)).New("signature secret is empty")
           }
           return r.SecretValue, nil
       }
@@ -2163,7 +2163,7 @@ layouts:
 
           "github.com/cloudwego/hertz/pkg/app"
           "github.com/golang-jwt/jwt/v5"
-          "github.com/samber/oops"
+          goerror "github.com/byx-darwin/go-tools/go-common/error"
 
           "{{.GoModule}}/internal/base/conf"
           "{{.GoModule}}/internal/pkg/response"
@@ -2222,7 +2222,7 @@ layouts:
       func (v JWTVerifier) VerifyToken(ctx context.Context, tokenString string) (*Claims, error) {
           _ = ctx
           if v.Config.SigningKey == "" {
-              return nil, oops.In("token").Code(response.CodeConfigInvalid).Public(response.MsgFromCode(response.CodeConfigInvalid)).New("token signing key is empty")
+              return nil, goerror.In("token").Code(response.CodeConfigInvalid).Public(response.MsgFromCode(response.CodeConfigInvalid)).New("token signing key is empty")
           }
           claims := &Claims{}
           options := make([]jwt.ParserOption, 0, 1)
@@ -2231,21 +2231,21 @@ layouts:
           }
           token, err := jwt.ParseWithClaims(tokenString, claims, func(token *jwt.Token) (any, error) {
               if _, ok := token.Method.(*jwt.SigningMethodHMAC); !ok {
-                  return nil, oops.In("token").Code(response.CodeTokenInvalid).Public(response.MsgFromCode(response.CodeTokenInvalid)).New("invalid token signing method")
+                  return nil, goerror.In("token").Code(response.CodeTokenInvalid).Public(response.MsgFromCode(response.CodeTokenInvalid)).New("invalid token signing method")
               }
               return []byte(v.Config.SigningKey), nil
           }, options...)
           if err != nil {
               if errors.Is(err, jwt.ErrTokenExpired) {
-                  return nil, oops.In("token").Code(response.CodeTokenExpired).Public(response.MsgFromCode(response.CodeTokenExpired)).Wrap(err)
+                  return nil, goerror.In("token").Code(response.CodeTokenExpired).Public(response.MsgFromCode(response.CodeTokenExpired)).Wrap(err)
               }
               if errors.Is(err, jwt.ErrTokenInvalidClaims) || errors.Is(err, jwt.ErrTokenNotValidYet) {
-                  return nil, oops.In("token").Code(response.CodeClaimsInvalid).Public(response.MsgFromCode(response.CodeClaimsInvalid)).Wrap(err)
+                  return nil, goerror.In("token").Code(response.CodeClaimsInvalid).Public(response.MsgFromCode(response.CodeClaimsInvalid)).Wrap(err)
               }
-              return nil, oops.In("token").Code(response.CodeTokenInvalid).Public(response.MsgFromCode(response.CodeTokenInvalid)).Wrap(err)
+              return nil, goerror.In("token").Code(response.CodeTokenInvalid).Public(response.MsgFromCode(response.CodeTokenInvalid)).Wrap(err)
           }
           if token == nil || !token.Valid {
-              return nil, oops.In("token").Code(response.CodeTokenInvalid).Public(response.MsgFromCode(response.CodeTokenInvalid)).New("token is invalid")
+              return nil, goerror.In("token").Code(response.CodeTokenInvalid).Public(response.MsgFromCode(response.CodeTokenInvalid)).New("token is invalid")
           }
           return claims, nil
       }
