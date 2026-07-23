@@ -74,9 +74,44 @@ Deferred optionals remain documented but intentionally not implemented yet:
 | Infra | Optional drop-in Go files under `internal/base/...` |
 | AI context | `AGENTS.md`, `CLAUDE.md`, `.claude/generated/project-context.md`, `.cursor/rules/ncgo.mdc` |
 
+### What generated projects build on (go-tools v0.1.0)
+
+Generated Hertz/Kitex projects are a thin business layer on top of
+[go-tools](https://github.com/byx-darwin/go-tools) v0.1.0. The generated
+`go.mod` declares `go 1.26.5` and requires `go-common v0.1.0` +
+`go-framework v0.1.0` (`go-middleware v0.1.0` is added by `go mod tidy` when
+`WithDatabase=true`).
+
+| Concern | go-tools module |
+| --- | --- |
+| HTTP responses | `go-framework/hertz` `Responder` (`RespondFrom(c).Success` / `.Error`) |
+| Configuration | `go-framework/config` (+ `config/hertz`, `config/kitex`) |
+| Logging | `go-common/log` |
+| Error codes | re-exports the framework codes from `go-framework/error` |
+| Database | `go-middleware/db` (when `WithDatabase=true`) |
+| Kitex RPC errors | `go-framework/kitex/rpcerror` |
+
+**Error codes.** Errors are built with `goerror.In/Code` from `go-common/error`
+(it wraps `samber/oops`; do not construct errors with `samber/oops` directly).
+Framework code constants come from `go-framework/error` and are re-exported by
+the generated `internal/pkg/errcode` / `internal/pkg/rpcerror` packages:
+`CodeSystem=10000`, `CodeParamInvalid=10001`, `CodeAuthFailed=10002`,
+`CodeConfigInvalid=10004`, `CodeRPCUnavailable=10010`, `CodeRPCTimeout=10011`.
+
+Code segments: Framework `10000–10499`, Middleware `20000–20699`, Auth
+`40000–40099`, Project `40100–59999`. **Business-defined codes must be
+`>= 40100`** (`goerror.ProjectCodeMin`).
+
+> **Behavior note:** business codes (`>= 40100`) fall back to **HTTP 200** via
+> `goerror.HTTPStatus` — go-tools treats them as "business error, RPC call
+> succeeded". Register fine-grained HTTP statuses with
+> `goerror.RegisterHTTPStatuses` when you need non-200 responses.
+
 ## Requirements
 
-- Go `1.25+`
+- Go `1.25+` to build and run the `ncgo` CLI itself. **Generated projects
+  require Go `1.26.5`** because they build on go-tools v0.1.0 (their `go.mod`
+  declares `go 1.26.5` and the service `Dockerfile` uses `golang:1.26.5`).
 - `hz >= v0.9.7` when generating Hertz services (auto-installed on demand)
 - `kitex >= v0.16.1` when generating Kitex services (auto-installed on demand)
 - Hertz templates' `make swagger` target requires `protoc` and
@@ -357,7 +392,7 @@ It does not install the agent, rewrite startup code, or add SDK dependencies.
 `observability_logging` generates `internal/base/logging/logging.go` plus a
 framework adapter (`hertz.go` or `kitex.go`). The MVP supports `slog`,
 console/file/both/none, `lumberjack` rotation with gzip compression, log
-categories, `samber/oops` structured error extraction, and
+categories, `go-common/error` (`goerror`) structured error extraction, and
 request/trace/release/canary fields.
 
 The default Hertz/Kitex templates only include commented logging wiring anchors,

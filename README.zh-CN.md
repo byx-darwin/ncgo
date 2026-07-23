@@ -68,9 +68,28 @@ v0.5 MVP 已完成：
 | Infra | `internal/base/...` 下的可选 Go 文件 |
 | AI 上下文 | `AGENTS.md`、`CLAUDE.md`、`.claude/generated/project-context.md`、`.cursor/rules/ncgo.mdc` |
 
+### 生成项目构建在 go-tools v0.1.0 之上
+
+生成的 Hertz / Kitex 项目是 [go-tools](https://github.com/byx-darwin/go-tools) v0.1.0 之上的薄业务层。生成的 `go.mod` 声明 `go 1.26.5`，并 require `go-common v0.1.0` + `go-framework v0.1.0`（`go-middleware v0.1.0` 在 `WithDatabase=true` 时由 `go mod tidy` 补齐）。
+
+| 关注点 | go-tools 模块 |
+| --- | --- |
+| HTTP 响应 | `go-framework/hertz` 的 `Responder`（`RespondFrom(c).Success` / `.Error`） |
+| 配置 | `go-framework/config`（+ `config/hertz`、`config/kitex`） |
+| 日志 | `go-common/log` |
+| 错误码 | re-export `go-framework/error` 的框架码 |
+| 数据库 | `go-middleware/db`（`WithDatabase=true` 时） |
+| Kitex RPC 错误 | `go-framework/kitex/rpcerror` |
+
+**错误码。** 错误用 `go-common/error` 的 `goerror.In/Code` 构造（它内部包装 `samber/oops`；不要再直接 `import "samber/oops"` 构造错误）。框架码常量来自 `go-framework/error`，由生成的 `internal/pkg/errcode` / `internal/pkg/rpcerror` 包 re-export：`CodeSystem=10000`、`CodeParamInvalid=10001`、`CodeAuthFailed=10002`、`CodeConfigInvalid=10004`、`CodeRPCUnavailable=10010`、`CodeRPCTimeout=10011`。
+
+码段划分：Framework `10000–10499`、Middleware `20000–20699`、Auth `40000–40099`、Project `40100–59999`。**业务自定义码必须 `>= 40100`**（`goerror.ProjectCodeMin`）。
+
+> **行为说明：** 业务码（`>= 40100`）经 `goerror.HTTPStatus` 兜底返回 **HTTP 200**——go-tools 将其视为「业务错误、RPC 调用成功」。如需非 200 响应，请用 `goerror.RegisterHTTPStatuses` 注册细粒度 HTTP 状态。
+
 ## 要求
 
-- Go `1.25+`
+- 构建并运行 `ncgo` CLI 本身需要 Go `1.25+`。**生成的项目需要 Go `1.26.5`**，因为它们构建在 go-tools v0.1.0 之上（生成的 `go.mod` 声明 `go 1.26.5`，服务 `Dockerfile` 使用 `golang:1.26.5`）。
 - 生成 Hertz 服务时需要 `hz >= v0.9.7`（缺失时自动安装）
 - 生成 Kitex 服务时需要 `kitex >= v0.16.1`（缺失时自动安装）
 - Hertz 模板中的 `make swagger` 需要本机已安装 `protoc`，并且 `protoc-gen-http-swagger` 位于 `PATH`
@@ -304,7 +323,7 @@ common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_otel`（
 
 `observability_otel` 现在面向 Alibaba LoongSuite Go Agent。它会生成 `internal/base/observability/otel.go`，提供 `OTEL_*` 环境变量辅助，并打印安装 `otel` CLI、使用 `otel go build` 的 next steps；不会自动安装 agent、修改启动代码或增加 SDK 依赖。
 
-`observability_logging` 会生成 `internal/base/logging/logging.go`，并按服务类型额外生成 `hertz.go` 或 `kitex.go`。MVP 支持 `slog`、console/file/both/none、`lumberjack` rotate + gzip、日志分类、`samber/oops` 结构化解析，以及 request/trace/release/canary 字段。
+`observability_logging` 会生成 `internal/base/logging/logging.go`，并按服务类型额外生成 `hertz.go` 或 `kitex.go`。MVP 支持 `slog`、console/file/both/none、`lumberjack` rotate + gzip、日志分类、`go-common/error`（`goerror`）结构化解析，以及 request/trace/release/canary 字段。
 
 默认 Hertz / Kitex 模板只预留 logging wiring 注释，不会在未启用 optional 时 import `internal/base/logging`；也可以使用 opt-in 的 `--wire` 自动替换默认 access/recovery 日志。加 `--dry-run` 可预览 optional 文件、manifest 更新和 wiring 目标，不会修改文件。接入示例见 `specs/007-observability-logging.zh-CN.md`。
 
