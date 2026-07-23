@@ -126,6 +126,17 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if r == nil {
 		r = exec.NewDefault()
 	}
+	// Pre-write the kitex go.mod (go 1.26.5 + pinned go-tools v0.1.0) before
+	// the generator runs so the version is template-locked; the kitex tool
+	// reuses the existing go.mod and skips its own `go mod init`. Hertz
+	// handles this via its layout.yaml go.mod entry instead. Not done in the
+	// NoGenerate path, where the user runs `go mod init` themselves (see
+	// nextSteps).
+	if defaultKind(opts.Kind) == manifest.KindKitex {
+		if err := writeKitexGoMod(dir, opts.Module); err != nil {
+			return res, err
+		}
+	}
 	if _, err := runGenerator(ctx, r, dir, opts, idl); err != nil {
 		return res, err
 	}

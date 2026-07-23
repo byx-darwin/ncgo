@@ -84,7 +84,12 @@ layouts:
     body: |-
       module {{.GoModule}}
 
-      go 1.22
+      go 1.26.5
+
+      require (
+          github.com/byx-darwin/go-tools/go-common v0.1.0
+          github.com/byx-darwin/go-tools/go-framework v0.1.0
+      )
 
   # ── main.go ──────────────────────────────────────────────────────────────
   - path: main.go

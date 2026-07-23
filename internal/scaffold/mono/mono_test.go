@@ -387,6 +387,13 @@ func TestPostGenerateResultNextStepsSafePrefixExecutes(t *testing.T) {
 			}
 
 			executeSafeNextSteps(t, res.Dir, res.NextSteps)
+
+			// After the real kitex tool + `go mod tidy`, the go.mod must still
+			// pin go 1.26.5 + the go-tools v0.1.0 requires (the
+			// template-locked versions written before generation).
+			if tc.kind == manifest.KindKitex {
+				assertGoModPinsGoTools(t, res.Dir)
+			}
 		})
 	}
 }
@@ -1671,4 +1678,27 @@ func readHertzAllTemplateContent(t *testing.T, templateDir string) string {
 		buf.WriteString("\n")
 	}
 	return buf.String()
+}
+
+// assertGoModPinsGoTools verifies the generated kitex go.mod locks the Go
+// toolchain version and the go-tools dependencies to the template-pinned
+// versions. It matches substrings rather than exact lines because `go mod
+// tidy` may fold the requires into a require (...) block alongside the kitex
+// runtime deps.
+func assertGoModPinsGoTools(t *testing.T, dir string) {
+	t.Helper()
+	b, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		t.Fatalf("read generated go.mod: %v", err)
+	}
+	body := string(b)
+	for _, want := range []string{
+		"go 1.26.5",
+		"github.com/byx-darwin/go-tools/go-common v0.1.0",
+		"github.com/byx-darwin/go-tools/go-framework v0.1.0",
+	} {
+		if !strings.Contains(body, want) {
+			t.Fatalf("generated go.mod missing %q (version not template-pinned):\n%s", want, body)
+		}
+	}
 }
