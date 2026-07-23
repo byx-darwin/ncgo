@@ -45,7 +45,7 @@ body: |-
   }
 
   type RPCConfig struct {
-      RequestTimeoutSeconds int `json:"request_timeout_seconds" yaml:"request_timeout_seconds"`
+      RequestTimeoutSeconds config.Duration `json:"request_timeout_seconds" yaml:"request_timeout_seconds"`
   }
 
   type AuthConfig struct {
@@ -60,13 +60,13 @@ body: |-
   }
 
   type DatabaseConfig struct {
-      Enabled                  bool   `json:"enabled" yaml:"enabled"`
-      DSN                      string `json:"dsn" yaml:"dsn"`
-      MaxConns                 int32  `json:"max_conns" yaml:"max_conns"`
-      MinConns                 int32  `json:"min_conns" yaml:"min_conns"`
-      MaxConnLifetimeSeconds   int    `json:"max_conn_lifetime_seconds" yaml:"max_conn_lifetime_seconds"`
-      MaxConnIdleTimeSeconds   int    `json:"max_conn_idle_time_seconds" yaml:"max_conn_idle_time_seconds"`
-      HealthCheckPeriodSeconds int    `json:"health_check_period_seconds" yaml:"health_check_period_seconds"`
+      Enabled                  bool            `json:"enabled" yaml:"enabled"`
+      DSN                      string          `json:"dsn" yaml:"dsn"`
+      MaxConns                 int32           `json:"max_conns" yaml:"max_conns"`
+      MinConns                 int32           `json:"min_conns" yaml:"min_conns"`
+      MaxConnLifetimeSeconds   config.Duration `json:"max_conn_lifetime_seconds" yaml:"max_conn_lifetime_seconds"`
+      MaxConnIdleTimeSeconds   config.Duration `json:"max_conn_idle_time_seconds" yaml:"max_conn_idle_time_seconds"`
+      HealthCheckPeriodSeconds config.Duration `json:"health_check_period_seconds" yaml:"health_check_period_seconds"`
   }
 
   type RateLimitConfig struct {
@@ -86,21 +86,21 @@ body: |-
   }
 
   type RateLimitSourceConfig struct {
-      Type            string `json:"type" yaml:"type"`
-      CacheTTLSeconds int    `json:"cache_ttl_seconds" yaml:"cache_ttl_seconds"`
-      FallbackOnError bool   `json:"fallback_on_error" yaml:"fallback_on_error"`
+      Type            string          `json:"type" yaml:"type"`
+      CacheTTLSeconds config.Duration `json:"cache_ttl_seconds" yaml:"cache_ttl_seconds"`
+      FallbackOnError bool            `json:"fallback_on_error" yaml:"fallback_on_error"`
   }
 
   type RateLimitGRPCConfig struct {
-      Target              string `json:"target" yaml:"target"`
-      TimeoutMilliseconds int    `json:"timeout_milliseconds" yaml:"timeout_milliseconds"`
-      AuthHeader          string `json:"auth_header" yaml:"auth_header"`
-      AuthToken           string `json:"auth_token" yaml:"auth_token"`
-      ServiceName         string `json:"service_name" yaml:"service_name"`
+      Target              string          `json:"target" yaml:"target"`
+      TimeoutMilliseconds config.Duration `json:"timeout_milliseconds" yaml:"timeout_milliseconds"`
+      AuthHeader          string          `json:"auth_header" yaml:"auth_header"`
+      AuthToken           string          `json:"auth_token" yaml:"auth_token"`
+      ServiceName         string          `json:"service_name" yaml:"service_name"`
   }
 
   type RateLimitDatabaseConfig struct {
-      QueryTimeoutMilliseconds int `json:"query_timeout_milliseconds" yaml:"query_timeout_milliseconds"`
+      QueryTimeoutMilliseconds config.Duration `json:"query_timeout_milliseconds" yaml:"query_timeout_milliseconds"`
   }
 
   type RateLimitPhaseConfig struct {
@@ -120,14 +120,14 @@ body: |-
   }
 
   type RateLimitRuleConfig struct {
-      Enabled           bool     `json:"enabled" yaml:"enabled"`
-      KeyBy             []string `json:"key_by" yaml:"key_by"`
-      Strategy          string   `json:"strategy" yaml:"strategy"`
-      WindowSeconds     int      `json:"window_seconds" yaml:"window_seconds"`
-      MaxRequests       int      `json:"max_requests" yaml:"max_requests"`
-      RequestsPerSecond float64  `json:"requests_per_second" yaml:"requests_per_second"`
-      Burst             int      `json:"burst" yaml:"burst"`
-      ClientTTLSeconds  int      `json:"client_ttl_seconds" yaml:"client_ttl_seconds"`
+      Enabled           bool            `json:"enabled" yaml:"enabled"`
+      KeyBy             []string        `json:"key_by" yaml:"key_by"`
+      Strategy          string          `json:"strategy" yaml:"strategy"`
+      WindowSeconds     config.Duration `json:"window_seconds" yaml:"window_seconds"`
+      MaxRequests       int             `json:"max_requests" yaml:"max_requests"`
+      RequestsPerSecond float64         `json:"requests_per_second" yaml:"requests_per_second"`
+      Burst             int             `json:"burst" yaml:"burst"`
+      ClientTTLSeconds  config.Duration `json:"client_ttl_seconds" yaml:"client_ttl_seconds"`
   }
 
   type MemoryCacheConfig struct {
@@ -190,21 +190,21 @@ body: |-
                   ExitWaitTimeout:  10 * time.Second,
               },
           },
-          RPC: RPCConfig{RequestTimeoutSeconds: 3},
+          RPC: RPCConfig{RequestTimeoutSeconds: config.Duration{Duration: 3 * time.Second}},
           Auth: AuthConfig{CallerAllowlist: CallerAllowlistConfig{Header: "x-caller-service"}},
           Database: DatabaseConfig{
               Enabled:                  false,
               MaxConns:                 20,
               MinConns:                 2,
-              MaxConnLifetimeSeconds:   1800,
-              MaxConnIdleTimeSeconds:   300,
-              HealthCheckPeriodSeconds: 30,
+              MaxConnLifetimeSeconds:   config.Duration{Duration: 1800 * time.Second},
+              MaxConnIdleTimeSeconds:   config.Duration{Duration: 300 * time.Second},
+              HealthCheckPeriodSeconds: config.Duration{Duration: 30 * time.Second},
           },
           RateLimit: RateLimitConfig{
               Enabled:      false,
-              Source:       RateLimitSourceConfig{Type: "database", CacheTTLSeconds: 60, FallbackOnError: true},
-              GRPC:         RateLimitGRPCConfig{TimeoutMilliseconds: 200, ServiceName: "{{ToLower .ServiceInfo.ServiceName}}", AuthHeader: "Authorization"},
-              Database:     RateLimitDatabaseConfig{QueryTimeoutMilliseconds: 200},
+              Source:       RateLimitSourceConfig{Type: "database", CacheTTLSeconds: config.Duration{Duration: 60 * time.Second}, FallbackOnError: true},
+              GRPC:         RateLimitGRPCConfig{TimeoutMilliseconds: config.Duration{Duration: 200 * time.Millisecond}, ServiceName: "{{ToLower .ServiceInfo.ServiceName}}", AuthHeader: "Authorization"},
+              Database:     RateLimitDatabaseConfig{QueryTimeoutMilliseconds: config.Duration{Duration: 200 * time.Millisecond}},
               Backend:      "memory",
               KeyPrefix:    "{{ToLower .ServiceInfo.ServiceName}}:rate_limit",
               AppKeyHeader: "x-app-key",
@@ -213,7 +213,7 @@ body: |-
                   Enabled: true,
                   DefaultRule: RateLimitRuleConfig{
                       Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window",
-                      WindowSeconds: 60, MaxRequests: 100, ClientTTLSeconds: 300,
+                      WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 100, ClientTTLSeconds: config.Duration{Duration: 300 * time.Second},
                   },
                   Rules: []RateLimitMatchConfig{},
               },
@@ -236,7 +236,7 @@ body: |-
       if c.Server.RPC.Port == "" {
           return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("server.rpc.port is empty")
       }
-      if c.Server.Timeout.ReadWriteTimeout <= 0 || c.Server.Timeout.ExitWaitTimeout <= 0 || c.RPC.RequestTimeoutSeconds < 0 {
+      if c.Server.Timeout.ReadWriteTimeout <= 0 || c.Server.Timeout.ExitWaitTimeout <= 0 || c.RPC.RequestTimeoutSeconds.Duration < 0 {
           return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("timeout values must be positive")
       }
       if c.Auth.CallerAllowlist.Enabled {
@@ -251,7 +251,7 @@ body: |-
           if c.Database.DSN == "" {
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("database.dsn is empty")
           }
-          if c.Database.MaxConns < 0 || c.Database.MinConns < 0 || c.Database.MaxConnLifetimeSeconds < 0 || c.Database.MaxConnIdleTimeSeconds < 0 || c.Database.HealthCheckPeriodSeconds < 0 {
+          if c.Database.MaxConns < 0 || c.Database.MinConns < 0 || c.Database.MaxConnLifetimeSeconds.Duration < 0 || c.Database.MaxConnIdleTimeSeconds.Duration < 0 || c.Database.HealthCheckPeriodSeconds.Duration < 0 {
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("database pool settings must not be negative")
           }
       }
