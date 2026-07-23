@@ -62,7 +62,7 @@ func WriteServiceContainerFiles(dir, kind string) error {
 	if err != nil {
 		return err
 	}
-	dockerfile := fmt.Sprintf(`FROM golang:1.22-alpine AS builder
+	dockerfile := fmt.Sprintf(`FROM golang:1.26.5-alpine AS builder
 WORKDIR /src
 
 ENV CGO_ENABLED=0 GOOS=linux
@@ -431,7 +431,7 @@ func renderVegetaCompose(b *strings.Builder) {
 // vegeta load testing tool. It is only called for Hertz services that have
 // postgres enabled (rate-limit E2E testing).
 func WriteVegetaDockerfile(dir string) error {
-	const content = `FROM golang:1.22-alpine AS builder
+	const content = `FROM golang:1.26.5-alpine AS builder
 ENV GOPROXY=https://goproxy.cn,direct
 RUN CGO_ENABLED=0 go install github.com/tsenart/vegeta/v12@latest
 
