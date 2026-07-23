@@ -17,7 +17,7 @@
 // Required dependencies:
 //
 //  go get github.com/kitex-contrib/registry-etcd
-//  go get github.com/samber/oops
+//  go get github.com/byx-darwin/go-tools/go-common
 
 package registry
 
@@ -25,11 +25,11 @@ import (
 	"net"
 	"time"
 
+	goerror "github.com/byx-darwin/go-tools/go-common/error"
 	"github.com/cloudwego/kitex/pkg/discovery"
 	kitexregistry "github.com/cloudwego/kitex/pkg/registry"
 	etcd "github.com/kitex-contrib/registry-etcd"
 	etcdretry "github.com/kitex-contrib/registry-etcd/retry"
-	"github.com/samber/oops"
 )
 
 type EtcdConfig struct {
@@ -74,7 +74,7 @@ func NewEtcdResolver(cfg EtcdConfig) (discovery.Resolver, error) {
 
 func NewRegistryInfo(cfg RegistryInfoConfig) (*kitexregistry.Info, error) {
 	if cfg.Weight < 0 || cfg.WarmUpSeconds < 0 {
-		return nil, oops.In("kitex.registry").Code("registry_config_invalid").Public("registry configuration is invalid").New("weight and warm_up_seconds must not be negative")
+		return nil, goerror.In("kitex.registry").Code("registry_config_invalid").Public("registry configuration is invalid").New("weight and warm_up_seconds must not be negative")
 	}
 	info := &kitexregistry.Info{Weight: cfg.Weight, Tags: cfg.Tags, WarmUp: seconds(cfg.WarmUpSeconds)}
 	if cfg.PublicAddr == "" {
@@ -82,7 +82,7 @@ func NewRegistryInfo(cfg RegistryInfoConfig) (*kitexregistry.Info, error) {
 	}
 	addr, err := net.ResolveTCPAddr("tcp", cfg.PublicAddr)
 	if err != nil {
-		return nil, oops.In("kitex.registry").Code("registry_config_invalid").Public("registry configuration is invalid").With("public_addr", cfg.PublicAddr).Wrap(err)
+		return nil, goerror.In("kitex.registry").Code("registry_config_invalid").Public("registry configuration is invalid").With("public_addr", cfg.PublicAddr).Wrap(err)
 	}
 	info.Addr = addr
 	info.SkipListenAddr = true
@@ -91,10 +91,10 @@ func NewRegistryInfo(cfg RegistryInfoConfig) (*kitexregistry.Info, error) {
 
 func (c EtcdConfig) Validate() error {
 	if len(c.Endpoints) == 0 {
-		return oops.In("kitex.registry").Code("registry_config_invalid").Public("registry configuration is invalid").New("etcd endpoints is empty")
+		return goerror.In("kitex.registry").Code("registry_config_invalid").Public("registry configuration is invalid").New("etcd endpoints is empty")
 	}
 	if c.DialTimeoutSeconds < 0 {
-		return oops.In("kitex.registry").Code("registry_config_invalid").Public("registry configuration is invalid").New("dial_timeout_seconds must not be negative")
+		return goerror.In("kitex.registry").Code("registry_config_invalid").Public("registry configuration is invalid").New("dial_timeout_seconds must not be negative")
 	}
 	return c.RegistryRetry.Validate()
 }
@@ -104,7 +104,7 @@ func (c EtcdRegistryRetryConfig) Validate() error {
 		return nil
 	}
 	if c.MaxAttemptTimes < 0 || c.ObserveDelaySeconds < 0 || c.RetryDelaySeconds < 0 {
-		return oops.In("kitex.registry").Code("registry_config_invalid").Public("registry configuration is invalid").New("registry retry settings must not be negative")
+		return goerror.In("kitex.registry").Code("registry_config_invalid").Public("registry configuration is invalid").New("registry retry settings must not be negative")
 	}
 	return nil
 }

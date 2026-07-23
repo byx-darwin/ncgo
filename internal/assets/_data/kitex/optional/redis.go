@@ -33,15 +33,15 @@
 // Required dependency:
 //
 //	go get github.com/redis/go-redis/v9
-//	go get github.com/samber/oops
+//	go get github.com/byx-darwin/go-tools/go-common
 
 package data
 
 import (
 	"context"
 
+	goerror "github.com/byx-darwin/go-tools/go-common/error"
 	"github.com/redis/go-redis/v9"
-	"github.com/samber/oops"
 )
 
 // Redis wraps a go-redis UniversalClient (single / cluster / sentinel).
@@ -53,7 +53,7 @@ type Redis struct {
 // validates connectivity with the injected startup context, and returns a cleanup function for samber/do.
 func NewRedis(ctx context.Context, opts *redis.UniversalOptions) (*Redis, func(), error) {
 	if opts == nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("redis").
 			Tags("cache", "redis", "configuration").
 			Code("redis_config_missing").
@@ -63,7 +63,7 @@ func NewRedis(ctx context.Context, opts *redis.UniversalOptions) (*Redis, func()
 	cli := redis.NewUniversalClient(opts)
 	if err := cli.Ping(ctx).Err(); err != nil {
 		_ = cli.Close()
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("redis").
 			Tags("cache", "redis", "connection").
 			Code("redis_ping_failed").

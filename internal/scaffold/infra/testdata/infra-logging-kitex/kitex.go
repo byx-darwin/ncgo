@@ -11,9 +11,9 @@ import (
 	"time"
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
+	goerror "github.com/byx-darwin/go-tools/go-common/error"
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
-	"github.com/samber/oops"
 	oteltrace "go.opentelemetry.io/otel/trace"
 )
 
@@ -63,7 +63,7 @@ func KitexRecovery() endpoint.Middleware {
 		return func(ctx context.Context, req, resp interface{}) (err error) {
 			defer func() {
 				if recovered := recover(); recovered != nil {
-					err = oops.In("kitex.recovery").
+					err = goerror.In("kitex.recovery").
 						Tags("panic", "kitex").
 						Code("panic_recovered").
 						With("panic", fmt.Sprint(recovered)).

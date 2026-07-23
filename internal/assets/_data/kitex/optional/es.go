@@ -35,15 +35,15 @@
 // Required dependency:
 //
 //	go get github.com/elastic/go-elasticsearch/v8
-//	go get github.com/samber/oops
+//	go get github.com/byx-darwin/go-tools/go-common
 
 package data
 
 import (
 	"context"
 
+	goerror "github.com/byx-darwin/go-tools/go-common/error"
 	"github.com/elastic/go-elasticsearch/v8"
-	"github.com/samber/oops"
 )
 
 // ES wraps the official Elasticsearch v8 client.
@@ -55,7 +55,7 @@ type ES struct {
 // and validates connectivity with the injected startup context.
 func NewES(ctx context.Context, cfg elasticsearch.Config) (*ES, func(), error) {
 	if len(cfg.Addresses) == 0 {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("elasticsearch").
 			Tags("search", "elasticsearch", "configuration").
 			Code("elasticsearch_addresses_missing").
@@ -64,7 +64,7 @@ func NewES(ctx context.Context, cfg elasticsearch.Config) (*ES, func(), error) {
 	}
 	cli, err := elasticsearch.NewClient(cfg)
 	if err != nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("elasticsearch").
 			Tags("search", "elasticsearch", "connection").
 			Code("elasticsearch_client_create_failed").
@@ -73,7 +73,7 @@ func NewES(ctx context.Context, cfg elasticsearch.Config) (*ES, func(), error) {
 			Wrapf(err, "elasticsearch.NewClient")
 	}
 	if _, err := cli.Ping(cli.Ping.WithContext(ctx)); err != nil {
-		return nil, nil, oops.
+		return nil, nil, goerror.
 			In("elasticsearch").
 			Tags("search", "elasticsearch", "connection").
 			Code("elasticsearch_ping_failed").

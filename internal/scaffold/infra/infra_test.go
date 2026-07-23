@@ -511,7 +511,7 @@ func TestAddObservabilityLoggingForHertz(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read logging file: %v", err)
 	}
-	for _, want := range []string{"package logging", "type Config struct", "func ErrorAttrs", "lumberjack.Logger", "oops.AsOops"} {
+	for _, want := range []string{"package logging", "type Config struct", "func ErrorAttrs", "lumberjack.Logger", "goerror.AsOopsError"} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("logging template missing %q", want)
 		}
