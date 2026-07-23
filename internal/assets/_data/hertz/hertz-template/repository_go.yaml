@@ -1,7 +1,7 @@
 # Hertz custom template — repository per service
 # Generates internal/repository/{service}/repo.go when WithDatabase is enabled.
 # update_behavior: skip protects user DB logic from overwrites.
-path: /internal/repository/{{ToLower .ServiceName}}/repo.go
+path: internal/repository/{{ToLower .ServiceName}}repo/repo.go
 update_behavior:
   type: skip
 loop_service: true

@@ -11,30 +11,205 @@ body: |-
   package response
 
   import (
+      "context"
+      "sync"
+
+      goerror "github.com/byx-darwin/go-tools/go-common/error"
+      frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
       hertzframework "github.com/byx-darwin/go-tools/go-framework/hertz"
       "github.com/cloudwego/hertz/pkg/app"
+      "github.com/cloudwego/hertz/pkg/protocol/consts"
+  )
+
+  // ── Error codes (scaffold-level, maps to frameworkerror codes) ──
+
+  const (
+      CodeOK                    = 0
+      CodeSystem                = frameworkerror.CodeSystem
+      CodeParamInvalid          = frameworkerror.CodeParamInvalid
+      CodeAuthFailed            = frameworkerror.CodeAuthFailed
+      CodeConfigInvalid         = frameworkerror.CodeConfigInvalid
+      CodeRPCUnavailable        = frameworkerror.CodeRPCUnavailable
+      CodeRPCTimeout            = frameworkerror.CodeRPCTimeout
   )
 
   const (
-      CodeNotImplemented = 10010
+      CodeInternalError         = frameworkerror.CodeSystem
+      CodeRequestBindFailed     = frameworkerror.CodeParamInvalid
+      CodeRequestParamInvalid   = frameworkerror.CodeParamInvalid
+      CodeRequestTimeout        = frameworkerror.CodeRPCTimeout
+
+      CodeUnauthorized          = frameworkerror.CodeAuthFailed
+      CodeSignatureMissing      = frameworkerror.CodeAuthFailed
+      CodeSignatureExpired      = frameworkerror.CodeAuthFailed
+      CodeSignatureInvalid      = frameworkerror.CodeAuthFailed
+      CodeTokenMissing          = frameworkerror.CodeAuthFailed
+      CodeTokenInvalid          = frameworkerror.CodeAuthFailed
+      CodeTokenExpired          = frameworkerror.CodeAuthFailed
+      CodeClaimsInvalid         = frameworkerror.CodeAuthFailed
+      CodeAppKeyInvalid         = frameworkerror.CodeAuthFailed
+      CodeSessionInvalid        = frameworkerror.CodeAuthFailed
+
+      CodeCacheUnavailable      = 10304
+      CodeDatabaseUnavailable   = 10303
+      CodePermissionDenied      = 10108
+      CodeRateLimited           = 10200
+      CodeDuplicateRequest      = 10201
+      CodeReplayRequest         = 10202
+      CodeIdempotencyKeyMissing = 10203
+      CodeIdempotencyConflict   = 10204
+
+      CodeDependencyError       = 10300
+      CodeRPCFailed             = 10301
+      CodeRouteNotFound         = 10008
+      CodeMethodNotAllowed      = 10009
+      CodeNotImplemented        = 10010
   )
+
+  var (
+      registryMu sync.RWMutex
+      registry   = map[int]Definition{}
+  )
+
+  type Definition struct {
+      Code   int
+      Msg    string
+      Status int
+  }
+
+  type ErrBody struct {
+      Code int    `json:"code"`
+      Msg  string `json:"msg"`
+  }
+
+  type Body struct {
+      Code int    `json:"code"`
+      Msg  string `json:"msg"`
+      Data any    `json:"data,omitempty"`
+  }
 
   // NewResponder creates a Responder instance (called by server.Run).
   func NewResponder() *hertzframework.Responder {
       return hertzframework.NewResponder()
   }
 
-  // OK writes a success response using Responder from context.
+  // OK writes a success response using package-level convenience function.
   func OK(c *app.RequestContext, data any) {
-      hertzframework.RespondFrom(c).Success(c, data)
+      hertzframework.Success(c, data)
   }
 
-  // Err writes an error response using Responder from context.
+  // Err writes an error response using package-level convenience function.
   func Err(c *app.RequestContext, err error) {
-      hertzframework.RespondFrom(c).Error(c, c, err, "")
+      hertzframework.Error(context.Background(), c, err, "")
   }
 
   // BindError writes a 400 bind-validation error response.
   func BindError(c *app.RequestContext, err error) {
-      hertzframework.RespondFrom(c).Error(c, c, err, "bind_error")
+      hertzframework.Error(context.Background(), c, err, "bind_error")
+  }
+
+  // ErrorCode writes an error response using the given business code.
+  func ErrorCode(c *app.RequestContext, code int) {
+      hertzframework.Reply(c, StatusFromCode(code), ErrBody{Code: code, Msg: MsgFromCode(code)})
+  }
+
+  // Reply writes an arbitrary response.
+  func Reply(c *app.RequestContext, status int, payload any) {
+      c.JSON(status, payload)
+  }
+
+  // CodeMsg extracts business code and message from an error.
+  func CodeMsg(err error) (int, string) {
+      code, public := goerror.Extract(err)
+      if code == 0 {
+          return CodeInternalError, "internal_error"
+      }
+      return code, public
+  }
+
+  // StatusFromCode returns HTTP status for a known error code.
+  func StatusFromCode(code int) int {
+      switch code {
+      case CodeOK:
+          return consts.StatusOK
+      case CodeRouteNotFound:
+          return consts.StatusNotFound
+      case CodeMethodNotAllowed:
+          return consts.StatusMethodNotAllowed
+      case CodeRateLimited:
+          return consts.StatusTooManyRequests
+      case CodeReplayRequest:
+          return consts.StatusConflict
+      case CodeDuplicateRequest:
+          return consts.StatusConflict
+      case CodeIdempotencyConflict:
+          return consts.StatusConflict
+      case CodeIdempotencyKeyMissing:
+          return consts.StatusBadRequest
+      case frameworkerror.CodeAuthFailed:
+          return consts.StatusForbidden
+      case CodePermissionDenied:
+          return consts.StatusForbidden
+      case CodeCacheUnavailable:
+          return consts.StatusServiceUnavailable
+      default:
+          return consts.StatusInternalServerError
+      }
+  }
+
+  // MsgFromCode returns a default message for a known code.
+  func MsgFromCode(code int) string {
+      switch code {
+      case CodeOK:
+          return "ok"
+      case CodeSystem:
+          return "internal_error"
+      case CodeParamInvalid:
+          return "param_invalid"
+      case CodePermissionDenied:
+          return "permission_denied"
+      case CodeAuthFailed:
+          return "auth_failed"
+      case CodeConfigInvalid:
+          return "config_invalid"
+      case CodeRPCUnavailable:
+          return "rpc_unavailable"
+      case CodeRPCTimeout:
+          return "rpc_timeout"
+      case CodeRouteNotFound:
+          return "route_not_found"
+      case CodeMethodNotAllowed:
+          return "method_not_allowed"
+      case CodeRateLimited:
+          return "rate_limited"
+      case CodeDuplicateRequest:
+          return "duplicate_request"
+      case CodeReplayRequest:
+          return "replay_request"
+      case CodeIdempotencyKeyMissing:
+          return "idempotency_key_missing"
+      case CodeIdempotencyConflict:
+          return "idempotency_conflict"
+      case CodeDependencyError:
+          return "dependency_error"
+      case CodeRPCFailed:
+          return "rpc_failed"
+      case CodeCacheUnavailable:
+          return "cache_unavailable"
+      default:
+          return "internal_error"
+      }
+  }
+
+  // Register adds a business error code definition.
+  func Register(def Definition) {
+      registryMu.Lock()
+      defer registryMu.Unlock()
+      registry[def.Code] = def
+  }
+
+  // MustRegister registers a definition and returns it.
+  func MustRegister(def Definition) Definition {
+      Register(def)
+      return def
   }

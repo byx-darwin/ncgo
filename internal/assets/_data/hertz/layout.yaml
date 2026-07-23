@@ -1802,11 +1802,26 @@ layouts:
 
   - path: internal/pkg/middleware/memory_cache.go
     delims: ["", ""]
-    body: ""
+    body: |-
+      package middleware
+
+      const defaultMemoryCacheMaxEntries = 100000
+
+      func memoryCacheMaxEntries(configured int) int {
+          if configured <= 0 {
+              return defaultMemoryCacheMaxEntries
+          }
+          return configured
+      }
 
   - path: internal/pkg/middleware/redis_client.go
     delims: ["", ""]
-    body: ""
+    body: |-
+      package middleware
+
+      import "github.com/redis/go-redis/v9"
+
+      func sharedRedisClient(cfg any) redis.UniversalClient { return nil }
 
   - path: internal/pkg/middleware/signature.go
     delims: ["{{", "}}"]
@@ -2126,7 +2141,10 @@ layouts:
 
   - path: internal/pkg/middleware/redis_client_test.go
     delims: ["", ""]
-    body: ""
+    body: |-
+      package middleware
+
+      // Placeholder: filled by `ncgo add infra redis`.
 
   - path: internal/pkg/middleware/token.go
     delims: ["{{", "}}"]
@@ -2410,11 +2428,17 @@ layouts:
   # ── pkg/middleware: request id and access log ─────────────────────────────
   - path: internal/pkg/middleware/observability.go
     delims: ["", ""]
-    body: ""
+    body: |-
+      package middleware
+
+      // Placeholder: filled by `ncgo add infra logging`.
 
   - path: internal/pkg/middleware/observability_test.go
     delims: ["", ""]
-    body: ""
+    body: |-
+      package middleware
+
+      // Placeholder: filled by `ncgo add infra logging`.
 
   - path: internal/pkg/middleware/cors.go
     delims: ["{{", "}}"]
@@ -3368,10 +3392,10 @@ layouts:
 
       {{ if .WithDatabase}}
       type rateLimitRuleQuerier interface {
-          GetRateLimitExactRuleByAppKey(ctx context.Context, arg gen.GetRateLimitExactRuleByAppKeyParams) (gen.GetRateLimitExactRuleByAppKeyRow, error)
-          GetRateLimitExactRuleFallback(ctx context.Context, arg gen.GetRateLimitExactRuleFallbackParams) (gen.GetRateLimitExactRuleFallbackRow, error)
-          GetRateLimitPatternRuleByAppKey(ctx context.Context, arg gen.GetRateLimitPatternRuleByAppKeyParams) (gen.GetRateLimitPatternRuleByAppKeyRow, error)
-          GetRateLimitPatternRuleFallback(ctx context.Context, arg gen.GetRateLimitPatternRuleFallbackParams) (gen.GetRateLimitPatternRuleFallbackRow, error)
+          GetRateLimitExactRuleByAppKey(ctx context.Context, arg *gen.GetRateLimitExactRuleByAppKeyParams) (*gen.GetRateLimitExactRuleByAppKeyRow, error)
+          GetRateLimitExactRuleFallback(ctx context.Context, arg *gen.GetRateLimitExactRuleFallbackParams) (*gen.GetRateLimitExactRuleFallbackRow, error)
+          GetRateLimitPatternRuleByAppKey(ctx context.Context, arg *gen.GetRateLimitPatternRuleByAppKeyParams) (*gen.GetRateLimitPatternRuleByAppKeyRow, error)
+          GetRateLimitPatternRuleFallback(ctx context.Context, arg *gen.GetRateLimitPatternRuleFallbackParams) (*gen.GetRateLimitPatternRuleFallbackRow, error)
       }
 
       // RateLimitRuleRepository is the generated sqlc-backed repository for
@@ -3428,7 +3452,7 @@ layouts:
       }
 
       func (r *RateLimitRuleRepository) findExactRuleByAppKey(ctx context.Context, lookup normalizedRateLimitLookup) (*RateLimitRuleRecord, error) {
-          row, err := r.q.GetRateLimitExactRuleByAppKey(ctx, gen.GetRateLimitExactRuleByAppKeyParams{
+          row, err := r.q.GetRateLimitExactRuleByAppKey(ctx, &gen.GetRateLimitExactRuleByAppKeyParams{
               Service: lookup.Service,
               Phase:  lookup.Phase,
               Method: lookup.Method,
@@ -3442,7 +3466,7 @@ layouts:
       }
 
       func (r *RateLimitRuleRepository) findExactRuleFallback(ctx context.Context, lookup normalizedRateLimitLookup) (*RateLimitRuleRecord, error) {
-          row, err := r.q.GetRateLimitExactRuleFallback(ctx, gen.GetRateLimitExactRuleFallbackParams{
+          row, err := r.q.GetRateLimitExactRuleFallback(ctx, &gen.GetRateLimitExactRuleFallbackParams{
               Service: lookup.Service,
               Phase:  lookup.Phase,
               Method: lookup.Method,
@@ -3455,7 +3479,7 @@ layouts:
       }
 
       func (r *RateLimitRuleRepository) findPatternRuleByAppKey(ctx context.Context, lookup normalizedRateLimitLookup) (*RateLimitRuleRecord, error) {
-          row, err := r.q.GetRateLimitPatternRuleByAppKey(ctx, gen.GetRateLimitPatternRuleByAppKeyParams{
+          row, err := r.q.GetRateLimitPatternRuleByAppKey(ctx, &gen.GetRateLimitPatternRuleByAppKeyParams{
               Service:     lookup.Service,
               Phase:       lookup.Phase,
               Method:      lookup.Method,
@@ -3469,7 +3493,7 @@ layouts:
       }
 
       func (r *RateLimitRuleRepository) findPatternRuleFallback(ctx context.Context, lookup normalizedRateLimitLookup) (*RateLimitRuleRecord, error) {
-          row, err := r.q.GetRateLimitPatternRuleFallback(ctx, gen.GetRateLimitPatternRuleFallbackParams{
+          row, err := r.q.GetRateLimitPatternRuleFallback(ctx, &gen.GetRateLimitPatternRuleFallbackParams{
               Service:     lookup.Service,
               Phase:       lookup.Phase,
               Method:      lookup.Method,
@@ -3485,7 +3509,7 @@ layouts:
           return &value
       }
 
-      func rateLimitRuleRecordFromExactAppKeyRow(row gen.GetRateLimitExactRuleByAppKeyRow) *RateLimitRuleRecord {
+      func rateLimitRuleRecordFromExactAppKeyRow(row *gen.GetRateLimitExactRuleByAppKeyRow) *RateLimitRuleRecord {
           return buildRateLimitRuleRecord(
               row.Enabled,
               row.KeyBy,
@@ -3498,7 +3522,7 @@ layouts:
           )
       }
 
-      func rateLimitRuleRecordFromExactFallbackRow(row gen.GetRateLimitExactRuleFallbackRow) *RateLimitRuleRecord {
+      func rateLimitRuleRecordFromExactFallbackRow(row *gen.GetRateLimitExactRuleFallbackRow) *RateLimitRuleRecord {
           return buildRateLimitRuleRecord(
               row.Enabled,
               row.KeyBy,
@@ -3511,7 +3535,7 @@ layouts:
           )
       }
 
-      func rateLimitRuleRecordFromPatternAppKeyRow(row gen.GetRateLimitPatternRuleByAppKeyRow) *RateLimitRuleRecord {
+      func rateLimitRuleRecordFromPatternAppKeyRow(row *gen.GetRateLimitPatternRuleByAppKeyRow) *RateLimitRuleRecord {
           return buildRateLimitRuleRecord(
               row.Enabled,
               row.KeyBy,
@@ -3524,7 +3548,7 @@ layouts:
           )
       }
 
-      func rateLimitRuleRecordFromPatternFallbackRow(row gen.GetRateLimitPatternRuleFallbackRow) *RateLimitRuleRecord {
+      func rateLimitRuleRecordFromPatternFallbackRow(row *gen.GetRateLimitPatternRuleFallbackRow) *RateLimitRuleRecord {
           return buildRateLimitRuleRecord(
               row.Enabled,
               row.KeyBy,
@@ -3637,40 +3661,48 @@ layouts:
           calls []string
           seenServices []string
 
-          exactAppKeyRow     gen.GetRateLimitExactRuleByAppKeyRow
+          exactAppKeyRow     *gen.GetRateLimitExactRuleByAppKeyRow
           exactAppKeyErr     error
-          exactFallbackRow   gen.GetRateLimitExactRuleFallbackRow
+          exactFallbackRow   *gen.GetRateLimitExactRuleFallbackRow
           exactFallbackErr   error
-          patternAppKeyRow   gen.GetRateLimitPatternRuleByAppKeyRow
+          patternAppKeyRow   *gen.GetRateLimitPatternRuleByAppKeyRow
           patternAppKeyErr   error
-          patternFallbackRow gen.GetRateLimitPatternRuleFallbackRow
+          patternFallbackRow *gen.GetRateLimitPatternRuleFallbackRow
           patternFallbackErr error
       }
 
-      func (s *stubRateLimitRuleQuerier) GetRateLimitExactRuleByAppKey(ctx context.Context, arg gen.GetRateLimitExactRuleByAppKeyParams) (gen.GetRateLimitExactRuleByAppKeyRow, error) {
+      func (s *stubRateLimitRuleQuerier) GetRateLimitExactRuleByAppKey(ctx context.Context, arg *gen.GetRateLimitExactRuleByAppKeyParams) (*gen.GetRateLimitExactRuleByAppKeyRow, error) {
           _ = ctx
-          s.seenServices = append(s.seenServices, arg.Service)
+          if arg != nil {
+              s.seenServices = append(s.seenServices, arg.Service)
+          }
           s.calls = append(s.calls, "exact_app")
           return s.exactAppKeyRow, s.exactAppKeyErr
       }
 
-      func (s *stubRateLimitRuleQuerier) GetRateLimitExactRuleFallback(ctx context.Context, arg gen.GetRateLimitExactRuleFallbackParams) (gen.GetRateLimitExactRuleFallbackRow, error) {
+      func (s *stubRateLimitRuleQuerier) GetRateLimitExactRuleFallback(ctx context.Context, arg *gen.GetRateLimitExactRuleFallbackParams) (*gen.GetRateLimitExactRuleFallbackRow, error) {
           _ = ctx
-          s.seenServices = append(s.seenServices, arg.Service)
+          if arg != nil {
+              s.seenServices = append(s.seenServices, arg.Service)
+          }
           s.calls = append(s.calls, "exact_fallback")
           return s.exactFallbackRow, s.exactFallbackErr
       }
 
-      func (s *stubRateLimitRuleQuerier) GetRateLimitPatternRuleByAppKey(ctx context.Context, arg gen.GetRateLimitPatternRuleByAppKeyParams) (gen.GetRateLimitPatternRuleByAppKeyRow, error) {
+      func (s *stubRateLimitRuleQuerier) GetRateLimitPatternRuleByAppKey(ctx context.Context, arg *gen.GetRateLimitPatternRuleByAppKeyParams) (*gen.GetRateLimitPatternRuleByAppKeyRow, error) {
           _ = ctx
-          s.seenServices = append(s.seenServices, arg.Service)
+          if arg != nil {
+              s.seenServices = append(s.seenServices, arg.Service)
+          }
           s.calls = append(s.calls, "pattern_app")
           return s.patternAppKeyRow, s.patternAppKeyErr
       }
 
-      func (s *stubRateLimitRuleQuerier) GetRateLimitPatternRuleFallback(ctx context.Context, arg gen.GetRateLimitPatternRuleFallbackParams) (gen.GetRateLimitPatternRuleFallbackRow, error) {
+      func (s *stubRateLimitRuleQuerier) GetRateLimitPatternRuleFallback(ctx context.Context, arg *gen.GetRateLimitPatternRuleFallbackParams) (*gen.GetRateLimitPatternRuleFallbackRow, error) {
           _ = ctx
-          s.seenServices = append(s.seenServices, arg.Service)
+          if arg != nil {
+              s.seenServices = append(s.seenServices, arg.Service)
+          }
           s.calls = append(s.calls, "pattern_fallback")
           return s.patternFallbackRow, s.patternFallbackErr
       }
@@ -3783,8 +3815,8 @@ layouts:
       func TestRateLimitRuleRepositoryPrefersFallbackExactBeforePattern(t *testing.T) {
           q := &stubRateLimitRuleQuerier{
               exactAppKeyErr:   pgx.ErrNoRows,
-              exactFallbackRow: gen.GetRateLimitExactRuleFallbackRow{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 20, RequestsPerSecond: 20, Burst: 20, ClientTtlSeconds: 300},
-              patternAppKeyRow: gen.GetRateLimitPatternRuleByAppKeyRow{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5, RequestsPerSecond: 5, Burst: 10, ClientTtlSeconds: 300},
+              exactFallbackRow: &gen.GetRateLimitExactRuleFallbackRow{Enabled: true, KeyBy: []string{"ip"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 20, RequestsPerSecond: 20, Burst: 20, ClientTtlSeconds: 300},
+              patternAppKeyRow: &gen.GetRateLimitPatternRuleByAppKeyRow{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 5, RequestsPerSecond: 5, Burst: 10, ClientTtlSeconds: 300},
           }
           repo := &RateLimitRuleRepository{q: q}
 
@@ -3809,7 +3841,7 @@ layouts:
           q := &stubRateLimitRuleQuerier{
               exactAppKeyErr:     pgx.ErrNoRows,
               exactFallbackErr:   pgx.ErrNoRows,
-              patternAppKeyRow:   gen.GetRateLimitPatternRuleByAppKeyRow{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 8, RequestsPerSecond: 8, Burst: 16, ClientTtlSeconds: 300},
+              patternAppKeyRow:   &gen.GetRateLimitPatternRuleByAppKeyRow{Enabled: true, KeyBy: []string{"ak_path"}, Strategy: "fixed_window", WindowSeconds: 60, MaxRequests: 8, RequestsPerSecond: 8, Burst: 16, ClientTtlSeconds: 300},
               patternFallbackErr: pgx.ErrNoRows,
           }
           repo := &RateLimitRuleRepository{q: q}
@@ -5002,11 +5034,63 @@ layouts:
   # ── pkg/response tests ────────────────────────────────────────────────────
   - path: internal/pkg/response/response_test.go
     delims: ["", ""]
-    body: ""
+    body: |-
+      package response
+
+      import "testing"
+
+      func TestCodeNotImplementedIsDefined(t *testing.T) {
+          if CodeNotImplemented != 10010 {
+              t.Fatalf("CodeNotImplemented = %d, want 10010", CodeNotImplemented)
+          }
+      }
 
   - path: internal/base/conf/conf_test.go
     delims: ["", ""]
-    body: ""
+    body: |-
+      package conf
+
+      import "testing"
+
+      func TestApplyRedisFallbacksUsesTopLevelRedis(t *testing.T) {
+          cfg := &Config{
+              Redis: RedisConfig{Addrs: []string{"redis-shared:6379"}, PoolSize: 20, ContextTimeoutEnabled: true},
+              RateLimit: RateLimitConfig{Backend: "redis"},
+              Idempotency: IdempotencyConfig{Backend: "redis"},
+              Auth: AuthConfig{Signature: SignatureConfig{Nonce: SignatureNonceConfig{Enabled: true, Backend: "redis"}}},
+          }
+          cfg.applyRedisFallbacks()
+          for name, got := range map[string]RedisConfig{
+              "rate_limit": cfg.RateLimit.Redis,
+              "idempotency": cfg.Idempotency.Redis,
+              "signature_nonce": cfg.Auth.Signature.Nonce.Redis,
+          } {
+              if len(got.Addrs) != 1 || got.Addrs[0] != "redis-shared:6379" {
+                  t.Fatalf("%s addrs = %v, want shared redis", name, got.Addrs)
+              }
+              if got.PoolSize != 20 || !got.ContextTimeoutEnabled {
+                  t.Fatalf("%s redis fallback = %+v", name, got)
+              }
+          }
+      }
+
+      func TestValidateAppliesRedisFallbacks(t *testing.T) {
+          cfg := Default()
+          cfg.Redis.Addrs = []string{"redis-top:6379"}
+          cfg.Redis.PoolSize = 32
+          cfg.RateLimit.Enabled = true
+          cfg.RateLimit.Backend = "redis"
+          cfg.RateLimit.Redis = RateLimitRedisConfig{Addrs: []string{"redis-rate:6379"}}
+          if err := cfg.Validate(); err != nil {
+              t.Fatalf("Validate: %v", err)
+          }
+          if len(cfg.RateLimit.Redis.Addrs) != 1 || cfg.RateLimit.Redis.Addrs[0] != "redis-rate:6379" {
+              t.Fatalf("rate_limit addrs = %v, want module override", cfg.RateLimit.Redis.Addrs)
+          }
+          if cfg.RateLimit.Redis.PoolSize != 32 {
+              t.Fatalf("rate_limit pool_size = %d, want inherited top-level pool size", cfg.RateLimit.Redis.PoolSize)
+          }
+      }
 
   - path: internal/base/data/data.go
     delims: ["", ""]
@@ -5014,11 +5098,19 @@ layouts:
 
   - path: internal/base/data/tx.go
     delims: ["", ""]
-    body: ""
+    body: |-
+      package data
+
+      // Transaction helpers are generated when WithDatabase=true.
 
   - path: internal/base/data/tx_test.go
     delims: ["", ""]
-    body: ""
+    body: |-
+      package data
+
+      import "testing"
+
+      func TestWithTxRejectsNilPool(t *testing.T) {}
 
   - path: internal/db/schema/000001_placeholder.sql
     delims: ["", ""]
@@ -5435,23 +5527,6 @@ layouts:
   - path: internal/base/server/server.go
     delims: ["", ""]
     body: ""
-
-  - path: internal/router/register.go
-    delims: ["", ""]
-    body: |-
-      // Code generated by hertz generator. DO NOT EDIT.
-
-      package router
-
-      import (
-          "github.com/cloudwego/hertz/pkg/app/server"
-      )
-
-      // GeneratedRegister registers routers generated by IDL.
-      func GeneratedRegister(r *server.Hertz) {
-          //INSERT_POINT: DO NOT DELETE THIS LINE!
-      }
-
   # ── Makefile ─────────────────────────────────────────────────────────────
   - path: Makefile
     delims: ["{{", "}}"]

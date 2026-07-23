@@ -1,5 +1,6 @@
 # Hertz custom template — base/server.go
 # Generates the server entry point using go-framework/hertz.NewHTTPServer.
+# Includes database initialization when WithDatabase is enabled.
 path: internal/base/server/server.go
 update_behavior:
   type: cover
@@ -8,14 +9,20 @@ body: |-
 
   import (
       "context"
+      "log"
+      "time"
+
+      "github.com/samber/do"
 
       hertzframework "github.com/byx-darwin/go-tools/go-framework/hertz"
-      goclog "github.com/byx-darwin/go-tools/go-common/log"
 
       "{{.Module}}/internal/base/conf"
+      {{if .WithDatabase}}
+      "{{.Module}}/internal/base/data"
+      "{{.Module}}/internal/repository"
+      {{end}}
       "{{.Module}}/internal/pkg/middleware"
       "{{.Module}}/internal/pkg/response"
-      "{{.Module}}/internal/router"
   )
 
   func Run() {
@@ -23,9 +30,9 @@ body: |-
 
       // ncgo:wire:logging:init
       ctx := context.Background()
-      h, err := hertzframework.NewHTTPServer(ctx, cfg.Server)
+      h, err := hertzframework.NewHTTPServer(ctx, &cfg.Server)
       if err != nil {
-          goclog.L().Fatal("create server", "error", err)
+          log.Fatalf("create server: %v", err)
       }
 
       // Responder middleware — injects RequestID / Lang / Responder into context
@@ -50,10 +57,39 @@ body: |-
       // }
 
       // ncgo:wire:ddd — Wire DDD layers (data -> repository -> usecase)
-      // TODO: initialize data layer, repositories, and usecases here
+      {{if .WithDatabase}}
+      if cfg.Database.Enabled {
+          injector := do.New()
+
+          startupCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+          defer cancel()
+
+          pgCfg, err := data.NewPostgresConfigFromDatabase(cfg.Database)
+          if err != nil {
+              log.Fatalf("database config: %v", err)
+          }
+
+          pool, err := data.NewPostgres(startupCtx, pgCfg)
+          if err != nil {
+              log.Fatalf("connect database: %v", err)
+          }
+
+          dbData, cleanup, err := data.New(pool)
+          if err != nil {
+              log.Fatalf("init data: %v", err)
+          }
+          defer cleanup()
+
+          do.ProvideValue[context.Context](injector, startupCtx)
+          do.ProvideValue(injector, pool)
+          do.ProvideValue(injector, dbData)
+
+          dbData = do.MustInvoke[*data.Data](injector)
+          repository.NewRateLimitRuleRepository(dbData)
+      }
+      {{end}}
 
       // Register routes
-      router.Register(h)
 
       // Start server
       h.Spin()
