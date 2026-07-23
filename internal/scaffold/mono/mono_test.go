@@ -808,7 +808,7 @@ func TestGenerateHertzTemplateIncludesConfigCenterAndOptionalConfigModels(t *tes
 }
 
 func TestGenerateHertzWithDatabaseRendersTopLevelDatabaseConfig(t *testing.T) {
-	requireTools(t, "hz")
+	requireTools(t, "hz", "protoc")
 
 	opts := baseOpts(t)
 	opts.NoGenerate = false
@@ -1087,6 +1087,9 @@ func TestGenerateHertzCompiles(t *testing.T) {
 	if _, err := exec.LookPath("make"); err != nil {
 		t.Skip("make not found on PATH")
 	}
+	if _, err := exec.LookPath("protoc"); err != nil {
+		t.Skip("protoc not found on PATH")
+	}
 
 	opts := baseOpts(t)
 	opts.NoGenerate = false // use the real exec.Default runner
@@ -1213,7 +1216,7 @@ func TestGenerateHertzCompiles(t *testing.T) {
 }
 
 func TestGenerateHertzWithDatabaseCompiles(t *testing.T) {
-	requireTools(t, "hz", "make", "sqlc")
+	requireTools(t, "hz", "make", "sqlc", "protoc")
 
 	opts := baseOpts(t)
 	opts.NoGenerate = false
@@ -1418,7 +1421,7 @@ func TestGenerateKitexInvokesKitexViaRunner(t *testing.T) {
 }
 
 func TestGenerateKitexCompiles(t *testing.T) {
-	requireTools(t, "kitex", "make", "sqlc")
+	requireTools(t, "kitex", "make", "sqlc", "protoc")
 
 	opts := baseOpts(t)
 	opts.Kind = manifest.KindKitex
@@ -1570,10 +1573,10 @@ type nextStepsSmokeCase struct {
 
 func nextStepsSmokeCases(postGenerate bool) []nextStepsSmokeCase {
 	cases := []nextStepsSmokeCase{
-		{name: "hertz-default", kind: manifest.KindHertz, noGenerate: !postGenerate, reqTools: []string{"hz"}},
-		{name: "hertz-with-db", kind: manifest.KindHertz, withDB: true, noGenerate: !postGenerate, reqTools: []string{"hz", "make", "sqlc"}},
-		{name: "kitex-default", kind: manifest.KindKitex, noGenerate: !postGenerate, reqTools: []string{"kitex", "make", "sqlc"}},
-		{name: "kitex-with-db", kind: manifest.KindKitex, withDB: true, noGenerate: !postGenerate, reqTools: []string{"kitex", "make", "sqlc"}},
+		{name: "hertz-default", kind: manifest.KindHertz, noGenerate: !postGenerate, reqTools: []string{"hz", "protoc"}},
+		{name: "hertz-with-db", kind: manifest.KindHertz, withDB: true, noGenerate: !postGenerate, reqTools: []string{"hz", "make", "sqlc", "protoc"}},
+		{name: "kitex-default", kind: manifest.KindKitex, noGenerate: !postGenerate, reqTools: []string{"kitex", "make", "sqlc", "protoc"}},
+		{name: "kitex-with-db", kind: manifest.KindKitex, withDB: true, noGenerate: !postGenerate, reqTools: []string{"kitex", "make", "sqlc", "protoc"}},
 	}
 	return cases
 }
