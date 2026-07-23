@@ -148,6 +148,11 @@ RPC 请求(TTHeader)
   `caller_allowlist` 不变量(`header` 必填,`allowed_callers` 在
   `allow_missing=false` 时必须非空)、`Database.Enabled` 时连接池参数
   非负。
+- `Config` 中所有时长类字段(例如 `rpc.request_timeout_seconds`、
+  `database.health_check_period_seconds`、`rate_limit.rule.window_seconds`)
+  统一使用 `go-framework/config` 的 `config.Duration`。`conf/dev/conf.yaml`
+  中这些字段以 duration 字符串(如 `"3s"` / `"30s"`)填写,由
+  `time.ParseDuration` 解析;不再接受裸整数。
 
 ### 3.2 RPC 错误映射(`internal/pkg/rpcerror`)
 

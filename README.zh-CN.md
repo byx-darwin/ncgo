@@ -81,6 +81,15 @@ v0.5 MVP 已完成：
 | 数据库 | `go-middleware/db`（`WithDatabase=true` 时） |
 | Kitex RPC 错误 | `go-framework/kitex/rpcerror` |
 
+**配置中的 duration 字段。** 生成项目 `conf.Config` 里所有时长类字段（例如
+`rpc.request_timeout_seconds`、`database.health_check_period_seconds`、
+`rate_limit.rule.window_seconds`、`redis.dial_timeout_seconds`）统一使用
+`go-framework/config` 的 `config.Duration`（内部包装 `time.Duration`）。
+`conf/dev/conf.yaml` 中这些字段以 duration 字符串形式填写，例如 `"30s"`、
+`"5m"`、`"8ms"`，由 `time.ParseDuration` 解析；这些字段不再接受裸整数，
+但字段名 / YAML key 保持不变。Redis 超时选项同样采用该格式（R-A 铺垫，
+客户端接线为后续 PR）。
+
 **错误码。** 错误用 `go-common/error` 的 `goerror.In/Code` 构造（它内部包装 `samber/oops`；不要再直接 `import "samber/oops"` 构造错误）。框架码常量来自 `go-framework/error`，由生成的 `internal/pkg/errcode` / `internal/pkg/rpcerror` 包 re-export：`CodeSystem=10000`、`CodeParamInvalid=10001`、`CodeAuthFailed=10002`、`CodeConfigInvalid=10004`、`CodeRPCUnavailable=10010`、`CodeRPCTimeout=10011`。
 
 码段划分：Framework `10000–10499`、Middleware `20000–20699`、Auth `40000–40099`、Project `40100–59999`。**业务自定义码必须 `>= 40100`**（`goerror.ProjectCodeMin`）。

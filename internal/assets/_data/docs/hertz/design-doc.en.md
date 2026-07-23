@@ -169,6 +169,12 @@ not by adding imports.
 - `Validate()` enforces non-negative timeouts, signature/token secrets,
   CORS wildcard vs `allow_credentials`, `rate_limit` source/backend/phase /
   strategy validity, and `idempotency` backend.
+- Duration-typed fields on `Config` (for example `rpc.request_timeout_seconds`,
+  `database.health_check_period_seconds`, `rate_limit.rule.window_seconds`,
+  `redis.dial_timeout_seconds`) use `config.Duration` from
+  `go-framework/config`. In `conf/dev/conf.yaml` these keys are written as
+  duration strings such as `"30s"` or `"200ms"` (parsed by
+  `time.ParseDuration`); bare integers are no longer accepted.
 
 ### 3.2 Response & Error Codes (`internal/pkg/response`)
 

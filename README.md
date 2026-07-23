@@ -91,6 +91,16 @@ Generated Hertz/Kitex projects are a thin business layer on top of
 | Database | `go-middleware/db` (when `WithDatabase=true`) |
 | Kitex RPC errors | `go-framework/kitex/rpcerror` |
 
+**Configuration duration fields.** Duration-typed fields in the generated
+project's `conf.Config` (for example `rpc.request_timeout_seconds`,
+`database.health_check_period_seconds`, `rate_limit.rule.window_seconds`,
+`redis.dial_timeout_seconds`) use `config.Duration` from `go-framework/config`,
+which wraps `time.Duration`. In `conf/dev/conf.yaml` these fields are written
+as duration strings such as `"30s"`, `"5m"`, or `"8ms"` and parsed by
+`time.ParseDuration`. Bare integers are no longer accepted for these fields;
+the field names / YAML keys themselves are unchanged. Redis timeout options
+follow the same format (R-A preparation; client wiring is a follow-up).
+
 **Error codes.** Errors are built with `goerror.In/Code` from `go-common/error`
 (it wraps `samber/oops`; do not construct errors with `samber/oops` directly).
 Framework code constants come from `go-framework/error` and are re-exported by

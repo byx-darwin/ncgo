@@ -324,6 +324,12 @@ error codes re-export the framework codes from `go-framework/error`
 be `>= 40100`; they fall back to HTTP 200 via `goerror.HTTPStatus`. See the
 README "What generated projects build on" section for the full contract.
 
+Configuration duration fields (for example `rpc.request_timeout_seconds`,
+`database.health_check_period_seconds`, `rate_limit.rule.window_seconds`,
+`redis.dial_timeout_seconds`) use `config.Duration` from `go-framework/config`
+and are written as duration strings like `"30s"` or `"200ms"` in
+`conf/dev/conf.yaml`; bare integers are no longer accepted for these keys.
+
 Best for: HTTP-first services where you want to inspect layout inputs before the
 generator runs.
 
@@ -362,6 +368,8 @@ flow through `internal/pkg/rpcerror`, which maps `goerror` errors to Kitex
 `go-framework/error` (`CodeInternalError=CodeSystem=10000`,
 `CodeConfigInvalid=10004`, `CodeRPCTimeout=10011`,
 `CodePermissionDenied=CodeAuthFailed=10002`). Business codes must be `>= 40100`.
+Duration-typed conf fields use `config.Duration` and are written as duration
+strings (`"3s"`, `"30s"`, …) in `conf/dev/conf.yaml`.
 
 Best for: RPC-first services that want a versioned Kitex template tree.
 
@@ -816,16 +824,21 @@ without writing.
 
 ### Configuration reference
 
+Duration fields in generated `conf/dev/conf.yaml` use `config.Duration`
+(from `go-framework/config`) and are written as duration strings such as
+`"60s"` or `"200ms"` (parsed by `time.ParseDuration`); bare integers are
+no longer accepted for these keys. Field names / YAML keys are unchanged.
+
 ```yaml
 rate_limit:
   enabled: true
   source:
     type: rule_center              # switch to remote rule-center
-    cache_ttl_seconds: 60          # local cache TTL
+    cache_ttl_seconds: "60s"       # local cache TTL (config.Duration)
     fallback_on_error: true        # use cached rules on gRPC failure
   rule_center:                     # rule-center connection settings
     address: "rule-center:8888"    # gRPC address
-    query_timeout_milliseconds: 200
+    query_timeout_milliseconds: "200ms"
   backend: redis                   # rate-limit counters still use Redis
   fail_open: false
 ```
