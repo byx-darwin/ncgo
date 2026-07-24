@@ -5,58 +5,28 @@
 //
 // Producer (Writer):
 //
-//	do.ProvideValue(injector, &kafka.Writer{
-//	    Addr:                   kafka.TCP("kafka-1:9092", "kafka-2:9092"),
-//	    Topic:                  "events",
-//	    Balancer:               &kafka.Hash{},
-//	    MaxAttempts:            10,
-//	    WriteBackoffMin:        100 * time.Millisecond,
-//	    WriteBackoffMax:        1 * time.Second,
-//	    BatchSize:              100,
-//	    BatchBytes:             1 << 20, // 1 MiB
-//	    BatchTimeout:           10 * time.Millisecond,
-//	    ReadTimeout:            10 * time.Second,
-//	    WriteTimeout:           10 * time.Second,
-//	    RequiredAcks:           kafka.RequireAll,
-//	    Async:                  false,
-//	    Compression:            kafka.Snappy,
+//	do.ProvideValue(injector, mwkafka.WriterConfig{
+//	    Broker: []string{"kafka-1:9092", "kafka-2:9092"},
+//	    Topic:  "events",
 //	    AllowAutoTopicCreation: false,
-//	    Transport:              nil, // *kafka.Transport for SASL/TLS
-//	    Logger:                 nil,
-//	    ErrorLogger:            nil,
 //	})
 //	do.Provide(injector, data.NewKafkaWriter)
 //
 // Consumer (Reader):
 //
-//	do.ProvideValue(injector, kafka.ReaderConfig{
-//	    Brokers:                []string{"kafka-1:9092", "kafka-2:9092"},
-//	    GroupID:                "user-service",
-//	    Topic:                  "events",
-//	    Partition:              0,
-//	    QueueCapacity:           100,
-//	    MinBytes:               10e3, // 10 KB
-//	    MaxBytes:               10e6, // 10 MB
-//	    MaxWait:                500 * time.Millisecond,
-//	    HeartbeatInterval:      3 * time.Second,
-//	    CommitInterval:         0, // 0 = sync after each message
-//	    PartitionWatchInterval: 5 * time.Second,
-//	    WatchPartitionChanges:  true,
-//	    SessionTimeout:         30 * time.Second,
-//	    RebalanceTimeout:       30 * time.Second,
-//	    RetentionTime:          24 * time.Hour,
-//	    StartOffset:            kafka.LastOffset,
-//	    IsolationLevel:         kafka.ReadCommitted,
-//	    MaxAttempts:            3,
-//	    Dialer:                 nil, // *kafka.Dialer for SASL/TLS
+//	do.ProvideValue(injector, mwkafka.ReaderConfig{
+//	    Broker:  []string{"kafka-1:9092", "kafka-2:9092"},
+//	    GroupID: "user-service",
+//	    Topic:   "events",
+//	    MinBytes: 10e3,        // 10 KB
+//	    MaxBytes: 10e6,        // 10 MB
+//	    MaxWait:  500 * time.Millisecond,
 //	})
 //	do.Provide(injector, data.NewKafkaReader)
 //
-// Full field reference: https://pkg.go.dev/github.com/segmentio/kafka-go
-//
 // Required dependency:
 //
-//	go get github.com/segmentio/kafka-go
+//	go get github.com/byx-darwin/go-tools/go-middleware
 //	go get github.com/byx-darwin/go-tools/go-common
 //	go get github.com/byx-darwin/go-tools/go-framework
 
@@ -65,59 +35,53 @@ package data
 import (
 	goerror "github.com/byx-darwin/go-tools/go-common/error"
 	frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
-	"github.com/segmentio/kafka-go"
+	mwkafka "github.com/byx-darwin/go-tools/go-middleware/kafka"
 )
 
-// KafkaWriter wraps a kafka-go Writer for producing messages.
+// KafkaWriter wraps a go-middleware Kafka Writer for producing messages.
 type KafkaWriter struct {
-	W *kafka.Writer
+	W *mwkafka.Writer
 }
 
-// KafkaReader wraps a kafka-go Reader for consuming a topic.
+// KafkaReader wraps a go-middleware Kafka Consumer for consuming a topic.
 type KafkaReader struct {
-	R *kafka.Reader
+	R *mwkafka.Consumer
 }
 
-// NewKafkaWriter wraps an already-configured *kafka.Writer with a samber/do cleanup.
-// The caller passes the fully-populated Writer struct via do.ProvideValue.
-func NewKafkaWriter(w *kafka.Writer) (*KafkaWriter, func(), error) {
-	if w == nil {
+// NewKafkaWriter creates a Kafka Writer from mwkafka.WriterConfig via
+// go-middleware/kafka and returns a cleanup function for samber/do.
+func NewKafkaWriter(cfg mwkafka.WriterConfig) (*KafkaWriter, func(), error) {
+	if len(cfg.Broker) == 0 {
 		return nil, nil, goerror.
 			In("kafka").
 			Tags("message-bus", "kafka", "producer", "configuration").
 			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
-			New("kafka.Writer is nil")
+			New("mwkafka.WriterConfig.Broker is empty")
 	}
-	if w.Addr == nil {
+	if cfg.Topic == "" {
 		return nil, nil, goerror.
 			In("kafka").
 			Tags("message-bus", "kafka", "producer", "configuration").
 			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
-			New("kafka.Writer.Addr is nil")
+			New("mwkafka.WriterConfig.Topic is empty")
 	}
-	if w.Topic == "" {
-		return nil, nil, goerror.
-			In("kafka").
-			Tags("message-bus", "kafka", "producer", "configuration").
-			Code(frameworkerror.CodeConfigInvalid).
-			Public("config_invalid").
-			New("kafka.Writer.Topic is empty")
-	}
+	w := mwkafka.NewWriter(cfg)
 	cleanup := func() { _ = w.Close() }
 	return &KafkaWriter{W: w}, cleanup, nil
 }
 
-// NewKafkaReader builds a Reader from the full kafka.ReaderConfig.
-func NewKafkaReader(cfg kafka.ReaderConfig) (*KafkaReader, func(), error) {
-	if len(cfg.Brokers) == 0 {
+// NewKafkaReader creates a Kafka Consumer from mwkafka.ReaderConfig via
+// go-middleware/kafka and returns a cleanup function for samber/do.
+func NewKafkaReader(cfg mwkafka.ReaderConfig) (*KafkaReader, func(), error) {
+	if len(cfg.Broker) == 0 {
 		return nil, nil, goerror.
 			In("kafka").
 			Tags("message-bus", "kafka", "consumer", "configuration").
 			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
-			New("kafka.ReaderConfig.Brokers is empty")
+			New("mwkafka.ReaderConfig.Broker is empty")
 	}
 	if cfg.Topic == "" {
 		return nil, nil, goerror.
@@ -125,10 +89,10 @@ func NewKafkaReader(cfg kafka.ReaderConfig) (*KafkaReader, func(), error) {
 			Tags("message-bus", "kafka", "consumer", "configuration").
 			Code(frameworkerror.CodeConfigInvalid).
 			Public("config_invalid").
-			With("brokers_count", len(cfg.Brokers)).
-			New("kafka.ReaderConfig.Topic is empty")
+			With("brokers_count", len(cfg.Broker)).
+			New("mwkafka.ReaderConfig.Topic is empty")
 	}
-	r := kafka.NewReader(cfg)
-	cleanup := func() { _ = r.Close() }
-	return &KafkaReader{R: r}, cleanup, nil
+	c := mwkafka.NewConsumer(cfg)
+	cleanup := func() { _ = c.Close() }
+	return &KafkaReader{R: c}, cleanup, nil
 }

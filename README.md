@@ -395,6 +395,15 @@ For Hertz projects, `redis` now defaults to a single shared
 rate-limit, idempotency, and optional `internal/base/data/redis.go` reuse the
 same client unless you set a module-specific Redis override.
 
+The `kafka`, `es`, and `clickhouse` add-ons now delegate connection
+construction to `go-middleware` factory methods (`go-middleware/kafka`,
+`go-middleware/es`, `go-middleware/clickhouse`). Generated wrapper structs
+(`KafkaWriter`, `KafkaReader`, `ES`, `ClickHouse`) accept go-middleware
+`Config` types via samber/do instead of raw third-party library structs.
+Error codes use `go-framework/error.CodeConfigInvalid` for config validation
+and go-middleware predefined codes (ClickHouse) or project-segment codes
+(ES: `40506`) for connection failures.
+
 `observability_otel` now targets Alibaba LoongSuite Go Agent. It generates
 `internal/base/observability/otel.go` with `OTEL_*` environment helpers and
 prints setup steps such as installing the `otel` CLI and using `otel go build`.

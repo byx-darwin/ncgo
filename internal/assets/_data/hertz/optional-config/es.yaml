@@ -8,9 +8,9 @@ es:
   username: ""
   password: ""
   api_key: ""
-  service_token: ""
+  cloud_id: ""
   max_retries: 3
-  compress_request_body: true
-  discover_nodes_on_start: false
-  enable_metrics: false
-  enable_debug_logger: false
+  max_idle_conns_per_host: 0
+  tls:
+    enable: false
+    insecure_skip_verify: false
