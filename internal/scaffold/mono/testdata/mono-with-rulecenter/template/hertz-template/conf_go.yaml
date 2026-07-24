@@ -17,6 +17,7 @@ body: |-
       frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
       "github.com/byx-darwin/go-tools/go-framework/config"
       hertzconfig "github.com/byx-darwin/go-tools/go-framework/config/hertz"
+      mwredis "github.com/byx-darwin/go-tools/go-middleware/redis"
       "gopkg.in/yaml.v3"
   )
 
@@ -129,7 +130,7 @@ body: |-
       PreAuth      RateLimitPhaseConfig    `yaml:"pre_auth"`
       PostAuth     RateLimitPhaseConfig    `yaml:"post_auth"`
       Memory       MemoryCacheConfig       `yaml:"memory"`
-      Redis        RateLimitRedisConfig    `yaml:"redis"`
+      Redis        RedisConfig    `yaml:"redis"`
   }
 
   type RateLimitSourceConfig struct {
@@ -178,48 +179,55 @@ body: |-
       ClientTTLSeconds  config.Duration `yaml:"client_ttl_seconds"`
   }
 
-  type RateLimitRedisConfig struct {
-      Addrs                         []string        `yaml:"addrs"`
-      ClientName                    string          `yaml:"client_name"`
-      Username                      string          `yaml:"username"`
-      Password                      string          `yaml:"password"`
-      DB                            int             `yaml:"db"`
-      MasterName                    string          `yaml:"master_name"`
-      SentinelUsername              string          `yaml:"sentinel_username"`
-      SentinelPassword              string          `yaml:"sentinel_password"`
-      Protocol                      int             `yaml:"protocol"`
-      MaxRetries                    int             `yaml:"max_retries"`
-      MinRetryBackoffMilliseconds   config.Duration `yaml:"min_retry_backoff_milliseconds"`
-      MaxRetryBackoffMilliseconds   config.Duration `yaml:"max_retry_backoff_milliseconds"`
-      DialTimeoutSeconds            config.Duration `yaml:"dial_timeout_seconds"`
-      DialerRetries                 int             `yaml:"dialer_retries"`
-      DialerRetryTimeoutMilliseconds config.Duration `yaml:"dialer_retry_timeout_milliseconds"`
-      ReadTimeoutSeconds            config.Duration `yaml:"read_timeout_seconds"`
-      WriteTimeoutSeconds           config.Duration `yaml:"write_timeout_seconds"`
-      ContextTimeoutEnabled         bool            `yaml:"context_timeout_enabled"`
-      ReadBufferSize                int             `yaml:"read_buffer_size"`
-      WriteBufferSize               int             `yaml:"write_buffer_size"`
-      PoolFIFO                      bool            `yaml:"pool_fifo"`
-      PoolSize                      int             `yaml:"pool_size"`
-      MinIdleConns                  int             `yaml:"min_idle_conns"`
-      MaxIdleConns                  int             `yaml:"max_idle_conns"`
-      MaxActiveConns                int             `yaml:"max_active_conns"`
-      MaxConcurrentDials            int             `yaml:"max_concurrent_dials"`
-      PoolTimeoutSeconds            config.Duration `yaml:"pool_timeout_seconds"`
-      ConnMaxIdleTimeSeconds        config.Duration `yaml:"conn_max_idle_time_seconds"`
-      ConnMaxLifetimeSeconds        config.Duration `yaml:"conn_max_lifetime_seconds"`
-      ConnMaxLifetimeJitterSeconds  config.Duration `yaml:"conn_max_lifetime_jitter_seconds"`
-      MaxRedirects                  int             `yaml:"max_redirects"`
-      ReadOnly                      bool            `yaml:"read_only"`
-      RouteByLatency                bool            `yaml:"route_by_latency"`
-      RouteRandomly                 bool            `yaml:"route_randomly"`
-      DisableIdentity               bool            `yaml:"disable_identity"`
-      IdentitySuffix                string          `yaml:"identity_suffix"`
-      UnstableResp3                 bool            `yaml:"unstable_resp3"`
-      FailingTimeoutSeconds         config.Duration `yaml:"failing_timeout_seconds"`
+  type RedisConfig struct {
+      Addrs              []string        `yaml:"addrs"`
+      Username           string          `yaml:"username"`
+      Password           string          `yaml:"password"`
+      DB                 int             `yaml:"db"`
+      MasterName         string          `yaml:"master_name"`
+      SentinelUsername   string          `yaml:"sentinel_username"`
+      SentinelPassword   string          `yaml:"sentinel_password"`
+      Protocol           int             `yaml:"protocol"`
+      ClientName         string          `yaml:"client_name"`
+      PoolSize           int             `yaml:"pool_size"`
+      MinIdleConns       int             `yaml:"min_idle_conns"`
+      DialTimeout        config.Duration `yaml:"dial_timeout"`
+      ReadTimeout        config.Duration `yaml:"read_timeout"`
+      WriteTimeout       config.Duration `yaml:"write_timeout"`
+      PoolTimeout        config.Duration `yaml:"pool_timeout"`
+      ConnMaxIdleTime    config.Duration `yaml:"conn_max_idle_time"`
+      ConnMaxLifetime    config.Duration `yaml:"conn_max_lifetime"`
+      IdleCheckFrequency config.Duration `yaml:"idle_check_frequency"`
+      MaxRetries         int             `yaml:"max_retries"`
+      MinRetryBackoff    config.Duration `yaml:"min_retry_backoff"`
+      MaxRetryBackoff    config.Duration `yaml:"max_retry_backoff"`
   }
 
-  type RedisConfig = RateLimitRedisConfig
+  func (c RedisConfig) ToMiddlewareConfig() *mwredis.Config {
+      return &mwredis.Config{
+          Addrs:              c.Addrs,
+          Username:           c.Username,
+          Password:           c.Password,
+          DB:                 c.DB,
+          MasterName:         c.MasterName,
+          SentinelUsername:   c.SentinelUsername,
+          SentinelPassword:   c.SentinelPassword,
+          Protocol:           c.Protocol,
+          ClientName:         c.ClientName,
+          PoolSize:           c.PoolSize,
+          MinIdleConns:       c.MinIdleConns,
+          DialTimeout:        c.DialTimeout.Duration,
+          ReadTimeout:        c.ReadTimeout.Duration,
+          WriteTimeout:       c.WriteTimeout.Duration,
+          PoolTimeout:        c.PoolTimeout.Duration,
+          ConnMaxIdleTime:    c.ConnMaxIdleTime.Duration,
+          ConnMaxLifetime:    c.ConnMaxLifetime.Duration,
+          IdleCheckFrequency: c.IdleCheckFrequency.Duration,
+          MaxRetries:         c.MaxRetries,
+          MinRetryBackoff:    c.MinRetryBackoff.Duration,
+          MaxRetryBackoff:    c.MaxRetryBackoff.Duration,
+      }
+  }
 
   type MemoryCacheConfig struct {
       MaxEntries int `yaml:"max_entries"`
@@ -237,7 +245,7 @@ body: |-
       Methods       []string             `yaml:"methods"`
       SkipPaths     []string             `yaml:"skip_paths"`
       Memory        MemoryCacheConfig    `yaml:"memory"`
-      Redis         RateLimitRedisConfig `yaml:"redis"`
+      Redis         RedisConfig `yaml:"redis"`
   }
 
   type AuthConfig struct {
@@ -264,7 +272,7 @@ body: |-
       KeyPrefix  string               `yaml:"key_prefix"`
       TTLSeconds config.Duration      `yaml:"ttl_seconds"`
       Memory     MemoryCacheConfig    `yaml:"memory"`
-      Redis      RateLimitRedisConfig `yaml:"redis"`
+      Redis      RedisConfig `yaml:"redis"`
   }
 
   type TokenConfig struct {
@@ -588,26 +596,19 @@ body: |-
 
   func defaultRedisConfig() RedisConfig {
       return RedisConfig{
-          Addrs:                          []string{"127.0.0.1:6379"},
-          Protocol:                       3,
-          MaxRetries:                     3,
-          MinRetryBackoffMilliseconds:    config.Duration{Duration: 8 * time.Millisecond},
-          MaxRetryBackoffMilliseconds:    config.Duration{Duration: 512 * time.Millisecond},
-          DialTimeoutSeconds:             config.Duration{Duration: 5 * time.Second},
-          DialerRetries:                  5,
-          DialerRetryTimeoutMilliseconds: config.Duration{Duration: 100 * time.Millisecond},
-          ReadTimeoutSeconds:             config.Duration{Duration: 3 * time.Second},
-          WriteTimeoutSeconds:            config.Duration{Duration: 3 * time.Second},
-          ContextTimeoutEnabled:          true,
-          ReadBufferSize:                 32768,
-          WriteBufferSize:                32768,
-          PoolSize:                       10,
-          MinIdleConns:                   2,
-          PoolTimeoutSeconds:             config.Duration{Duration: 4 * time.Second},
-          ConnMaxIdleTimeSeconds:         config.Duration{Duration: 300 * time.Second},
-          ConnMaxLifetimeSeconds:         config.Duration{Duration: 1800 * time.Second},
-          MaxRedirects:                   3,
-          FailingTimeoutSeconds:          config.Duration{Duration: 15 * time.Second},
+          Addrs:           []string{"127.0.0.1:6379"},
+          Protocol:        3,
+          MaxRetries:      3,
+          MinRetryBackoff: config.Duration{Duration: 8 * time.Millisecond},
+          MaxRetryBackoff: config.Duration{Duration: 512 * time.Millisecond},
+          DialTimeout:     config.Duration{Duration: 5 * time.Second},
+          ReadTimeout:     config.Duration{Duration: 3 * time.Second},
+          WriteTimeout:    config.Duration{Duration: 3 * time.Second},
+          PoolSize:        10,
+          MinIdleConns:    2,
+          PoolTimeout:     config.Duration{Duration: 4 * time.Second},
+          ConnMaxIdleTime: config.Duration{Duration: 300 * time.Second},
+          ConnMaxLifetime: config.Duration{Duration: 1800 * time.Second},
       }
   }
 
@@ -659,38 +660,20 @@ body: |-
       if primary.MaxRetries == 0 {
           primary.MaxRetries = fallback.MaxRetries
       }
-      if primary.MinRetryBackoffMilliseconds.Duration == 0 {
-          primary.MinRetryBackoffMilliseconds = fallback.MinRetryBackoffMilliseconds
+      if primary.MinRetryBackoff.Duration == 0 {
+          primary.MinRetryBackoff = fallback.MinRetryBackoff
       }
-      if primary.MaxRetryBackoffMilliseconds.Duration == 0 {
-          primary.MaxRetryBackoffMilliseconds = fallback.MaxRetryBackoffMilliseconds
+      if primary.MaxRetryBackoff.Duration == 0 {
+          primary.MaxRetryBackoff = fallback.MaxRetryBackoff
       }
-      if primary.DialTimeoutSeconds.Duration == 0 {
-          primary.DialTimeoutSeconds = fallback.DialTimeoutSeconds
+      if primary.DialTimeout.Duration == 0 {
+          primary.DialTimeout = fallback.DialTimeout
       }
-      if primary.DialerRetries == 0 {
-          primary.DialerRetries = fallback.DialerRetries
+      if primary.ReadTimeout.Duration == 0 {
+          primary.ReadTimeout = fallback.ReadTimeout
       }
-      if primary.DialerRetryTimeoutMilliseconds.Duration == 0 {
-          primary.DialerRetryTimeoutMilliseconds = fallback.DialerRetryTimeoutMilliseconds
-      }
-      if primary.ReadTimeoutSeconds.Duration == 0 {
-          primary.ReadTimeoutSeconds = fallback.ReadTimeoutSeconds
-      }
-      if primary.WriteTimeoutSeconds.Duration == 0 {
-          primary.WriteTimeoutSeconds = fallback.WriteTimeoutSeconds
-      }
-      if !primary.ContextTimeoutEnabled {
-          primary.ContextTimeoutEnabled = fallback.ContextTimeoutEnabled
-      }
-      if primary.ReadBufferSize == 0 {
-          primary.ReadBufferSize = fallback.ReadBufferSize
-      }
-      if primary.WriteBufferSize == 0 {
-          primary.WriteBufferSize = fallback.WriteBufferSize
-      }
-      if !primary.PoolFIFO {
-          primary.PoolFIFO = fallback.PoolFIFO
+      if primary.WriteTimeout.Duration == 0 {
+          primary.WriteTimeout = fallback.WriteTimeout
       }
       if primary.PoolSize == 0 {
           primary.PoolSize = fallback.PoolSize
@@ -698,50 +681,17 @@ body: |-
       if primary.MinIdleConns == 0 {
           primary.MinIdleConns = fallback.MinIdleConns
       }
-      if primary.MaxIdleConns == 0 {
-          primary.MaxIdleConns = fallback.MaxIdleConns
+      if primary.PoolTimeout.Duration == 0 {
+          primary.PoolTimeout = fallback.PoolTimeout
       }
-      if primary.MaxActiveConns == 0 {
-          primary.MaxActiveConns = fallback.MaxActiveConns
+      if primary.ConnMaxIdleTime.Duration == 0 {
+          primary.ConnMaxIdleTime = fallback.ConnMaxIdleTime
       }
-      if primary.MaxConcurrentDials == 0 {
-          primary.MaxConcurrentDials = fallback.MaxConcurrentDials
+      if primary.ConnMaxLifetime.Duration == 0 {
+          primary.ConnMaxLifetime = fallback.ConnMaxLifetime
       }
-      if primary.PoolTimeoutSeconds.Duration == 0 {
-          primary.PoolTimeoutSeconds = fallback.PoolTimeoutSeconds
-      }
-      if primary.ConnMaxIdleTimeSeconds.Duration == 0 {
-          primary.ConnMaxIdleTimeSeconds = fallback.ConnMaxIdleTimeSeconds
-      }
-      if primary.ConnMaxLifetimeSeconds.Duration == 0 {
-          primary.ConnMaxLifetimeSeconds = fallback.ConnMaxLifetimeSeconds
-      }
-      if primary.ConnMaxLifetimeJitterSeconds.Duration == 0 {
-          primary.ConnMaxLifetimeJitterSeconds = fallback.ConnMaxLifetimeJitterSeconds
-      }
-      if primary.MaxRedirects == 0 {
-          primary.MaxRedirects = fallback.MaxRedirects
-      }
-      if !primary.ReadOnly {
-          primary.ReadOnly = fallback.ReadOnly
-      }
-      if !primary.RouteByLatency {
-          primary.RouteByLatency = fallback.RouteByLatency
-      }
-      if !primary.RouteRandomly {
-          primary.RouteRandomly = fallback.RouteRandomly
-      }
-      if !primary.DisableIdentity {
-          primary.DisableIdentity = fallback.DisableIdentity
-      }
-      if primary.IdentitySuffix == "" {
-          primary.IdentitySuffix = fallback.IdentitySuffix
-      }
-      if !primary.UnstableResp3 {
-          primary.UnstableResp3 = fallback.UnstableResp3
-      }
-      if primary.FailingTimeoutSeconds.Duration == 0 {
-          primary.FailingTimeoutSeconds = fallback.FailingTimeoutSeconds
+      if primary.IdleCheckFrequency.Duration == 0 {
+          primary.IdleCheckFrequency = fallback.IdleCheckFrequency
       }
       return primary
   }

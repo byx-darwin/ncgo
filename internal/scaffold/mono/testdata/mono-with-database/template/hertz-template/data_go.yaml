@@ -16,11 +16,8 @@ body: |-
       goerror "github.com/byx-darwin/go-tools/go-common/error"
       frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
       "github.com/jackc/pgx/v5/pgxpool"
-  {{end}}
-      "github.com/redis/go-redis/v9"
 
       "{{.Module}}/internal/base/conf"
-  {{if .WithDatabase}}
       "{{.Module}}/internal/db/gen"
   {{end}}
   )
@@ -114,46 +111,3 @@ body: |-
       return pgCfg, nil
   }
   {{end}}
-
-  // RedisUniversalOptions converts conf.RateLimitRedisConfig to redis.UniversalOptions.
-  // Filled by `ncgo add infra redis`; placeholder ensures compilation.
-  func RedisUniversalOptions(cfg conf.RateLimitRedisConfig) *redis.UniversalOptions {
-      return &redis.UniversalOptions{
-          Addrs:                        cfg.Addrs,
-          ClientName:                   cfg.ClientName,
-          Username:                     cfg.Username,
-          Password:                     cfg.Password,
-          DB:                           cfg.DB,
-          MasterName:                   cfg.MasterName,
-          SentinelUsername:             cfg.SentinelUsername,
-          SentinelPassword:             cfg.SentinelPassword,
-          Protocol:                     cfg.Protocol,
-          MaxRetries:                   cfg.MaxRetries,
-          MinRetryBackoff:              cfg.MinRetryBackoffMilliseconds.Duration,
-          MaxRetryBackoff:              cfg.MaxRetryBackoffMilliseconds.Duration,
-          DialTimeout:                  cfg.DialTimeoutSeconds.Duration,
-          ReadTimeout:                  cfg.ReadTimeoutSeconds.Duration,
-          WriteTimeout:                 cfg.WriteTimeoutSeconds.Duration,
-          ContextTimeoutEnabled:        cfg.ContextTimeoutEnabled,
-          ReadBufferSize:               cfg.ReadBufferSize,
-          WriteBufferSize:              cfg.WriteBufferSize,
-          PoolFIFO:                     cfg.PoolFIFO,
-          PoolSize:                     cfg.PoolSize,
-          MinIdleConns:                 cfg.MinIdleConns,
-          MaxIdleConns:                 cfg.MaxIdleConns,
-          MaxActiveConns:               cfg.MaxActiveConns,
-          MaxConcurrentDials:           cfg.MaxConcurrentDials,
-          PoolTimeout:                  cfg.PoolTimeoutSeconds.Duration,
-          ConnMaxIdleTime:              cfg.ConnMaxIdleTimeSeconds.Duration,
-          ConnMaxLifetime:              cfg.ConnMaxLifetimeSeconds.Duration,
-          ConnMaxLifetimeJitter:        cfg.ConnMaxLifetimeJitterSeconds.Duration,
-          MaxRedirects:                 cfg.MaxRedirects,
-          ReadOnly:                     cfg.ReadOnly,
-          RouteByLatency:               cfg.RouteByLatency,
-          RouteRandomly:                cfg.RouteRandomly,
-          DisableIdentity:              cfg.DisableIdentity,
-          IdentitySuffix:               cfg.IdentitySuffix,
-          UnstableResp3:                cfg.UnstableResp3,
-          FailingTimeoutSeconds:        int(cfg.FailingTimeoutSeconds.Seconds()),
-      }
-  }

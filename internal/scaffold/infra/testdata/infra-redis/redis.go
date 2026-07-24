@@ -7,11 +7,11 @@
 //	do.Provide(injector, data.NewRedis)
 //
 // NewRedis reads cfg.Redis and reuses the same shared UniversalClient used by
-// redis-backed middleware. For a dedicated client, call NewRedisWithOptions.
+// redis-backed middleware.
 //
 // Required dependency:
 //
-//	go get github.com/redis/go-redis/v9
+//	go get github.com/byx-darwin/go-tools/go-middleware
 //	go get github.com/byx-darwin/go-tools/go-common
 //	go get github.com/byx-darwin/go-tools/go-framework
 
@@ -52,6 +52,15 @@ func NewRedis(ctx context.Context, cfg *Config) (*Redis, func(), error) {
 			New("data.Config is nil")
 	}
 	cli := SharedRedisClient(cfg.Redis)
+	if cli == nil {
+		return nil, nil, goerror.
+			In("redis").
+			Tags("cache", "redis", "connection").
+			Code(CodeCacheUnavailable).
+			Public("cache_unavailable").
+			With("addrs_count", len(cfg.Redis.Addrs)).
+			New("redis connection failed")
+	}
 	if err := cli.Ping(ctx).Err(); err != nil {
 		CloseSharedRedisClient(cfg.Redis)
 		return nil, nil, goerror.
@@ -63,31 +72,5 @@ func NewRedis(ctx context.Context, cfg *Config) (*Redis, func(), error) {
 			Wrapf(err, "redis.Ping")
 	}
 	cleanup := func() { CloseSharedRedisClient(cfg.Redis) }
-	return &Redis{Client: cli}, cleanup, nil
-}
-
-// NewRedisWithOptions creates a dedicated Redis client from raw UniversalOptions.
-// Use it only when you intentionally want a different connection pool than cfg.Redis.
-func NewRedisWithOptions(ctx context.Context, opts *redis.UniversalOptions) (*Redis, func(), error) {
-	if opts == nil {
-		return nil, nil, goerror.
-			In("redis").
-			Tags("cache", "redis", "configuration").
-			Code(frameworkerror.CodeConfigInvalid).
-			Public("config_invalid").
-			New("redis.UniversalOptions is nil")
-	}
-	cli := redis.NewUniversalClient(opts)
-	if err := cli.Ping(ctx).Err(); err != nil {
-		_ = cli.Close()
-		return nil, nil, goerror.
-			In("redis").
-			Tags("cache", "redis", "connection").
-			Code(CodeCacheUnavailable).
-			Public("cache_unavailable").
-			With("addrs_count", len(opts.Addrs)).
-			Wrapf(err, "redis.Ping")
-	}
-	cleanup := func() { _ = cli.Close() }
 	return &Redis{Client: cli}, cleanup, nil
 }

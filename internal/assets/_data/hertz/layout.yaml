@@ -3905,7 +3905,6 @@ layouts:
           "github.com/redis/go-redis/v9"
           "github.com/samber/hot"
 
-          "{{.GoModule}}/internal/base/data"
           "{{.GoModule}}/internal/base/conf"
           "{{.GoModule}}/internal/pkg/ratelimit"
           "{{.GoModule}}/internal/pkg/response"
@@ -5046,7 +5045,7 @@ layouts:
 
       func TestApplyRedisFallbacksUsesTopLevelRedis(t *testing.T) {
           cfg := &Config{
-              Redis: RedisConfig{Addrs: []string{"redis-shared:6379"}, PoolSize: 20, ContextTimeoutEnabled: true},
+              Redis: RedisConfig{Addrs: []string{"redis-shared:6379"}, PoolSize: 20, ClientName: "shared"},
               RateLimit: RateLimitConfig{Backend: "redis"},
               Idempotency: IdempotencyConfig{Backend: "redis"},
               Auth: AuthConfig{Signature: SignatureConfig{Nonce: SignatureNonceConfig{Enabled: true, Backend: "redis"}}},
@@ -5060,7 +5059,7 @@ layouts:
               if len(got.Addrs) != 1 || got.Addrs[0] != "redis-shared:6379" {
                   t.Fatalf("%s addrs = %v, want shared redis", name, got.Addrs)
               }
-              if got.PoolSize != 20 || !got.ContextTimeoutEnabled {
+              if got.PoolSize != 20 || got.ClientName != "shared" {
                   t.Fatalf("%s redis fallback = %+v", name, got)
               }
           }
