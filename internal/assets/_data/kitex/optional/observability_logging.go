@@ -7,20 +7,32 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"time"
 
 	"github.com/bytedance/gopkg/cloud/metainfo"
 	goerror "github.com/byx-darwin/go-tools/go-common/error"
+	goclog "github.com/byx-darwin/go-tools/go-common/log"
 	"github.com/cloudwego/kitex/pkg/endpoint"
 	"github.com/cloudwego/kitex/pkg/rpcinfo"
 	oteltrace "go.opentelemetry.io/otel/trace"
+
+	"{{.GoModule}}/internal/base/conf"
 )
 
 const (
 	MetadataRequestID   = "x-request-id"
 	MetadataTrafficLane = "x-traffic-lane"
 )
+
+// InitFromConf initializes the global logger from kitex conf.LogConfig.
+func InitFromConf(cfg conf.LogConfig, release goclog.ReleaseInfo) error {
+	gcfg := goclog.Config{
+		Level:  cfg.Level,
+		Format: cfg.Format,
+		Mode:   cfg.Mode,
+	}
+	return goclog.Init(gcfg, release)
+}
 
 func KitexRequestID() endpoint.Middleware {
 	return func(next endpoint.Endpoint) endpoint.Endpoint {
@@ -42,17 +54,22 @@ func KitexAccessLog() endpoint.Middleware {
 			started := time.Now()
 			err := next(ctx, req, resp)
 			service, method := kitexRPCNames(ctx)
-			attrs := []slog.Attr{
-				slog.String("rpc.system", "kitex"),
-				slog.String("rpc.service", service),
-				slog.String("rpc.method", method),
-				SinceMS(started),
-			}
+			latencyMS := float64(time.Since(started).Microseconds()) / 1000
 			if err != nil {
-				L().Error(ctx, CategoryRPC, "kitex rpc failed", err, attrs...)
+				goclog.RPC(ctx).ErrorContext(ctx, "kitex rpc failed", err,
+					"rpc.system", "kitex",
+					"rpc.service", service,
+					"rpc.method", method,
+					"latency_ms", latencyMS,
+				)
 				return err
 			}
-			L().Info(ctx, CategoryRPC, "kitex rpc", attrs...)
+			goclog.RPC(ctx).InfoContext(ctx, "kitex rpc",
+				"rpc.system", "kitex",
+				"rpc.service", service,
+				"rpc.method", method,
+				"latency_ms", latencyMS,
+			)
 			return nil
 		}
 	}
@@ -68,7 +85,7 @@ func KitexRecovery() endpoint.Middleware {
 						Code("panic_recovered").
 						With("panic", fmt.Sprint(recovered)).
 						New("kitex panic recovered")
-					L().Error(ctx, CategoryPanic, "kitex panic recovered", err)
+					goclog.L().WithCategory(goclog.CategoryPanic).ErrorContext(ctx, "kitex panic recovered", err)
 				}
 			}()
 			return next(ctx, req, resp)

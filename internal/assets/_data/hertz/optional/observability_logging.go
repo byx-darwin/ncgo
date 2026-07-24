@@ -7,14 +7,16 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"fmt"
-	"log/slog"
 	"time"
 
 	goerror "github.com/byx-darwin/go-tools/go-common/error"
+	goclog "github.com/byx-darwin/go-tools/go-common/log"
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/middlewares/server/recovery"
 	"github.com/cloudwego/hertz/pkg/protocol/consts"
 	oteltrace "go.opentelemetry.io/otel/trace"
+
+	"{{.GoModule}}/internal/base/conf"
 )
 
 const (
@@ -23,6 +25,25 @@ const (
 	HertzContextKeyRequestID   = "request_id"
 	HertzContextKeyTrafficLane = "traffic_lane"
 )
+
+// InitFromConf initializes the global logger from hertz conf.LoggingConfig.
+func InitFromConf(cfg conf.LoggingConfig, release goclog.ReleaseInfo) error {
+	gcfg := goclog.Config{
+		Level:     cfg.Level,
+		Format:    cfg.Format,
+		Mode:      cfg.Mode,
+		AddSource: cfg.AddSource,
+		File: goclog.FileConfig{
+			Dir:        cfg.File.Dir,
+			Filename:   cfg.File.Filename,
+			MaxSize:    cfg.File.MaxSizeMB,
+			MaxBackups: cfg.File.MaxBackups,
+			MaxAge:     cfg.File.MaxAgeDays,
+			Compress:   cfg.File.Compress,
+		},
+	}
+	return goclog.Init(gcfg, release)
+}
 
 func HertzRequestID() app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
@@ -47,11 +68,11 @@ func HertzAccessLog() app.HandlerFunc {
 		if status == 0 {
 			status = consts.StatusOK
 		}
-		L().Info(ctx, CategoryAccess, "hertz access",
-			slog.String("http.method", string(c.Method())),
-			slog.String("http.path", string(c.Path())),
-			slog.Int("http.status_code", status),
-			SinceMS(started),
+		goclog.Access(ctx).InfoContext(ctx, "hertz access",
+			"http.method", string(c.Method()),
+			"http.path", string(c.Path()),
+			"http.status_code", status,
+			"latency_ms", float64(time.Since(started).Microseconds())/1000,
 		)
 	}
 }
@@ -64,7 +85,7 @@ func HertzRecovery() app.HandlerFunc {
 			With("panic", fmt.Sprint(recovered)).
 			With("stack", string(stack)).
 			New("hertz panic recovered")
-		L().Error(ctx, CategoryPanic, "hertz panic recovered", err)
+		goclog.L().WithCategory(goclog.CategoryPanic).ErrorContext(ctx, "hertz panic recovered", err)
 		c.Response.SetStatusCode(consts.StatusInternalServerError)
 		c.Abort()
 	}))
