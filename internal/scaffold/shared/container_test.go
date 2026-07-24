@@ -35,7 +35,7 @@ func TestRenderComposeProjectIncludesDependenciesAndProfiles(t *testing.T) {
 			Kind:     manifest.KindKitex,
 			Context:  "./services/user-rpc",
 			HostPort: 18888,
-			Infra:    []string{"registry_etcd"},
+			Infra:    []string{"registry_polaris"},
 		},
 	})
 	if err != nil {
@@ -55,13 +55,13 @@ func TestRenderComposeProjectIncludesDependenciesAndProfiles(t *testing.T) {
 		"18080:8080",
 		"user-rpc:",
 		"18888:8888",
-		"- etcd",
+		"polaris:",
+		"polarismesh/polaris-server-standalone",
 		"postgres:",
 		"redis:",
 		"kafka:",
 		"elasticsearch:",
 		"clickhouse:",
-		"etcd:",
 		"profiles:",
 		"config-center-nacos",
 		"config-center-polaris",
@@ -70,7 +70,6 @@ func TestRenderComposeProjectIncludesDependenciesAndProfiles(t *testing.T) {
 		"kafka-data:",
 		"elasticsearch-data:",
 		"clickhouse-data:",
-		"etcd-data:",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("compose body missing %q\n---\n%s", want, body)
