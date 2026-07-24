@@ -1271,3 +1271,103 @@ func TestNormalizeKindRejectsRemovedKinds(t *testing.T) {
 		}
 	}
 }
+
+func TestAddRegistryPolarisWireForKitexServerAndClient(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	writeKitexServerWithRegistryAnchor(t, root)
+	writeKitexClientWithRegistryAnchor(t, root)
+
+	res, err := Add(Options{Root: root, Kind: KindRegistryPolaris, Wire: true})
+	if err != nil {
+		t.Fatalf("Add registry_polaris --wire: %v", err)
+	}
+	serverBody := readFile(t, filepath.Join(root, "internal", "base", "server", "server.go"))
+	if !strings.Contains(serverBody, "kitexserver.WithRegistry(") || !strings.Contains(serverBody, "registry.NewRegistry(") {
+		t.Errorf("server.go missing registry wiring:\n%s", serverBody)
+	}
+	clientFiles, _ := filepath.Glob(filepath.Join(root, "pkg", "client", "*", "client.go"))
+	if len(clientFiles) == 0 {
+		t.Fatalf("no client.go seeded")
+	}
+	clientBody := readFile(t, clientFiles[0])
+	if !strings.Contains(clientBody, "kitexclient.WithResolver(") || !strings.Contains(clientBody, "registry.NewResolver(") {
+		t.Errorf("client.go missing resolver wiring:\n%s", clientBody)
+	}
+	_ = res
+}
+
+func writeKitexServerWithRegistryAnchor(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "internal", "base", "server", "server.go")
+	body := `package server
+
+import (
+	"context"
+	"log"
+
+	"github.com/cloudwego/kitex/pkg/endpoint"
+	kitexserver "github.com/cloudwego/kitex/server"
+
+	"github.com/x/demo/internal/base/conf"
+	"github.com/x/demo/internal/pkg/interceptor"
+)
+
+func Run(extraOptions ...kitexserver.Option) {
+	cfg := conf.Get()
+	if cfg == nil {
+		cfg = conf.Default()
+	}
+	_ = log.Flags()
+	opts := []kitexserver.Option{
+		kitexserver.WithMiddleware(endpoint.Chain(
+			interceptor.RequestID(),
+			interceptor.AccessLog(),
+			interceptor.Recovery(),
+			interceptor.RequestTimeout(0),
+		)),
+		kitexserver.WithErrorHandler(func(ctx context.Context, err error) error { return err }),
+	}
+	// ncgo:wire:registry:server
+	opts = append(opts, extraOptions...)
+	_ = opts
+}
+`
+	writeTestFile(t, path, body)
+}
+
+func writeKitexClientWithRegistryAnchor(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "pkg", "client", "demo", "client.go")
+	body := `package democlient
+
+import (
+	"context"
+
+	kitexclient "github.com/cloudwego/kitex/client"
+	"github.com/cloudwego/kitex/pkg/endpoint"
+	"github.com/cloudwego/kitex/pkg/transmeta"
+)
+
+type Config struct {
+	ServiceName    string
+	EnableMetaInfo bool
+}
+
+func New(ctx context.Context, cfg Config, opts ...kitexclient.Option) {
+	_ = ctx
+	options := make([]kitexclient.Option, 0, len(opts)+6)
+	// ncgo:wire:registry:client
+	if cfg.EnableMetaInfo {
+		options = append(options, kitexclient.WithMetaHandler(transmeta.ClientTTHeaderHandler))
+	}
+	options = append(options, opts...)
+	_ = options
+}
+
+func callerServiceMiddleware(caller string) endpoint.Middleware {
+	_ = caller
+	return func(next endpoint.Endpoint) endpoint.Endpoint { return next }
+}
+`
+	writeTestFile(t, path, body)
+}

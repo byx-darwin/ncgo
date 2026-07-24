@@ -115,6 +115,7 @@ body: |-
           }),
       }
 
+      // ncgo:wire:registry:server
       opts = append(opts, extraOptions...)
 
       svr := svc.NewServer(handler.New{{.ServiceInfo.ServiceName}}Impl(uc), opts...)

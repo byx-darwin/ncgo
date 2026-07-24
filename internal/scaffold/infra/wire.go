@@ -59,11 +59,11 @@ func wire(root, module, serviceKind, kind string, dryRun bool) (*wireResult, err
 }
 
 func wireSupportedKind(kind string) bool {
-	return kind == KindObservabilityLog || kind == KindReleaseCanary
+	return kind == KindObservabilityLog || kind == KindReleaseCanary || kind == KindRegistryPolaris
 }
 
 func unsupportedWireError() error {
-	return fmt.Errorf("infra: --wire is only supported for %s/%s", KindObservabilityLog, KindReleaseCanary)
+	return fmt.Errorf("infra: --wire is only supported for %s/%s/%s", KindObservabilityLog, KindReleaseCanary, KindRegistryPolaris)
 }
 
 const (
@@ -77,6 +77,8 @@ const (
 	markerLoggingServerMiddleware = "// ncgo:wire:logging:server-middleware"
 	markerCanaryServerTraffic     = "// ncgo:wire:canary:server-traffic"
 	markerKitexClientMiddleware   = "// ncgo:wire:kitex-client:middleware"
+	markerRegistryServer          = "// ncgo:wire:registry:server"
+	markerRegistryClient          = "// ncgo:wire:registry:client"
 )
 
 func wireHertz(root, module, kind string, dryRun bool) (*wireResult, error) {
@@ -173,6 +175,15 @@ func wireKitex(root, module, kind string, dryRun bool) (*wireResult, error) {
 		if err != nil {
 			return nil, err
 		}
+	case KindRegistryPolaris:
+		s, err = addGoImportWithPlan(s, module+"/internal/base/registry", serverPath, &serverPlan)
+		if err != nil {
+			return nil, err
+		}
+		s, err = insertOnceMarkerOrAnchorWithPlan(s, "kitexserver.WithRegistry(", markerRegistryServer, "\topts = append(opts, extraOptions...)\n", kitexRegistryServer(), serverPath, &serverPlan, "insert_registry_server", "registry.NewRegistry")
+		if err != nil {
+			return nil, err
+		}
 	}
 	written, err := writeFormatted(serverPath, []byte(s), dryRun)
 	if err != nil {
@@ -222,6 +233,15 @@ func wireKitexClient(path, module, kind string, dryRun bool) (*wireResult, error
 			return nil, err
 		}
 		s, err = insertOnceMarkerOrAnchorWithPlan(s, "release.KitexTraffic()", markerKitexClientMiddleware, anchor, "\toptions = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))\n", path, &plan, "insert_client_middleware", "release.KitexTraffic")
+		if err != nil {
+			return nil, err
+		}
+	case KindRegistryPolaris:
+		s, err = addGoImportWithPlan(s, module+"/internal/base/registry", path, &plan)
+		if err != nil {
+			return nil, err
+		}
+		s, err = insertOnceMarkerOrAnchorWithPlan(s, "kitexclient.WithResolver(", markerRegistryClient, anchor, kitexRegistryClient(), path, &plan, "insert_registry_client", "registry.NewResolver")
 		if err != nil {
 			return nil, err
 		}
@@ -285,6 +305,20 @@ func kitexLoggingInit() string {
 		"\t\tServiceKind: \"kitex\",\n" +
 		"\t}); err != nil {\n" +
 		"\t\tlog.Fatalf(\"init logging: %v\", err)\n" +
+		"\t}\n"
+}
+
+func kitexRegistryServer() string {
+	return "\tif reg, regErr := registry.NewRegistry(registry.PolarisConfig{ServiceName: cfg.Server.Registry.Name, ConfigFile: \"polaris.yaml\"}); regErr != nil {\n" +
+		"\t\tlog.Fatalf(\"polaris registry: %v\", regErr)\n" +
+		"\t} else {\n" +
+		"\t\topts = append(opts, kitexserver.WithRegistry(reg))\n" +
+		"\t}\n"
+}
+
+func kitexRegistryClient() string {
+	return "\tif res, resErr := registry.NewResolver(registry.PolarisConfig{ServiceName: cfg.ServiceName, ConfigFile: \"polaris.yaml\"}); resErr == nil {\n" +
+		"\t\toptions = append(options, kitexclient.WithResolver(res))\n" +
 		"\t}\n"
 }
 

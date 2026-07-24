@@ -75,6 +75,7 @@ body: |-
       if cfg.ConnectTimeoutMilliseconds > 0 {
           options = append(options, kitexclient.WithConnectTimeout(time.Duration(cfg.ConnectTimeoutMilliseconds)*time.Millisecond))
       }
+      // ncgo:wire:registry:client
       if cfg.EnableMetaInfo {
           options = append(options, kitexclient.WithMetaHandler(transmeta.ClientTTHeaderHandler))
       }
