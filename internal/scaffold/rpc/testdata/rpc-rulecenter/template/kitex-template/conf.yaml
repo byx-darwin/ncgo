@@ -18,6 +18,7 @@ body: |-
       "github.com/byx-darwin/go-tools/go-framework/config"
       kitexconfig "github.com/byx-darwin/go-tools/go-framework/config/kitex"
       frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
+      mwredis "github.com/byx-darwin/go-tools/go-middleware/redis"
   )
 
   var (
@@ -82,7 +83,7 @@ body: |-
       PreAuth      RateLimitPhaseConfig    `json:"pre_auth" yaml:"pre_auth"`
       PostAuth     RateLimitPhaseConfig    `json:"post_auth" yaml:"post_auth"`
       Memory       MemoryCacheConfig       `json:"memory" yaml:"memory"`
-      Redis        RateLimitRedisConfig    `json:"redis" yaml:"redis"`
+      Redis        RedisConfig    `json:"redis" yaml:"redis"`
   }
 
   type RateLimitSourceConfig struct {
@@ -134,13 +135,52 @@ body: |-
       MaxEntries int `json:"max_entries" yaml:"max_entries"`
   }
 
-  type RateLimitRedisConfig struct {
-      Addrs          []string `json:"addrs" yaml:"addrs"`
-      Password       string   `json:"password" yaml:"password"`
-      DB             int      `json:"db" yaml:"db"`
-      PoolSize       int      `json:"pool_size" yaml:"pool_size"`
-      MinIdleConns   int      `json:"min_idle_conns" yaml:"min_idle_conns"`
-      MaxActiveConns int      `json:"max_active_conns" yaml:"max_active_conns"`
+  type RedisConfig struct {
+      Addrs           []string        `json:"addrs" yaml:"addrs"`
+      Username        string          `json:"username" yaml:"username"`
+      Password        string          `json:"password" yaml:"password"`
+      DB              int             `json:"db" yaml:"db"`
+      MasterName      string          `json:"master_name" yaml:"master_name"`
+      SentinelUsername string         `json:"sentinel_username" yaml:"sentinel_username"`
+      SentinelPassword string         `json:"sentinel_password" yaml:"sentinel_password"`
+      Protocol        int             `json:"protocol" yaml:"protocol"`
+      ClientName      string          `json:"client_name" yaml:"client_name"`
+      PoolSize        int             `json:"pool_size" yaml:"pool_size"`
+      MinIdleConns    int             `json:"min_idle_conns" yaml:"min_idle_conns"`
+      DialTimeout     config.Duration `json:"dial_timeout" yaml:"dial_timeout"`
+      ReadTimeout     config.Duration `json:"read_timeout" yaml:"read_timeout"`
+      WriteTimeout    config.Duration `json:"write_timeout" yaml:"write_timeout"`
+      PoolTimeout     config.Duration `json:"pool_timeout" yaml:"pool_timeout"`
+      ConnMaxIdleTime config.Duration `json:"conn_max_idle_time" yaml:"conn_max_idle_time"`
+      ConnMaxLifetime config.Duration `json:"conn_max_lifetime" yaml:"conn_max_lifetime"`
+      MaxRetries      int             `json:"max_retries" yaml:"max_retries"`
+      MinRetryBackoff config.Duration `json:"min_retry_backoff" yaml:"min_retry_backoff"`
+      MaxRetryBackoff config.Duration `json:"max_retry_backoff" yaml:"max_retry_backoff"`
+  }
+
+  func (c RedisConfig) ToMiddlewareConfig() *mwredis.Config {
+      return &mwredis.Config{
+          Addrs:            c.Addrs,
+          Username:         c.Username,
+          Password:         c.Password,
+          DB:               c.DB,
+          MasterName:       c.MasterName,
+          SentinelUsername: c.SentinelUsername,
+          SentinelPassword: c.SentinelPassword,
+          Protocol:         c.Protocol,
+          ClientName:       c.ClientName,
+          PoolSize:         c.PoolSize,
+          MinIdleConns:     c.MinIdleConns,
+          DialTimeout:      c.DialTimeout.Duration,
+          ReadTimeout:      c.ReadTimeout.Duration,
+          WriteTimeout:     c.WriteTimeout.Duration,
+          PoolTimeout:      c.PoolTimeout.Duration,
+          ConnMaxIdleTime:  c.ConnMaxIdleTime.Duration,
+          ConnMaxLifetime:  c.ConnMaxLifetime.Duration,
+          MaxRetries:       c.MaxRetries,
+          MinRetryBackoff:  c.MinRetryBackoff.Duration,
+          MaxRetryBackoff:  c.MaxRetryBackoff.Duration,
+      }
   }
 
   func Init() error {
@@ -219,7 +259,7 @@ body: |-
               },
               PostAuth: RateLimitPhaseConfig{Enabled: false, DefaultRule: RateLimitRuleConfig{Enabled: true}, Rules: []RateLimitMatchConfig{}},
               Memory:  MemoryCacheConfig{MaxEntries: 1000},
-              Redis:   RateLimitRedisConfig{},
+              Redis:   RedisConfig{},
           },
           Log: LogConfig{
               Level:  "info",

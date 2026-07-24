@@ -60,15 +60,13 @@ func kitexOnlyKinds() []string {
 // it here rather than parsing the file header avoids relying on free-form
 // comments.
 var goGetDeps = map[string][]string{
-	KindRedis:        {"github.com/redis/go-redis/v9", "github.com/byx-darwin/go-tools/go-common"},
+	KindRedis:        {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common"},
 	KindKafka:        {"github.com/segmentio/kafka-go", "github.com/byx-darwin/go-tools/go-common"},
 	KindES:           {"github.com/elastic/go-elasticsearch/v8", "github.com/byx-darwin/go-tools/go-common"},
 	KindClickHouse:   {"github.com/ClickHouse/clickhouse-go/v2", "github.com/byx-darwin/go-tools/go-common"},
 	KindRegistryEtcd: {"github.com/kitex-contrib/registry-etcd", "github.com/byx-darwin/go-tools/go-common"},
 	KindObservabilityLog: {
 		"github.com/byx-darwin/go-tools/go-common",
-		"gopkg.in/natefinch/lumberjack.v2",
-		"go.opentelemetry.io/otel/trace",
 	},
 }
 

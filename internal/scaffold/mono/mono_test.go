@@ -835,7 +835,7 @@ func TestGenerateHertzWithDatabaseRendersTopLevelDatabaseConfig(t *testing.T) {
 		"max_conns: 20",
 		"health_check_period_seconds: \"30s\"",
 		"# Redis 连接配置：作为共享默认值供 rate_limit / idempotency / signature nonce 复用",
-		"context_timeout_enabled: true",
+		"dial_timeout: \"5s\"",
 		"# 可选：仅当需要覆盖顶层 redis 连接时填写；留空则复用顶层 redis",
 		"redis: {}",
 	} {
@@ -854,7 +854,7 @@ func TestGenerateHertzWithDatabaseRendersTopLevelDatabaseConfig(t *testing.T) {
 		"ServerAddr  string `json:\"server_addr\" yaml:\"server_addr\"`",
 		"Addresses []string `json:\"addresses\" yaml:\"addresses\"`",
 		"type DatabaseConfig struct",
-		"type RedisConfig = RateLimitRedisConfig",
+		"type RedisConfig struct",
 		"func (c *Config) applyRedisFallbacks()",
 		"c.RateLimit.Redis = mergeRedisConfig(c.RateLimit.Redis, c.Redis)",
 		"database.dsn is empty",

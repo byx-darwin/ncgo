@@ -123,7 +123,7 @@ write_manifest "$LOGGING_HERTZ_ROOT/.ncgo/manifest.yaml" github.com/acme/demo he
 "$BIN" add infra logging --root "$LOGGING_HERTZ_ROOT" >"$TMP_DIR/logging-hertz.out"
 grep -q 'internal/base/logging/logging.go' "$TMP_DIR/logging-hertz.out"
 grep -q 'internal/base/logging/hertz.go' "$TMP_DIR/logging-hertz.out"
-grep -q 'func ErrorAttrs' "$LOGGING_HERTZ_ROOT/internal/base/logging/logging.go"
+grep -q 'goclog "github.com/byx-darwin/go-tools/go-common/log"' "$LOGGING_HERTZ_ROOT/internal/base/logging/logging.go"
 grep -q 'func HertzAccessLog' "$LOGGING_HERTZ_ROOT/internal/base/logging/hertz.go"
 
 LOGGING_WIRE_ROOT="$TMP_DIR/add-logging-wire"

@@ -1,43 +1,26 @@
 # Optional Redis config block for Hertz.
 # Keep the same top-level structure in conf/dev/conf.yaml and in your config-center payload.
 # This block can be shared by internal/base/data/redis.go and by redis-backed middleware.
+# Field names align with go-middleware/redis.Config; duration fields use config.Duration ("5s" format).
 redis:
   addrs:
     - 127.0.0.1:6379
-  client_name: ""
-  db: 0
   username: ""
   password: ""
+  db: 0
   master_name: ""
   sentinel_username: ""
   sentinel_password: ""
-  max_retries: 3
-  min_retry_backoff_milliseconds: 8
-  max_retry_backoff_milliseconds: 512
-  dial_timeout_seconds: 5
-  dialer_retries: 5
-  dialer_retry_timeout_milliseconds: 100
-  read_timeout_seconds: 3
-  write_timeout_seconds: 3
-  context_timeout_enabled: true
-  read_buffer_size: 32768
-  write_buffer_size: 32768
-  pool_fifo: false
+  protocol: 3
+  client_name: ""
   pool_size: 10
   min_idle_conns: 2
-  max_idle_conns: 0
-  max_active_conns: 0
-  max_concurrent_dials: 0
-  pool_timeout_seconds: 4
-  conn_max_idle_time_seconds: 300
-  conn_max_lifetime_seconds: 1800
-  conn_max_lifetime_jitter_seconds: 0
-  max_redirects: 3
-  read_only: false
-  route_by_latency: false
-  route_randomly: false
-  disable_identity: false
-  identity_suffix: ""
-  unstable_resp3: false
-  protocol: 3
-  failing_timeout_seconds: 15
+  dial_timeout: "5s"
+  read_timeout: "3s"
+  write_timeout: "3s"
+  pool_timeout: "4s"
+  conn_max_idle_time: "300s"
+  conn_max_lifetime: "1800s"
+  max_retries: 3
+  min_retry_backoff: "8ms"
+  max_retry_backoff: "512ms"

@@ -94,12 +94,13 @@ Generated Hertz/Kitex projects are a thin business layer on top of
 **Configuration duration fields.** Duration-typed fields in the generated
 project's `conf.Config` (for example `rpc.request_timeout_seconds`,
 `database.health_check_period_seconds`, `rate_limit.rule.window_seconds`,
-`redis.dial_timeout_seconds`) use `config.Duration` from `go-framework/config`,
+`redis.dial_timeout`) use `config.Duration` from `go-framework/config`,
 which wraps `time.Duration`. In `conf/dev/conf.yaml` these fields are written
 as duration strings such as `"30s"`, `"5m"`, or `"8ms"` and parsed by
-`time.ParseDuration`. Bare integers are no longer accepted for these fields;
-the field names / YAML keys themselves are unchanged. Redis timeout options
-follow the same format (R-A preparation; client wiring is a follow-up).
+`time.ParseDuration`. Bare integers are no longer accepted for these fields.
+Redis config fields align with `go-middleware/redis.Config` (for example
+`dial_timeout`, `read_timeout`, `conn_max_lifetime`); a `ToMiddlewareConfig()`
+method converts `config.Duration` fields to `time.Duration` for the middleware.
 
 **Error codes.** Errors are built with `goerror.In/Code` from `go-common/error`
 (it wraps `samber/oops`; do not construct errors with `samber/oops` directly).
@@ -389,10 +390,10 @@ and `release_canary` (`canary` alias).
 Kitex-only add-ons: `registry_etcd`.
 
 For Hertz projects, `redis` now defaults to a single shared
-`redis.UniversalClient` derived from top-level `cfg.Redis`: signature nonce,
+`redis.UniversalClient` derived from top-level `cfg.Redis` via
+`go-middleware/redis.NewUniversalClient`: signature nonce,
 rate-limit, idempotency, and optional `internal/base/data/redis.go` reuse the
-same client unless you set a module-specific Redis override or call
-`data.NewRedisWithOptions` for a dedicated pool.
+same client unless you set a module-specific Redis override.
 
 `observability_otel` now targets Alibaba LoongSuite Go Agent. It generates
 `internal/base/observability/otel.go` with `OTEL_*` environment helpers and
@@ -400,10 +401,9 @@ prints setup steps such as installing the `otel` CLI and using `otel go build`.
 It does not install the agent, rewrite startup code, or add SDK dependencies.
 
 `observability_logging` generates `internal/base/logging/logging.go` plus a
-framework adapter (`hertz.go` or `kitex.go`). The MVP supports `slog`,
-console/file/both/none, `lumberjack` rotation with gzip compression, log
-categories, `go-common/error` (`goerror`) structured error extraction, and
-request/trace/release/canary fields.
+framework adapter (`hertz.go` or `kitex.go`). It uses `go-common/log` for
+structured logging with `WithCategory` sub-loggers, masking, OTel trace context
+injection, and `go-common/error` (`goerror`) structured error extraction.
 
 The default Hertz/Kitex templates only include commented logging wiring anchors,
 so projects that have not enabled the optional `internal/base/logging` package

@@ -88,7 +88,7 @@ func TestAddRedisCopiesFileAndUpdatesManifest(t *testing.T) {
 	if !planContains(res.Plan, "manifest", "add", filepath.Join(".ncgo", "manifest.yaml"), "") {
 		t.Errorf("Plan missing manifest add: %+v", res.Plan)
 	}
-	if !planContains(res.Plan, "next_step", "run", "", "go get github.com/redis/go-redis/v9") {
+	if !planContains(res.Plan, "next_step", "run", "", "go get github.com/byx-darwin/go-tools/go-middleware") {
 		t.Errorf("Plan missing redis next step: %+v", res.Plan)
 	}
 	if want := filepath.Join(root, "internal", "base", "data", "redis.go"); res.WrittenPath != want {
@@ -106,7 +106,6 @@ func TestAddRedisCopiesFileAndUpdatesManifest(t *testing.T) {
 		"package data",
 		"func NewRedis(ctx context.Context, cfg *Config)",
 		"SharedRedisClient(cfg.Redis)",
-		"func NewRedisWithOptions(ctx context.Context, opts *redis.UniversalOptions)",
 	} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("written file missing %q:\n%s", want, body)
@@ -390,7 +389,7 @@ func TestAddNextStepsContainGoGet(t *testing.T) {
 	}
 	joined := strings.Join(res.NextSteps, "\n")
 	for _, want := range []string{
-		"go get github.com/redis/go-redis/v9",
+		"go get github.com/byx-darwin/go-tools/go-middleware",
 		"go get github.com/byx-darwin/go-tools/go-common",
 		"go mod tidy",
 	} {
@@ -532,7 +531,7 @@ func TestAddObservabilityLoggingForHertz(t *testing.T) {
 	if err != nil {
 		t.Fatalf("read logging file: %v", err)
 	}
-	for _, want := range []string{"package logging", "type Config struct", "func ErrorAttrs", "lumberjack.Logger", "goerror.AsOopsError"} {
+	for _, want := range []string{"package logging", "goclog", "CategoryAccess", "WithRequestID", "SinceMS"} {
 		if !strings.Contains(string(body), want) {
 			t.Errorf("logging template missing %q", want)
 		}
@@ -547,7 +546,7 @@ func TestAddObservabilityLoggingForHertz(t *testing.T) {
 		}
 	}
 	joined := strings.Join(res.NextSteps, "\n")
-	for _, want := range []string{"go get github.com/byx-darwin/go-tools/go-common", "go get gopkg.in/natefinch/lumberjack.v2", "go get go.opentelemetry.io/otel/trace", "go mod tidy"} {
+	for _, want := range []string{"go get github.com/byx-darwin/go-tools/go-common", "go mod tidy"} {
 		if !strings.Contains(joined, want) {
 			t.Errorf("next steps missing %q in:\n%s", want, joined)
 		}
