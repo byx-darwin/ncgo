@@ -325,14 +325,15 @@ ncgo add infra registry_etcd --root .        # kitex only
 
 common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_otel`（`otel` alias）、`observability_logging`（`logging` alias）、`release_canary`（`canary` alias）。Kitex-only：`registry_etcd`。
 
-对 Hertz 项目，`redis` 现在默认对应一份由顶层 `cfg.Redis` 派生的共享
+对 Hertz 项目，`redis` 现在默认对应一份由顶层 `cfg.Redis` 经
+`go-middleware/redis.NewUniversalClient` 派生的共享
 `redis.UniversalClient`：signature nonce、rate-limit、idempotency，以及可选
-`internal/base/data/redis.go` 默认都会复用它；只有模块级 Redis override，
-或显式调用 `data.NewRedisWithOptions` 时，才会拆出独立连接池。
+`internal/base/data/redis.go` 默认都会复用它；只有模块级 Redis override
+时，才会拆出独立连接池。
 
 `observability_otel` 现在面向 Alibaba LoongSuite Go Agent。它会生成 `internal/base/observability/otel.go`，提供 `OTEL_*` 环境变量辅助，并打印安装 `otel` CLI、使用 `otel go build` 的 next steps；不会自动安装 agent、修改启动代码或增加 SDK 依赖。
 
-`observability_logging` 会生成 `internal/base/logging/logging.go`，并按服务类型额外生成 `hertz.go` 或 `kitex.go`。MVP 支持 `slog`、console/file/both/none、`lumberjack` rotate + gzip、日志分类、`go-common/error`（`goerror`）结构化解析，以及 request/trace/release/canary 字段。
+`observability_logging` 会生成 `internal/base/logging/logging.go`，并按服务类型额外生成 `hertz.go` 或 `kitex.go`。使用 `go-common/log` 提供结构化日志，支持 `WithCategory` 分类子 Logger、masking 脱敏、OTel trace context 注入，以及 `go-common/error`（`goerror`）结构化错误解析。
 
 默认 Hertz / Kitex 模板只预留 logging wiring 注释，不会在未启用 optional 时 import `internal/base/logging`；也可以使用 opt-in 的 `--wire` 自动替换默认 access/recovery 日志。加 `--dry-run` 可预览 optional 文件、manifest 更新和 wiring 目标，不会修改文件。接入示例见 `specs/007-observability-logging.zh-CN.md`。
 
