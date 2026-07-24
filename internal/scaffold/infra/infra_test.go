@@ -390,7 +390,7 @@ func TestAddNextStepsContainGoGet(t *testing.T) {
 	}
 	joined := strings.Join(res.NextSteps, "\n")
 	for _, want := range []string{
-		"go get github.com/redis/go-redis/v9",
+		"go get github.com/byx-darwin/go-tools/go-middleware",
 		"go get github.com/byx-darwin/go-tools/go-common",
 		"go mod tidy",
 	} {
