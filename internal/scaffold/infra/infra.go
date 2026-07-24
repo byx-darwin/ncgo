@@ -29,71 +29,60 @@ import (
 // Kind values supported by `ncgo add infra`. The corresponding template files
 // live in internal/assets/_data/<framework>/optional/ and ship with the binary.
 const (
-	KindRedis             = "redis"
-	KindKafka             = "kafka"
-	KindES                = "es"
-	KindClickHouse        = "clickhouse"
-	KindRegistryEtcd      = "registry_etcd"
-	KindObservabilityOtel = "observability_otel"
-	KindOtelAlias         = "otel"
-	KindObservabilityLog  = "observability_logging"
-	KindLoggingAlias      = "logging"
-	KindReleaseCanary     = "release_canary"
-	KindCanaryAlias       = "canary"
+	KindRedis            = "redis"
+	KindKafka            = "kafka"
+	KindES               = "es"
+	KindClickHouse       = "clickhouse"
+	KindRegistryPolaris  = "registry_polaris"
+	KindObservabilityLog = "observability_logging"
+	KindLoggingAlias     = "logging"
+	KindReleaseCanary    = "release_canary"
+	KindCanaryAlias      = "canary"
 )
 
 // SupportedKinds returns all add-on names in canonical order. Some kinds are
 // service-kind specific; Add validates that after loading the manifest.
 func SupportedKinds() []string {
-	return []string{KindRedis, KindKafka, KindES, KindClickHouse, KindObservabilityOtel, KindOtelAlias, KindObservabilityLog, KindLoggingAlias, KindReleaseCanary, KindCanaryAlias, KindRegistryEtcd}
+	return []string{KindRedis, KindKafka, KindES, KindClickHouse, KindObservabilityLog, KindLoggingAlias, KindReleaseCanary, KindCanaryAlias, KindRegistryPolaris}
 }
 
 func commonKinds() []string {
-	return []string{KindRedis, KindKafka, KindES, KindClickHouse, KindObservabilityOtel, KindObservabilityLog, KindReleaseCanary}
+	return []string{KindRedis, KindKafka, KindES, KindClickHouse, KindObservabilityLog, KindReleaseCanary}
 }
 
 func kitexOnlyKinds() []string {
-	return []string{KindRegistryEtcd}
+	return []string{KindRegistryPolaris}
 }
 
 // goGetDeps is the source of truth for `go get` dependency next-steps. Keeping
 // it here rather than parsing the file header avoids relying on free-form
 // comments.
 var goGetDeps = map[string][]string{
-	KindRedis:        {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common"},
-	KindKafka:        {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common", "github.com/byx-darwin/go-tools/go-framework"},
-	KindES:           {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common", "github.com/byx-darwin/go-tools/go-framework"},
-	KindClickHouse:   {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common", "github.com/byx-darwin/go-tools/go-framework"},
-	KindRegistryEtcd: {"github.com/kitex-contrib/registry-etcd", "github.com/byx-darwin/go-tools/go-common"},
+	KindRedis:           {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common"},
+	KindKafka:           {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common", "github.com/byx-darwin/go-tools/go-framework"},
+	KindES:              {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common", "github.com/byx-darwin/go-tools/go-framework"},
+	KindClickHouse:      {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common", "github.com/byx-darwin/go-tools/go-framework"},
+	KindRegistryPolaris: {"github.com/kitex-contrib/polaris", "github.com/byx-darwin/go-tools/go-common"},
 	KindObservabilityLog: {
 		"github.com/byx-darwin/go-tools/go-common",
 	},
 }
 
-var setupSteps = map[string][]string{
-	KindObservabilityOtel: {
-		"curl -fsSL https://cdn.jsdelivr.net/gh/alibaba/loongsuite-go-agent@main/install.sh | sudo bash",
-		"otel version",
-		"otel go build ./...",
-		"OTEL_SERVICE_NAME=<service> OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 ./<your-binary>",
-	},
-}
+var setupSteps = map[string][]string{}
 
 var commonAssetKinds = map[string]bool{
-	KindObservabilityOtel: true,
-	KindObservabilityLog:  true,
-	KindReleaseCanary:     true,
+	KindObservabilityLog: true,
+	KindReleaseCanary:    true,
 }
 
 var outputRelPaths = map[string]string{
-	KindRedis:             filepath.Join("internal", "base", "data", "redis.go"),
-	KindKafka:             filepath.Join("internal", "base", "data", "kafka.go"),
-	KindES:                filepath.Join("internal", "base", "data", "es.go"),
-	KindClickHouse:        filepath.Join("internal", "base", "data", "clickhouse.go"),
-	KindRegistryEtcd:      filepath.Join("internal", "base", "registry", "etcd.go"),
-	KindObservabilityOtel: filepath.Join("internal", "base", "observability", "otel.go"),
-	KindObservabilityLog:  filepath.Join("internal", "base", "logging", "logging.go"),
-	KindReleaseCanary:     filepath.Join("internal", "base", "release", "canary.go"),
+	KindRedis:            filepath.Join("internal", "base", "data", "redis.go"),
+	KindKafka:            filepath.Join("internal", "base", "data", "kafka.go"),
+	KindES:               filepath.Join("internal", "base", "data", "es.go"),
+	KindClickHouse:       filepath.Join("internal", "base", "data", "clickhouse.go"),
+	KindRegistryPolaris:  filepath.Join("internal", "base", "registry", "polaris.go"),
+	KindObservabilityLog: filepath.Join("internal", "base", "logging", "logging.go"),
+	KindReleaseCanary:    filepath.Join("internal", "base", "release", "canary.go"),
 }
 
 const hertzRedisSharedHelperRelPath = "internal/base/data/redis_shared.go"
@@ -417,9 +406,6 @@ func frameworkAdapterName(infraKind, serviceKind string) string {
 }
 
 func normalizeKind(kind string) (string, error) {
-	if kind == KindOtelAlias {
-		return KindObservabilityOtel, nil
-	}
 	if kind == KindLoggingAlias {
 		return KindObservabilityLog, nil
 	}
