@@ -61,9 +61,9 @@ func kitexOnlyKinds() []string {
 // comments.
 var goGetDeps = map[string][]string{
 	KindRedis:        {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common"},
-	KindKafka:        {"github.com/segmentio/kafka-go", "github.com/byx-darwin/go-tools/go-common"},
-	KindES:           {"github.com/elastic/go-elasticsearch/v8", "github.com/byx-darwin/go-tools/go-common"},
-	KindClickHouse:   {"github.com/ClickHouse/clickhouse-go/v2", "github.com/byx-darwin/go-tools/go-common"},
+	KindKafka:        {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common", "github.com/byx-darwin/go-tools/go-framework"},
+	KindES:           {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common", "github.com/byx-darwin/go-tools/go-framework"},
+	KindClickHouse:   {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common", "github.com/byx-darwin/go-tools/go-framework"},
 	KindRegistryEtcd: {"github.com/kitex-contrib/registry-etcd", "github.com/byx-darwin/go-tools/go-common"},
 	KindObservabilityLog: {
 		"github.com/byx-darwin/go-tools/go-common",

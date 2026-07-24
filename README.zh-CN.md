@@ -331,6 +331,8 @@ common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_otel`（
 `internal/base/data/redis.go` 默认都会复用它；只有模块级 Redis override
 时，才会拆出独立连接池。
 
+`kafka`、`es`、`clickhouse` add-on 现在将连接构建委托给 `go-middleware` 工厂方法（`go-middleware/kafka`、`go-middleware/es`、`go-middleware/clickhouse`）。生成的包装结构体（`KafkaWriter`、`KafkaReader`、`ES`、`ClickHouse`）通过 samber/do 接收 go-middleware `Config` 类型，不再直接接收第三方库原始结构体。错误码使用 `go-framework/error.CodeConfigInvalid` 做配置校验，连接失败使用 go-middleware 预定义码（ClickHouse）或项目段码（ES: `40506`）。
+
 `observability_otel` 现在面向 Alibaba LoongSuite Go Agent。它会生成 `internal/base/observability/otel.go`，提供 `OTEL_*` 环境变量辅助，并打印安装 `otel` CLI、使用 `otel go build` 的 next steps；不会自动安装 agent、修改启动代码或增加 SDK 依赖。
 
 `observability_logging` 会生成 `internal/base/logging/logging.go`，并按服务类型额外生成 `hertz.go` 或 `kitex.go`。使用 `go-common/log` 提供结构化日志，支持 `WithCategory` 分类子 Logger、masking 脱敏、OTel trace context 注入，以及 `go-common/error`（`goerror`）结构化错误解析。

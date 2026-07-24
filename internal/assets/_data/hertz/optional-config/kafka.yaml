@@ -4,23 +4,31 @@
 kafka:
   producer:
     enabled: false
-    brokers:
+    broker:
       - 127.0.0.1:9092
     topic: demo-events
-    balancer: hash # hash | least_bytes | round_robin
-    required_acks: -1
-    async: false
-    batch_size: 100
-    batch_bytes: 1048576
-    batch_timeout_milliseconds: 10
+    allow_auto_topic_creation: false
+    tls:
+      enable: false
+      insecure_skip_verify: false
+    sasl:
+      enable: false
+      user: ""
+      password: ""
   consumer:
     enabled: false
-    brokers:
+    broker:
       - 127.0.0.1:9092
     group_id: demo
     topic: demo-events
-    queue_capacity: 100
     min_bytes: 10000
     max_bytes: 10485760
-    max_wait_milliseconds: 500
-    start_offset: -1
+    max_wait: 500ms
+    read_batch_timeout: 0s
+    tls:
+      enable: false
+      insecure_skip_verify: false
+    sasl:
+      enable: false
+      user: ""
+      password: ""
