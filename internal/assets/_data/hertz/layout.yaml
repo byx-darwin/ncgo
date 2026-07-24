@@ -4007,10 +4007,6 @@ layouts:
           }
       }
 
-      func redisUniversalOptions(cfg conf.RateLimitRedisConfig) *redis.UniversalOptions {
-          return data.RedisUniversalOptions(cfg)
-      }
-
       func (s *memoryRateLimitStore) Allow(ctx context.Context, key string, rule conf.RateLimitRuleConfig) (bool, error) {
           switch strings.ToLower(strings.TrimSpace(rule.Strategy)) {
           case "token_bucket":
@@ -4516,39 +4512,37 @@ layouts:
           }
       }
 
-      func TestRedisUniversalOptionsMapping(t *testing.T) {
-          opts := redisUniversalOptions(conf.RateLimitRedisConfig{
-              Addrs:                       []string{"redis-1:6379", "redis-2:6379"},
-              ClientName:                  "api",
-              Username:                    "default",
-              Password:                    "secret",
-              DB:                          2,
-              MasterName:                  "mymaster",
-              SentinelUsername:            "sentinel-user",
-              SentinelPassword:            "sentinel-secret",
-              Protocol:                    3,
-              MaxRetries:                  4,
-              MinRetryBackoffMilliseconds: config.Duration{Duration: 9 * time.Millisecond},
-              MaxRetryBackoffMilliseconds: config.Duration{Duration: 600 * time.Millisecond},
-              DialTimeoutSeconds:          config.Duration{Duration: 6 * time.Second},
-              ReadTimeoutSeconds:          config.Duration{Duration: 4 * time.Second},
-              WriteTimeoutSeconds:         config.Duration{Duration: 5 * time.Second},
-              PoolSize:                    20,
-              MinIdleConns:                3,
-              PoolTimeoutSeconds:          config.Duration{Duration: 7 * time.Second},
-              ConnMaxIdleTimeSeconds:      config.Duration{Duration: 301 * time.Second},
-              ConnMaxLifetimeSeconds:      config.Duration{Duration: 1801 * time.Second},
-              MaxRedirects:                5,
-              RouteByLatency:              true,
-          })
-          if len(opts.Addrs) != 2 || opts.DB != 2 || opts.MasterName != "mymaster" {
-              t.Fatalf("unexpected redis options: %+v", opts)
+      func TestRedisConfigToMiddleware(t *testing.T) {
+          mwCfg := conf.RedisConfig{
+              Addrs:            []string{"redis-1:6379", "redis-2:6379"},
+              ClientName:       "api",
+              Username:         "default",
+              Password:         "secret",
+              DB:               2,
+              MasterName:       "mymaster",
+              SentinelUsername: "sentinel-user",
+              SentinelPassword: "sentinel-secret",
+              Protocol:         3,
+              MaxRetries:       4,
+              MinRetryBackoff:  config.Duration{Duration: 9 * time.Millisecond},
+              MaxRetryBackoff:  config.Duration{Duration: 600 * time.Millisecond},
+              DialTimeout:      config.Duration{Duration: 6 * time.Second},
+              ReadTimeout:      config.Duration{Duration: 4 * time.Second},
+              WriteTimeout:     config.Duration{Duration: 5 * time.Second},
+              PoolSize:         20,
+              MinIdleConns:     3,
+              PoolTimeout:      config.Duration{Duration: 7 * time.Second},
+              ConnMaxIdleTime:  config.Duration{Duration: 301 * time.Second},
+              ConnMaxLifetime:  config.Duration{Duration: 1801 * time.Second},
+          }.ToMiddlewareConfig()
+          if len(mwCfg.Addrs) != 2 || mwCfg.DB != 2 || mwCfg.MasterName != "mymaster" {
+              t.Fatalf("unexpected redis config: %+v", mwCfg)
           }
-          if opts.DialTimeout != 6*time.Second || opts.MinRetryBackoff != 9*time.Millisecond {
-              t.Fatalf("unexpected redis durations: dial=%s min_retry=%s", opts.DialTimeout, opts.MinRetryBackoff)
+          if mwCfg.DialTimeout != 6*time.Second || mwCfg.MinRetryBackoff != 9*time.Millisecond {
+              t.Fatalf("unexpected redis durations: dial=%s min_retry=%s", mwCfg.DialTimeout, mwCfg.MinRetryBackoff)
           }
-          if opts.PoolSize != 20 || !opts.RouteByLatency {
-              t.Fatalf("unexpected redis pool/cluster options: %+v", opts)
+          if mwCfg.PoolSize != 20 {
+              t.Fatalf("unexpected redis pool options: %+v", mwCfg)
           }
       }
 
@@ -5078,7 +5072,7 @@ layouts:
           cfg.Redis.PoolSize = 32
           cfg.RateLimit.Enabled = true
           cfg.RateLimit.Backend = "redis"
-          cfg.RateLimit.Redis = RateLimitRedisConfig{Addrs: []string{"redis-rate:6379"}}
+          cfg.RateLimit.Redis = RedisConfig{Addrs: []string{"redis-rate:6379"}}
           if err := cfg.Validate(); err != nil {
               t.Fatalf("Validate: %v", err)
           }
