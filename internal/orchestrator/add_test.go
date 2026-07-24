@@ -30,7 +30,7 @@ func seedOrchAddProject(t *testing.T, kind string) string {
 
 func TestRunAddInfra(t *testing.T) {
 	root := seedOrchAddProject(t, manifest.KindHertz)
-	res, err := RunAddInfra(AddInfraOptions{Root: root, Kind: infra.KindObservabilityOtel})
+	res, err := RunAddInfra(AddInfraOptions{Root: root, Kind: infra.KindRedis})
 	if err != nil {
 		t.Fatalf("RunAddInfra: %v", err)
 	}
@@ -43,15 +43,15 @@ func TestRunAddInfra(t *testing.T) {
 	if len(res.Raw.WrittenPaths) != 1 {
 		t.Fatalf("writtenPaths = %v, want 1", res.Raw.WrittenPaths)
 	}
-	if _, err := os.Stat(filepath.Join(root, "internal", "base", "observability", "otel.go")); err != nil {
-		t.Fatalf("otel file was not written: %v", err)
+	if _, err := os.Stat(filepath.Join(root, "internal", "base", "data", "redis.go")); err != nil {
+		t.Fatalf("redis file was not written: %v", err)
 	}
 	m, err := manifest.Load(root)
 	if err != nil {
 		t.Fatalf("reload manifest: %v", err)
 	}
-	if len(m.Infra) != 1 || m.Infra[0] != infra.KindObservabilityOtel {
-		t.Fatalf("manifest.Infra = %v, want [observability_otel]", m.Infra)
+	if len(m.Infra) != 1 || m.Infra[0] != infra.KindRedis {
+		t.Fatalf("manifest.Infra = %v, want [redis]", m.Infra)
 	}
 }
 
