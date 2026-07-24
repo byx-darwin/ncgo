@@ -1,0 +1,8 @@
+# Polaris SDK configuration for service registry/discovery.
+# Consumed by github.com/kitex-contrib/polaris (polaris-go).
+# See https://github.com/polarismesh/polaris-go for the full option set.
+global:
+  serverConnector:
+    # Polaris server address(es). For local dev, `docker compose --profile config-center-polaris up`.
+    addresses:
+      - 127.0.0.1:8091

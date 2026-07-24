@@ -978,6 +978,49 @@ func New(ctx context.Context, cfg Config, opts ...kitexclient.Option) {
 	assertManifestInfra(t, root)
 }
 
+func TestAddKitexOnlyRegistryPolaris(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindRegistryPolaris})
+	if err != nil {
+		t.Fatalf("Add registry_polaris: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "base", "registry", "polaris.go")
+	if res.WrittenPath != wantPath {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
+	}
+	body, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("read registry file: %v", err)
+	}
+	for _, want := range []string{"package registry", "func NewRegistry(", "func NewResolver(", "polaris.NewPolarisRegistry"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("registry_polaris missing %q", want)
+		}
+	}
+	polarisYAML := filepath.Join(root, "polaris.yaml")
+	if _, err := os.Stat(polarisYAML); err != nil {
+		t.Errorf("polaris.yaml not written: %v", err)
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	if !strings.Contains(joined, "go get github.com/kitex-contrib/polaris") {
+		t.Errorf("next steps missing polaris dep:\n%s", joined)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 1 || m.Infra[0] != KindRegistryPolaris {
+		t.Errorf("manifest.Infra = %v, want [registry_polaris]", m.Infra)
+	}
+}
+
+func TestAddRegistryPolarisRejectedForHertz(t *testing.T) {
+	root := seedProject(t, nil)
+	if _, err := Add(Options{Root: root, Kind: KindRegistryPolaris}); err == nil {
+		t.Fatalf("registry_polaris should be rejected for hertz services")
+	}
+}
+
 func TestAddWireRejectsUnsupportedKind(t *testing.T) {
 	root := seedProject(t, nil)
 	writeHertzServer(t, root)

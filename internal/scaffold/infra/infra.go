@@ -241,6 +241,15 @@ type plannedWrite struct {
 }
 
 func assetFiles(serviceKind, infraKind string) ([]addOnFile, error) {
+	if infraKind == KindRegistryPolaris {
+		if serviceKind != manifest.KindKitex {
+			return nil, fmt.Errorf("infra: kind %q is only supported for kitex services", infraKind)
+		}
+		return []addOnFile{
+			{SourcePath: "kitex/optional/registry_polaris.go", OutputRelPath: outputRelPaths[KindRegistryPolaris]},
+			{SourcePath: "kitex/optional/registry_polaris.yaml", OutputRelPath: "polaris.yaml"},
+		}, nil
+	}
 	if infraKind == KindObservabilityLog || infraKind == KindReleaseCanary {
 		files := []addOnFile{{
 			SourcePath:    "optional/" + infraKind + ".go",
