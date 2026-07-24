@@ -55,7 +55,7 @@ The v0.5 MVP is complete:
 - Mono scaffolds: Hertz HTTP service and Kitex RPC service.
 - Micro workspace: root `ncgo.workspace` plus `add rpc` / `add bff` services.
 - Domain workflow: `add domain` and anchor-based `add method`.
-- Optional infra: Redis, Kafka, Elasticsearch, ClickHouse, LoongSuite Go Agent observability, structured logging, canary release helpers, and Kitex-only etcd registry.
+- Optional infra: Redis, Kafka, Elasticsearch, ClickHouse, structured logging, canary release helpers, and Kitex-only Polaris registry.
 - AI/agent workflow: `ai init claude`, `ai sync`, static `doctor`, and MCP stdio server.
 - Lifecycle MVPs: metadata-only `upgrade --plan` and conservative `extract domain --apply`.
 
@@ -374,20 +374,25 @@ ncgo add method device.ListThemes --root . --in usecase
 
 ```bash
 ncgo add infra redis --root .
-ncgo add infra otel --root .                 # alias for observability_otel
 ncgo add infra logging --root .              # alias for observability_logging
 ncgo add infra canary --root .               # alias for release_canary
 ncgo add infra logging --root . --wire       # optional: patch generated server/client wiring
 ncgo add infra logging --root . --wire --dry-run  # preview writes/wiring without changes
 ncgo add infra logging --root . --wire --dry-run --output json  # machine-readable plan
 ncgo add infra logging --root . --wire --plan  # shorthand for --dry-run --output json
-ncgo add infra registry_etcd --root .        # kitex only
+ncgo add infra registry_polaris --root . --wire  # kitex only: Polaris registry + wire
 ```
 
 Supported common infra add-ons: `redis`, `kafka`, `es`, `clickhouse`,
-`observability_otel` (`otel` alias), `observability_logging` (`logging` alias),
+`observability_logging` (`logging` alias),
 and `release_canary` (`canary` alias).
-Kitex-only add-ons: `registry_etcd`.
+Kitex-only add-ons: `registry_polaris`.
+
+Observability (tracing / OTel) is now built into the Hertz and Kitex base
+templates via go-framework OTLP (Hertz: `cfg.Server.Jaeger` →
+`hertz/observability.NewProvider`; Kitex: `cfg.Jaeger` →
+`kitex/observability.NewProvider`). The legacy `observability_otel` / `otel`
+add-on has been removed; `ncgo add infra otel` now returns invalid kind.
 
 For Hertz projects, `redis` now defaults to a single shared
 `redis.UniversalClient` derived from top-level `cfg.Redis` via
@@ -403,11 +408,6 @@ construction to `go-middleware` factory methods (`go-middleware/kafka`,
 Error codes use `go-framework/error.CodeConfigInvalid` for config validation
 and go-middleware predefined codes (ClickHouse) or project-segment codes
 (ES: `40506`) for connection failures.
-
-`observability_otel` now targets Alibaba LoongSuite Go Agent. It generates
-`internal/base/observability/otel.go` with `OTEL_*` environment helpers and
-prints setup steps such as installing the `otel` CLI and using `otel go build`.
-It does not install the agent, rewrite startup code, or add SDK dependencies.
 
 `observability_logging` generates `internal/base/logging/logging.go` plus a
 framework adapter (`hertz.go` or `kitex.go`). It uses `go-common/log` for

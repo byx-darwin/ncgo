@@ -261,13 +261,15 @@ gateways to call this RPC:
 
 `ncgo add infra <kind>` (or manual copy from
 `internal/assets/_data/kitex/optional/<kind>.go`) drops a Go file under
-`internal/base/{data,registry,observability}/` depending on the kind.
+`internal/base/{data,registry}/` depending on the kind.
 Each file ships only the typed constructor; the agent registers the
 config struct and the constructor into the `samber/do` injector inside
-`server.Run` (`registry` / `observability` add-ons are wired directly as
-kitex server options, not through `do`). Kitex add-ons use string
+`server.Run` (`registry_polaris` is wired directly as a kitex server /
+client option, not through `do`). Kitex add-ons use string
 `goerror.Code` values (`<kind>_<reason>`), unlike Hertz which uses the
-numeric errcode registry.
+numeric errcode registry. Observability is provided by the kitex base
+template itself (go-framework OTLP, driven by `cfg.Jaeger`) and no
+longer exists as a standalone add-on.
 
 #### Redis (`data/redis.go`)
 
@@ -303,35 +305,47 @@ numeric errcode registry.
 - Failures: `clickhouse_config_missing`, `clickhouse_addresses_missing`,
   `clickhouse_open_failed`, `clickhouse_ping_failed`.
 
-#### Etcd Registry / Discovery (`registry/etcd.go`, kitex-only)
+#### Polaris Registry / Discovery (`registry/polaris.go`, kitex-only)
 
-- Provides: `kitexregistry.Registry` via `NewEtcdRegistry(cfg)`,
-  `discovery.Resolver` via `NewEtcdResolver(cfg)`, and
-  `*kitexregistry.Info` via `NewRegistryInfo(cfg)`.
-- Config struct `EtcdConfig{ Endpoints, Username, Password,
-  DialTimeoutSeconds, ServicePrefix, RegistryRetry{Enabled,
-  MaxAttemptTimes, ObserveDelaySeconds, RetryDelaySeconds} }`.
-- Dep: `github.com/kitex-contrib/registry-etcd`.
-- Failures: `registry_config_invalid` (empty endpoints, negative
-  durations, malformed `public_addr`).
-- Wiring at bootstrap (in `server.Run`):
+- Provides: `NewRegistry(cfg)` returning `kitexregistry.Registry` and
+  `NewResolver(cfg)` returning `discovery.Resolver`, delegating to
+  `kitex-contrib/polaris`'s `NewPolarisRegistry` / `NewPolarisResolver`.
+- Config struct: `PolarisConfig{ Addresses, Namespace, Protocol,
+  TimeoutSeconds, ... }`, sourced from either `polaris.yaml` (project root)
+  or `conf`; `Validate()` uses goerror.
+- Dep: `github.com/kitex-contrib/polaris`; the add-on also drops
+  `polaris.yaml` at the project root, which `kitex-contrib/polaris` reads
+  from the working directory by default.
+- Failure code: `registry_config_invalid` (empty addresses, illegal
+  timeout, `polaris.yaml` parse failure).
+- Wiring (only applied after `ncgo add infra registry_polaris --wire`,
+  via the `// ncgo:wire:registry:server` /
+  `// ncgo:wire:registry:client` anchors):
   ```go
-  r, err := registry.NewEtcdRegistry(cfg.Registry)
+  r, err := registry.NewRegistry(cfg.Registry)
   if err != nil { return goerror.In("kitex.registry").Wrap(err) }
-  // pass kitexserver.WithRegistry(r) into kitex server options
+  // server: kitexserver.WithRegistry(r)
+  // client: kitexclient.WithResolver(registry.NewResolver(cfg.Registry))
   ```
+- `--wire` inserts `WithRegistry` / `WithResolver` into the kitex base
+  server option and client constructor. Without `--wire`, only
+  `polaris.go` and `polaris.yaml` are emitted and the base server/client
+  are untouched.
 
-#### LoongSuite Go Agent observability (`observability/otel.go`, common)
+#### Observability (go-framework OTLP, built into the kitex base)
 
-- Provides: `LoongSuiteConfig`, `DefaultLoongSuiteConfig(serviceName)`, and
-  `LoongSuiteConfig.Env()` helpers for standard `OTEL_*` environment variables.
-- No SDK dependency is added to the generated service. LoongSuite instruments at
-  compile time via the external `otel` CLI.
-- Build and run:
-  ```bash
-  otel go build ./...
-  OTEL_SERVICE_NAME=user-rpc OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 ./<your-binary>
-  ```
+The kitex base template already wires go-framework OTLP; no extra
+`ncgo add infra` add-on is needed. When `cfg.Jaeger != nil && cfg.Jaeger.Enable`,
+`server.go` calls `kitexobs "github.com/byx-darwin/go-tools/go-framework/kitex/observability"`'s
+`kitexobs.NewProvider(ctx, config.ObservabilityConfig{Enabled, Endpoint,
+ServiceName})`, attaches `provider.ServerSuite()` as a kitex server option,
+and `defer provider.Shutdown()` before `server.Run` exits.
+
+> Historical note: the LoongSuite `observability_otel` / `otel` add-on and
+> the `kitex-contrib/registry-etcd` add-on were removed in PR5.
+> Observability is now unified on go-framework OTLP; registry / discovery
+> is unified on Polaris. The legacy `otel` / `registry_etcd` kinds now
+> return invalid kind.
 
 ## 4. Files
 
@@ -350,7 +364,7 @@ numeric errcode registry.
 | `kitex/kitex-template/migration_init.yaml` / `migration_keep.yaml` | sqlc/atlas migration placeholders |
 | `kitex/kitex-template/makefile.yaml` | Makefile targets (`make dev`, `make sqlc`, ...) |
 | `kitex/sqlc.yaml` | sqlc config, structurally identical to the Hertz version |
-| `kitex/optional/{redis,kafka,es,clickhouse,registry_etcd}.go`, `optional/observability_otel.go` | `add infra` snippets for the kitex family |
+| `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris}.go` | `add infra` snippets for the kitex family (`registry_polaris` also drops `polaris.yaml` at the project root) |
 
 ## 5. `kitex-template/*.yaml` Semantics
 
@@ -389,17 +403,17 @@ Render context (verified against the shipped templates):
 Each `optional/*.go` file is byte-verbatim copy material. `infra.Add`
 reads it from the embedded FS and writes it to its target path, usually
 `internal/base/data/<kind>.go`, or a specialized package such as
-`internal/base/registry/` or `internal/base/observability/`.
+`internal/base/registry/`.
 
 Constraints for new optional files:
 
 - Must not import project-specific packages.
-- Package must match the target package (`data`, `registry`,
-  `observability`, etc.).
+- Package must match the target package (`data`, `registry`, etc.).
 - Top-of-file comment must list required dependencies and wiring notes.
 
-Currently shipped: `redis`, `kafka`, `es`, `clickhouse`,
-`observability_otel` (`otel` alias), and Kitex-only `registry_etcd`.
+Currently shipped: `redis`, `kafka`, `es`, `clickhouse`, and Kitex-only
+`registry_polaris`. Observability is provided by the kitex base template
+(go-framework OTLP) and no longer ships as a standalone add-on.
 
 ## 7. Differences from Hertz
 
@@ -409,7 +423,7 @@ Currently shipped: `redis`, `kafka`, `es`, `clickhouse`,
 | Layout container | One `layout.yaml` listing every file | One YAML file per output path |
 | Handler template | `--customize_package` (`package.yaml`) | Per-path template `handler.yaml` |
 | Variables source | `data.json` (separate) | Inline kitex render context |
-| Optional infra | 5 kinds (adds `observability_otel`) | 6 kinds (adds `registry_etcd`) |
+| Optional infra | 4 kinds (data add-ons; observability provided by base template) | 5 kinds (adds `registry_polaris`) |
 
 ## 8. Maintenance Contract
 

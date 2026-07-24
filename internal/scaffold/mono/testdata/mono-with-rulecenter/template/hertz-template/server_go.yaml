@@ -17,6 +17,8 @@ body: |-
   {{end}}
 
       hertzframework "github.com/byx-darwin/go-tools/go-framework/hertz"
+      gfconfig "github.com/byx-darwin/go-tools/go-framework/config"
+      hertzobs "github.com/byx-darwin/go-tools/go-framework/hertz/observability"
 
       "{{.Module}}/internal/base/conf"
   {{if .WithDatabase}}
@@ -43,6 +45,24 @@ body: |-
 
       // AccessLog middleware — uses go-tools AccessLog
       h.Use(middleware.AccessLog())
+
+      // OTel tracing — enabled when server.jaeger config is present
+      if cfg.Server.Jaeger != nil && cfg.Server.Jaeger.Enable {
+          provider, obsErr := hertzobs.NewProvider(ctx, gfconfig.ObservabilityConfig{
+              Enabled:     true,
+              Endpoint:    cfg.Server.Jaeger.Endpoint,
+              ServiceName: cfg.Server.Registry.Name,
+          })
+          if obsErr != nil {
+              log.Fatalf("init observability: %v", obsErr)
+          }
+          defer func() {
+              if shutdownErr := provider.Shutdown(); shutdownErr != nil {
+                  log.Printf("shutdown observability: %v", shutdownErr)
+              }
+          }()
+          h.Use(provider.ServerMiddleware())
+      }
 
       // Optional structured logging wiring (after `ncgo add infra logging`):
       // import "{{.Module}}/internal/base/logging"

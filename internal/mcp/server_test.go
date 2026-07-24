@@ -426,7 +426,7 @@ func TestServeToolCallAddInfra(t *testing.T) {
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "ncgo_add_infra", "arguments": map[string]any{"root": root, "kind": "otel"}},
+		"params": map[string]any{"name": "ncgo_add_infra", "arguments": map[string]any{"root": root, "kind": "redis"}},
 	})
 	var out bytes.Buffer
 	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
@@ -446,27 +446,27 @@ func TestServeToolCallAddInfra(t *testing.T) {
 	if !result["updated"].(bool) {
 		t.Fatalf("updated = false, want true")
 	}
-	if got := len(result["writtenPaths"].([]any)); got != 1 {
-		t.Fatalf("writtenPaths len = %d, want 1", got)
+	if got := len(result["writtenPaths"].([]any)); got != 3 {
+		t.Fatalf("writtenPaths len = %d, want 3", got)
 	}
 	if got := len(result["plan"].([]any)); got == 0 {
 		t.Fatalf("plan is empty")
 	}
 	content := resultText(result)
-	for _, want := range []string{"wrote ", "loongsuite-go-agent", "otel go build ./..."} {
+	for _, want := range []string{"wrote ", "go-middleware", "go mod tidy"} {
 		if !strings.Contains(content, want) {
 			t.Fatalf("add infra content missing %q:\n%s", want, content)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, "internal", "base", "observability", "otel.go")); err != nil {
-		t.Fatalf("otel file was not written: %v", err)
+	if _, err := os.Stat(filepath.Join(root, "internal", "base", "data", "redis.go")); err != nil {
+		t.Fatalf("redis file was not written: %v", err)
 	}
 	m, err := manifest.Load(root)
 	if err != nil {
 		t.Fatalf("reload manifest: %v", err)
 	}
-	if len(m.Infra) != 1 || m.Infra[0] != "observability_otel" {
-		t.Fatalf("manifest.Infra = %v, want [observability_otel]", m.Infra)
+	if len(m.Infra) != 1 || m.Infra[0] != "redis" {
+		t.Fatalf("manifest.Infra = %v, want [redis]", m.Infra)
 	}
 }
 
@@ -970,7 +970,7 @@ func TestServeToolCallAddInfraDryRun(t *testing.T) {
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "ncgo_add_infra", "arguments": map[string]any{"root": root, "kind": "otel", "dryRun": true}},
+		"params": map[string]any{"name": "ncgo_add_infra", "arguments": map[string]any{"root": root, "kind": "redis", "dryRun": true}},
 	})
 	var out bytes.Buffer
 	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
@@ -1002,8 +1002,8 @@ func TestServeToolCallAddInfraDryRun(t *testing.T) {
 			t.Fatalf("add infra dry-run content missing %q:\n%s", want, content)
 		}
 	}
-	if _, err := os.Stat(filepath.Join(root, "internal", "base", "observability", "otel.go")); !os.IsNotExist(err) {
-		t.Fatalf("dry-run wrote otel file: stat err = %v", err)
+	if _, err := os.Stat(filepath.Join(root, "internal", "base", "data", "redis.go")); !os.IsNotExist(err) {
+		t.Fatalf("dry-run wrote redis file: stat err = %v", err)
 	}
 	m, err := manifest.Load(root)
 	if err != nil {
@@ -1018,7 +1018,7 @@ func TestServeToolCallAddInfraJSON(t *testing.T) {
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "ncgo_add_infra", "arguments": map[string]any{"root": root, "kind": "otel", "dryRun": true, "output": "json"}},
+		"params": map[string]any{"name": "ncgo_add_infra", "arguments": map[string]any{"root": root, "kind": "redis", "dryRun": true, "output": "json"}},
 	})
 	var out bytes.Buffer
 	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
@@ -1045,7 +1045,7 @@ func TestServeToolCallAddInfraInvalidOutput(t *testing.T) {
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "ncgo_add_infra", "arguments": map[string]any{"root": root, "kind": "otel", "output": "xml"}},
+		"params": map[string]any{"name": "ncgo_add_infra", "arguments": map[string]any{"root": root, "kind": "redis", "output": "xml"}},
 	})
 	var out bytes.Buffer
 	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {

@@ -105,17 +105,14 @@ grep -q 'upgrade plan for' "$TMP_DIR/upgrade.out"
 grep -q '\[change\] metadata' "$TMP_DIR/upgrade.out"
 cmp -s "$UPGRADE_ROOT/.ncgo/manifest.yaml" "$TMP_DIR/manifest.before.yaml"
 
-log "add infra otel generates LoongSuite helper"
-OTEL_ROOT="$TMP_DIR/add-otel"
-write_manifest "$OTEL_ROOT/.ncgo/manifest.yaml" github.com/acme/demo hertz demo
-"$BIN" add infra otel --root "$OTEL_ROOT" >"$TMP_DIR/otel.out"
-grep -q 'loongsuite-go-agent' "$TMP_DIR/otel.out"
-grep -q 'otel go build ./...' "$TMP_DIR/otel.out"
-grep -q 'type LoongSuiteConfig struct' "$OTEL_ROOT/internal/base/observability/otel.go"
-if grep -q 'go.opentelemetry.io/otel' "$OTEL_ROOT/internal/base/observability/otel.go"; then
-  echo "LoongSuite helper should not import OpenTelemetry SDK packages" >&2
-  exit 1
-fi
+log "add infra redis generates Redis data helper (hertz)"
+REDIS_ROOT="$TMP_DIR/add-redis"
+write_manifest "$REDIS_ROOT/.ncgo/manifest.yaml" github.com/acme/demo hertz demo
+"$BIN" add infra redis --root "$REDIS_ROOT" >"$TMP_DIR/redis.out"
+grep -q 'go get github.com/byx-darwin/go-tools/go-middleware' "$TMP_DIR/redis.out"
+grep -q 'go mod tidy' "$TMP_DIR/redis.out"
+grep -q 'type Redis struct' "$REDIS_ROOT/internal/base/data/redis.go"
+grep -q 'func SharedRedisClient' "$REDIS_ROOT/internal/base/data/redis_shared.go"
 
 log "add infra logging generates common core and framework adapters"
 LOGGING_HERTZ_ROOT="$TMP_DIR/add-logging-hertz"

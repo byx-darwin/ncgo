@@ -301,13 +301,19 @@ When the scaffolder is invoked with `--db postgres`:
 
 ### 3.6 Optional Infra Snippets
 
-`ncgo add infra <kind>` copies an optional Go file from either
-`internal/assets/_data/hertz/optional/<kind>.go` or the common
-`internal/assets/_data/optional/<kind>.go`. Most files are written verbatim;
-Hertz helper assets may additionally render `{{.GoModule}}` placeholders before
-write. Data clients drop under
-`internal/base/data/`; specialized add-ons may target packages such as
-`internal/base/observability/`.
+`ncgo add infra <kind>` copies an optional Go file from
+`internal/assets/_data/hertz/optional/<kind>.go`. Data clients drop under
+`internal/base/data/`.
+
+> **Observability no longer ships as an add-on.** The Hertz base template
+> now wires go-framework OTLP directly: when
+> `cfg.Server.Jaeger != nil && cfg.Server.Jaeger.Enable`, `server.go`
+> calls `hertzobs "github.com/byx-darwin/go-tools/go-framework/hertz/observability"`'s
+> `hertzobs.NewProvider(ctx, config.ObservabilityConfig{Enabled, Endpoint,
+> ServiceName})`, runs `h.Use(provider.ServerMiddleware())`, and
+> `defer provider.Shutdown()`. The LoongSuite `observability_otel` / `otel`
+> add-on was removed in PR5; the legacy `otel` kind now returns invalid
+> kind.
 
 #### Redis (`redis.go`)
 
@@ -382,7 +388,7 @@ write. Data clients drop under
 | `hertz/package.yaml` | Custom `hz` package template: handler.go uses a `Handler` struct that delegates to a `useCase` interface, plus a usecase stub | `hz new --customize_package` |
 | `hertz/data.json` | Render-time variables for `layout.yaml` (`GoModule`, `ServiceName`, `WithDatabase`) | `hz new --customize_layout_data_path` |
 | `hertz/sqlc.yaml` | Reference sqlc config copied into projects with `--db postgres` | `mono` scaffolder |
-| `hertz/optional/{redis,kafka,es,clickhouse}.go`, `optional/observability_otel.go` | Drop-in Go files for `ncgo add infra <kind>` | `internal/scaffold/infra` |
+| `hertz/optional/{redis,kafka,es,clickhouse}.go` | Drop-in Go files for `ncgo add infra <kind>` | `internal/scaffold/infra` |
 | `hertz/optional/rule_center_client.go` | gRPC client for rule-center rate-limit rule queries; generated when `--rule-center-addr` is set | `internal/scaffold/rulecenter`, `mono` |
 
 ## 5. `data.json` Contract
@@ -460,21 +466,20 @@ schema, and query files under `internal/assets/_data/kitex/kitex-template/`.
 
 ## 7. Optional Infra
 
-Each `optional/*.go` file is copy material for `infra.Add`. Most are written as-is;
-some Hertz helper assets also render `{{.GoModule}}` placeholders before write.
-`infra.Add` reads the file from the embedded FS and writes it to its target path, usually
-`internal/base/data/<kind>.go`, or a specialized package such as
-`internal/base/observability/otel.go`.
+Each `optional/*.go` file is copy material for `infra.Add`.
+`infra.Add` reads the file from the embedded FS and writes it to its target
+path, usually `internal/base/data/<kind>.go`.
 
 Constraints for new optional files:
 
 - Must not import project-specific packages — only stdlib + third-party
   deps that the `next steps` block tells the user to `go get`.
-- Package must match the target package (`data`, `observability`, etc.).
+- Package must match the target package (`data`, etc.).
 - Top-of-file comment must list the registration snippet verbatim.
 
-Currently shipped: `redis`, `kafka`, `es`, `clickhouse`,
-`observability_otel` (`otel` alias).
+Currently shipped: `redis`, `kafka`, `es`, `clickhouse`. Observability is
+provided by the Hertz base template (go-framework OTLP, driven by
+`cfg.Server.Jaeger`) and no longer ships as a standalone add-on.
 
 ## 8. Maintenance Contract
 

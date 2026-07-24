@@ -30,7 +30,7 @@ func seedOrchAddProject(t *testing.T, kind string) string {
 
 func TestRunAddInfra(t *testing.T) {
 	root := seedOrchAddProject(t, manifest.KindHertz)
-	res, err := RunAddInfra(AddInfraOptions{Root: root, Kind: infra.KindObservabilityOtel})
+	res, err := RunAddInfra(AddInfraOptions{Root: root, Kind: infra.KindRedis})
 	if err != nil {
 		t.Fatalf("RunAddInfra: %v", err)
 	}
@@ -40,18 +40,24 @@ func TestRunAddInfra(t *testing.T) {
 	if !res.Raw.Updated {
 		t.Fatalf("updated = false, want true")
 	}
-	if len(res.Raw.WrittenPaths) != 1 {
-		t.Fatalf("writtenPaths = %v, want 1", res.Raw.WrittenPaths)
+	if len(res.Raw.WrittenPaths) != 3 {
+		t.Fatalf("writtenPaths = %v, want 3", res.Raw.WrittenPaths)
 	}
-	if _, err := os.Stat(filepath.Join(root, "internal", "base", "observability", "otel.go")); err != nil {
-		t.Fatalf("otel file was not written: %v", err)
+	for _, suffix := range []string{
+		filepath.Join("internal", "base", "data", "redis.go"),
+		filepath.Join("internal", "base", "data", "redis_shared.go"),
+		filepath.Join("conf", "dev", "conf.yaml"),
+	} {
+		if _, err := os.Stat(filepath.Join(root, suffix)); err != nil {
+			t.Fatalf("file %s not written: %v", suffix, err)
+		}
 	}
 	m, err := manifest.Load(root)
 	if err != nil {
 		t.Fatalf("reload manifest: %v", err)
 	}
-	if len(m.Infra) != 1 || m.Infra[0] != infra.KindObservabilityOtel {
-		t.Fatalf("manifest.Infra = %v, want [observability_otel]", m.Infra)
+	if len(m.Infra) != 1 || m.Infra[0] != infra.KindRedis {
+		t.Fatalf("manifest.Infra = %v, want [redis]", m.Infra)
 	}
 }
 

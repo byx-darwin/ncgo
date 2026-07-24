@@ -364,7 +364,7 @@ func TestAddRequiresManifest(t *testing.T) {
 }
 
 func TestGoGetDepsIncludeGoCommon(t *testing.T) {
-	for _, kind := range []string{KindRedis, KindKafka, KindES, KindClickHouse, KindRegistryEtcd, KindObservabilityLog} {
+	for _, kind := range []string{KindRedis, KindKafka, KindES, KindClickHouse, KindRegistryPolaris, KindObservabilityLog} {
 		deps := goGetDeps[kind]
 		found := false
 		for _, d := range deps {
@@ -399,117 +399,6 @@ func TestAddNextStepsContainGoGet(t *testing.T) {
 	}
 	if strings.Contains(joined, "go get github.com/samber/oops") {
 		t.Errorf("NextSteps should not hint samber/oops (oops is an indirect dep of go-common):\n%s", joined)
-	}
-}
-
-func TestAddKitexOnlyRegistryEtcd(t *testing.T) {
-	root := seedKitexProject(t, nil)
-	res, err := Add(Options{Root: root, Kind: KindRegistryEtcd})
-	if err != nil {
-		t.Fatalf("Add registry_etcd: %v", err)
-	}
-	wantPath := filepath.Join(root, "internal", "base", "registry", "etcd.go")
-	if res.WrittenPath != wantPath {
-		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
-	}
-	body, err := os.ReadFile(wantPath)
-	if err != nil {
-		t.Fatalf("read registry file: %v", err)
-	}
-	if !strings.Contains(string(body), "package registry") {
-		t.Errorf("registry_etcd should write package registry")
-	}
-	joined := strings.Join(res.NextSteps, "\n")
-	if !strings.Contains(joined, "go get github.com/kitex-contrib/registry-etcd") {
-		t.Errorf("next steps missing registry-etcd dep:\n%s", joined)
-	}
-	m, err := manifest.Load(root)
-	if err != nil {
-		t.Fatalf("reload manifest: %v", err)
-	}
-	if len(m.Infra) != 1 || m.Infra[0] != KindRegistryEtcd {
-		t.Errorf("manifest.Infra = %v, want [registry_etcd]", m.Infra)
-	}
-}
-
-func TestAddObservabilityOtelForKitex(t *testing.T) {
-	root := seedKitexProject(t, nil)
-	res, err := Add(Options{Root: root, Kind: KindObservabilityOtel})
-	if err != nil {
-		t.Fatalf("Add observability_otel: %v", err)
-	}
-	wantPath := filepath.Join(root, "internal", "base", "observability", "otel.go")
-	if res.WrittenPath != wantPath {
-		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
-	}
-	body, err := os.ReadFile(wantPath)
-	if err != nil {
-		t.Fatalf("read observability file: %v", err)
-	}
-	if !strings.Contains(string(body), "package observability") {
-		t.Errorf("observability_otel should write package observability")
-	}
-	if !strings.Contains(string(body), "type LoongSuiteConfig struct") {
-		t.Errorf("observability_otel should expose LoongSuiteConfig")
-	}
-	joined := strings.Join(res.NextSteps, "\n")
-	if !strings.Contains(joined, "loongsuite-go-agent") || !strings.Contains(joined, "otel go build ./...") {
-		t.Errorf("next steps missing LoongSuite setup:\n%s", joined)
-	}
-}
-
-func TestAddObservabilityOtelForHertz(t *testing.T) {
-	root := seedProject(t, nil)
-	res, err := Add(Options{Root: root, Kind: KindObservabilityOtel})
-	if err != nil {
-		t.Fatalf("Add observability_otel: %v", err)
-	}
-	wantPath := filepath.Join(root, "internal", "base", "observability", "otel.go")
-	if res.WrittenPath != wantPath {
-		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
-	}
-	body, err := os.ReadFile(wantPath)
-	if err != nil {
-		t.Fatalf("read observability file: %v", err)
-	}
-	if !strings.Contains(string(body), "type LoongSuiteConfig struct") || !strings.Contains(string(body), "func DefaultLoongSuiteConfig") {
-		t.Errorf("observability_otel missing expected API")
-	}
-	m, err := manifest.Load(root)
-	if err != nil {
-		t.Fatalf("reload manifest: %v", err)
-	}
-	if len(m.Infra) != 1 || m.Infra[0] != KindObservabilityOtel {
-		t.Errorf("manifest.Infra = %v, want [observability_otel]", m.Infra)
-	}
-	if _, err := Add(Options{Root: root, Kind: KindObservabilityOtel}); err == nil {
-		t.Fatalf("expected existing file error without --force")
-	}
-	res, err = Add(Options{Root: root, Kind: KindObservabilityOtel, Force: true})
-	if err != nil {
-		t.Fatalf("Add observability_otel --force: %v", err)
-	}
-	if res.Updated {
-		t.Errorf("Updated = true, want false after dedup")
-	}
-}
-
-func TestAddOtelAliasRecordsCanonicalKind(t *testing.T) {
-	root := seedProject(t, nil)
-	res, err := Add(Options{Root: root, Kind: KindOtelAlias})
-	if err != nil {
-		t.Fatalf("Add otel alias: %v", err)
-	}
-	wantPath := filepath.Join(root, "internal", "base", "observability", "otel.go")
-	if res.WrittenPath != wantPath {
-		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
-	}
-	m, err := manifest.Load(root)
-	if err != nil {
-		t.Fatalf("reload manifest: %v", err)
-	}
-	if len(m.Infra) != 1 || m.Infra[0] != KindObservabilityOtel {
-		t.Errorf("manifest.Infra = %v, want [observability_otel]", m.Infra)
 	}
 }
 
@@ -1089,6 +978,49 @@ func New(ctx context.Context, cfg Config, opts ...kitexclient.Option) {
 	assertManifestInfra(t, root)
 }
 
+func TestAddKitexOnlyRegistryPolaris(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindRegistryPolaris})
+	if err != nil {
+		t.Fatalf("Add registry_polaris: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "base", "registry", "polaris.go")
+	if res.WrittenPath != wantPath {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
+	}
+	body, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("read registry file: %v", err)
+	}
+	for _, want := range []string{"package registry", "func NewRegistry(", "func NewResolver(", "polaris.NewPolarisRegistry"} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("registry_polaris missing %q", want)
+		}
+	}
+	polarisYAML := filepath.Join(root, "polaris.yaml")
+	if _, err := os.Stat(polarisYAML); err != nil {
+		t.Errorf("polaris.yaml not written: %v", err)
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	if !strings.Contains(joined, "go get github.com/kitex-contrib/polaris") {
+		t.Errorf("next steps missing polaris dep:\n%s", joined)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 1 || m.Infra[0] != KindRegistryPolaris {
+		t.Errorf("manifest.Infra = %v, want [registry_polaris]", m.Infra)
+	}
+}
+
+func TestAddRegistryPolarisRejectedForHertz(t *testing.T) {
+	root := seedProject(t, nil)
+	if _, err := Add(Options{Root: root, Kind: KindRegistryPolaris}); err == nil {
+		t.Fatalf("registry_polaris should be rejected for hertz services")
+	}
+}
+
 func TestAddWireRejectsUnsupportedKind(t *testing.T) {
 	root := seedProject(t, nil)
 	writeHertzServer(t, root)
@@ -1100,9 +1032,9 @@ func TestAddWireRejectsUnsupportedKind(t *testing.T) {
 
 func TestAddKitexOnlyRejectedForHertz(t *testing.T) {
 	root := seedProject(t, nil)
-	_, err := Add(Options{Root: root, Kind: KindRegistryEtcd})
+	_, err := Add(Options{Root: root, Kind: KindRegistryPolaris})
 	if err == nil {
-		t.Fatalf("expected registry_etcd to be rejected for hertz")
+		t.Fatalf("expected registry_polaris to be rejected for hertz")
 	}
 	if !strings.Contains(err.Error(), "only supported for kitex") {
 		t.Errorf("unexpected error: %v", err)
@@ -1312,4 +1244,130 @@ func pathListed(paths []string, want string) bool {
 		}
 	}
 	return false
+}
+
+func TestRegistryPolarisKindRegistered(t *testing.T) {
+	found := false
+	for _, k := range SupportedKinds() {
+		if k == KindRegistryPolaris {
+			found = true
+		}
+		if k == "registry_etcd" || k == "observability_otel" || k == "otel" {
+			t.Errorf("SupportedKinds should not contain removed kind %q", k)
+		}
+	}
+	if !found {
+		t.Errorf("SupportedKinds missing registry_polaris: %v", SupportedKinds())
+	}
+	if got := goGetDeps[KindRegistryPolaris]; len(got) == 0 || got[0] != "github.com/kitex-contrib/polaris" {
+		t.Errorf("goGetDeps[registry_polaris] = %v, want kitex-contrib/polaris first", got)
+	}
+}
+
+func TestNormalizeKindRejectsRemovedKinds(t *testing.T) {
+	for _, kind := range []string{"otel", "observability_otel", "registry_etcd"} {
+		if _, err := normalizeKind(kind); err == nil {
+			t.Errorf("normalizeKind(%q) should error (removed kind)", kind)
+		}
+	}
+}
+
+func TestAddRegistryPolarisWireForKitexServerAndClient(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	writeKitexServerWithRegistryAnchor(t, root)
+	writeKitexClientWithRegistryAnchor(t, root)
+
+	res, err := Add(Options{Root: root, Kind: KindRegistryPolaris, Wire: true})
+	if err != nil {
+		t.Fatalf("Add registry_polaris --wire: %v", err)
+	}
+	serverBody := readFile(t, filepath.Join(root, "internal", "base", "server", "server.go"))
+	if !strings.Contains(serverBody, "kitexserver.WithRegistry(") || !strings.Contains(serverBody, "registry.NewRegistry(") {
+		t.Errorf("server.go missing registry wiring:\n%s", serverBody)
+	}
+	clientFiles, _ := filepath.Glob(filepath.Join(root, "pkg", "client", "*", "client.go"))
+	if len(clientFiles) == 0 {
+		t.Fatalf("no client.go seeded")
+	}
+	clientBody := readFile(t, clientFiles[0])
+	if !strings.Contains(clientBody, "kitexclient.WithResolver(") || !strings.Contains(clientBody, "registry.NewResolver(") {
+		t.Errorf("client.go missing resolver wiring:\n%s", clientBody)
+	}
+	_ = res
+}
+
+func writeKitexServerWithRegistryAnchor(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "internal", "base", "server", "server.go")
+	body := `package server
+
+import (
+	"context"
+	"log"
+
+	"github.com/cloudwego/kitex/pkg/endpoint"
+	kitexserver "github.com/cloudwego/kitex/server"
+
+	"github.com/x/demo/internal/base/conf"
+	"github.com/x/demo/internal/pkg/interceptor"
+)
+
+func Run(extraOptions ...kitexserver.Option) {
+	cfg := conf.Get()
+	if cfg == nil {
+		cfg = conf.Default()
+	}
+	_ = log.Flags()
+	opts := []kitexserver.Option{
+		kitexserver.WithMiddleware(endpoint.Chain(
+			interceptor.RequestID(),
+			interceptor.AccessLog(),
+			interceptor.Recovery(),
+			interceptor.RequestTimeout(0),
+		)),
+		kitexserver.WithErrorHandler(func(ctx context.Context, err error) error { return err }),
+	}
+	// ncgo:wire:registry:server
+	opts = append(opts, extraOptions...)
+	_ = opts
+}
+`
+	writeTestFile(t, path, body)
+}
+
+func writeKitexClientWithRegistryAnchor(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "pkg", "client", "demo", "client.go")
+	body := `package democlient
+
+import (
+	"context"
+
+	kitexclient "github.com/cloudwego/kitex/client"
+	"github.com/cloudwego/kitex/pkg/endpoint"
+	"github.com/cloudwego/kitex/pkg/transmeta"
+)
+
+type Config struct {
+	ServiceName    string
+	EnableMetaInfo bool
+}
+
+func New(ctx context.Context, cfg Config, opts ...kitexclient.Option) {
+	_ = ctx
+	options := make([]kitexclient.Option, 0, len(opts)+6)
+	// ncgo:wire:registry:client
+	if cfg.EnableMetaInfo {
+		options = append(options, kitexclient.WithMetaHandler(transmeta.ClientTTHeaderHandler))
+	}
+	options = append(options, opts...)
+	_ = options
+}
+
+func callerServiceMiddleware(caller string) endpoint.Middleware {
+	_ = caller
+	return func(next endpoint.Endpoint) endpoint.Endpoint { return next }
+}
+`
+	writeTestFile(t, path, body)
 }

@@ -61,8 +61,8 @@ func TestEmbeddedFilesPresent(t *testing.T) {
 		"kitex/kitex-template/handler.yaml",
 		"kitex/kitex-template/usecase.yaml",
 		"kitex/kitex-template/repository.yaml",
-		"kitex/optional/registry_etcd.go",
-		"optional/observability_otel.go",
+		"kitex/optional/registry_polaris.go",
+		"kitex/optional/registry_polaris.yaml",
 	}
 	for _, p := range want {
 		if _, err := fs.Stat(FS(), p); err != nil {

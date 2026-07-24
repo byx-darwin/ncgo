@@ -11,15 +11,15 @@ import (
 )
 
 const (
-	hertzContainerPort  = 8080
-	kitexContainerPort  = 8888
-	dockerConfigRelPath = "conf/docker/conf.yaml"
-	infraRedis          = "redis"
-	infraKafka          = "kafka"
-	infraES             = "es"
-	infraClickHouse     = "clickhouse"
-	infraRegistryEtcd   = "registry_etcd"
-	infraReleaseCanary  = "release_canary"
+	hertzContainerPort   = 8080
+	kitexContainerPort   = 8888
+	dockerConfigRelPath  = "conf/docker/conf.yaml"
+	infraRedis           = "redis"
+	infraKafka           = "kafka"
+	infraES              = "es"
+	infraClickHouse      = "clickhouse"
+	infraRegistryPolaris = "registry_polaris"
+	infraReleaseCanary   = "release_canary"
 )
 
 const serviceDockerIgnore = `.git/
@@ -49,7 +49,6 @@ type composeFeatures struct {
 	kafka    bool
 	es       bool
 	ch       bool
-	etcd     bool
 	nacos    bool
 	polaris  bool
 	vegeta   bool
@@ -255,9 +254,6 @@ func renderComposeProject(projectName string, apps []composeApp) (string, error)
 	if features.ch {
 		renderClickHouseCompose(&b)
 	}
-	if features.etcd {
-		renderEtcdCompose(&b)
-	}
 	if features.nacos {
 		renderNacosCompose(&b)
 	}
@@ -375,19 +371,6 @@ func renderClickHouseCompose(b *strings.Builder) {
 	b.WriteString("      - \"9000:9000\"\n")
 	b.WriteString("    volumes:\n")
 	b.WriteString("      - clickhouse-data:/var/lib/clickhouse\n")
-}
-
-func renderEtcdCompose(b *strings.Builder) {
-	b.WriteString("  etcd:\n")
-	b.WriteString("    image: docker.io/bitnami/etcd:3.5\n")
-	b.WriteString("    environment:\n")
-	b.WriteString("      ALLOW_NONE_AUTHENTICATION: \"yes\"\n")
-	b.WriteString("      ETCD_LISTEN_CLIENT_URLS: http://0.0.0.0:2379\n")
-	b.WriteString("      ETCD_ADVERTISE_CLIENT_URLS: http://etcd:2379\n")
-	b.WriteString("    ports:\n")
-	b.WriteString("      - \"2379:2379\"\n")
-	b.WriteString("    volumes:\n")
-	b.WriteString("      - etcd-data:/bitnami/etcd\n")
 }
 
 func renderNacosCompose(b *strings.Builder) {
@@ -531,8 +514,8 @@ func composeFeaturesForApp(app composeApp) composeFeatures {
 			features.es = true
 		case infraClickHouse:
 			features.ch = true
-		case infraRegistryEtcd:
-			features.etcd = true
+		case infraRegistryPolaris:
+			features.polaris = true
 		case infraReleaseCanary:
 			features.nacos = true
 			features.polaris = true
@@ -566,9 +549,6 @@ func dependencyServiceNames(features composeFeatures) []string {
 	if features.ch {
 		deps = append(deps, "clickhouse")
 	}
-	if features.etcd {
-		deps = append(deps, "etcd")
-	}
 	return deps
 }
 
@@ -589,9 +569,6 @@ func composeVolumeNames(features composeFeatures) []string {
 	if features.ch {
 		volumes = append(volumes, "clickhouse-data")
 	}
-	if features.etcd {
-		volumes = append(volumes, "etcd-data")
-	}
 	return volumes
 }
 
@@ -601,7 +578,6 @@ func (f *composeFeatures) merge(other composeFeatures) {
 	f.kafka = f.kafka || other.kafka
 	f.es = f.es || other.es
 	f.ch = f.ch || other.ch
-	f.etcd = f.etcd || other.etcd
 	f.nacos = f.nacos || other.nacos
 	f.polaris = f.polaris || other.polaris
 	f.vegeta = f.vegeta || other.vegeta
