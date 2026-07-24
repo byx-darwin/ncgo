@@ -40,11 +40,17 @@ func TestRunAddInfra(t *testing.T) {
 	if !res.Raw.Updated {
 		t.Fatalf("updated = false, want true")
 	}
-	if len(res.Raw.WrittenPaths) != 1 {
-		t.Fatalf("writtenPaths = %v, want 1", res.Raw.WrittenPaths)
+	if len(res.Raw.WrittenPaths) != 3 {
+		t.Fatalf("writtenPaths = %v, want 3", res.Raw.WrittenPaths)
 	}
-	if _, err := os.Stat(filepath.Join(root, "internal", "base", "data", "redis.go")); err != nil {
-		t.Fatalf("redis file was not written: %v", err)
+	for _, suffix := range []string{
+		filepath.Join("internal", "base", "data", "redis.go"),
+		filepath.Join("internal", "base", "data", "redis_shared.go"),
+		filepath.Join("conf", "dev", "conf.yaml"),
+	} {
+		if _, err := os.Stat(filepath.Join(root, suffix)); err != nil {
+			t.Fatalf("file %s not written: %v", suffix, err)
+		}
 	}
 	m, err := manifest.Load(root)
 	if err != nil {
