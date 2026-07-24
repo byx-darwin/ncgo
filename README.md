@@ -55,7 +55,7 @@ The v0.5 MVP is complete:
 - Mono scaffolds: Hertz HTTP service and Kitex RPC service.
 - Micro workspace: root `ncgo.workspace` plus `add rpc` / `add bff` services.
 - Domain workflow: `add domain` and anchor-based `add method`.
-- Optional infra: Redis, Kafka, Elasticsearch, ClickHouse, LoongSuite Go Agent observability, structured logging, canary release helpers, and Kitex-only etcd registry.
+- Optional infra: Redis, Kafka, Elasticsearch, ClickHouse, structured logging, canary release helpers, and Kitex-only Polaris registry.
 - AI/agent workflow: `ai init claude`, `ai sync`, static `doctor`, and MCP stdio server.
 - Lifecycle MVPs: metadata-only `upgrade --plan` and conservative `extract domain --apply`.
 

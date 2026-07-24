@@ -50,7 +50,7 @@ v0.5 MVP 已完成：
 - Mono 脚手架：Hertz HTTP 服务、Kitex RPC 服务。
 - Micro 工作区：根 `ncgo.workspace`，并支持 `add rpc` / `add bff`。
 - Domain 工作流：`add domain` 与基于 anchor 的 `add method`。
-- Optional infra：Redis、Kafka、Elasticsearch、ClickHouse、LoongSuite Go Agent observability、结构化日志、金丝雀发布 helper、Kitex-only etcd registry。
+- Optional infra：Redis、Kafka、Elasticsearch、ClickHouse、结构化日志、金丝雀发布 helper、Kitex-only Polaris registry。
 - AI / Agent 工作流：`ai init claude`、`ai sync`、静态 `doctor`、MCP stdio server。
 - 生命周期 MVP：metadata-only `upgrade --plan`、保守的 `extract domain --apply`。
 

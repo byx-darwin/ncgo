@@ -380,12 +380,12 @@ kitex 工具通过 `--template-extension` 读取这些记录,然后把每条按 
 
 每个 `optional/*.go` 文件都是字节级原样复制素材。`infra.Add` 从嵌入 FS
 读取后写到对应目标路径,通常是 `internal/base/data/<kind>.go`,也可以是
-`internal/base/registry/` 或 `internal/base/observability/` 等专门包。
+`internal/base/registry/` 等专门包。
 
 新增 optional 文件的约束:
 
 - **不得** import 项目特有包。
-- 包名必须匹配目标包(`data`、`registry`、`observability` 等)。
+- 包名必须匹配目标包(`data`、`registry` 等)。
 - 文件顶部注释必须列出依赖和接线说明。
 
 当前已发布:`redis`、`kafka`、`es`、`clickhouse`,以及 Kitex-only

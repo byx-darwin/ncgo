@@ -403,13 +403,12 @@ Render context (verified against the shipped templates):
 Each `optional/*.go` file is byte-verbatim copy material. `infra.Add`
 reads it from the embedded FS and writes it to its target path, usually
 `internal/base/data/<kind>.go`, or a specialized package such as
-`internal/base/registry/` or `internal/base/observability/`.
+`internal/base/registry/`.
 
 Constraints for new optional files:
 
 - Must not import project-specific packages.
-- Package must match the target package (`data`, `registry`,
-  `observability`, etc.).
+- Package must match the target package (`data`, `registry`, etc.).
 - Top-of-file comment must list required dependencies and wiring notes.
 
 Currently shipped: `redis`, `kafka`, `es`, `clickhouse`, and Kitex-only
