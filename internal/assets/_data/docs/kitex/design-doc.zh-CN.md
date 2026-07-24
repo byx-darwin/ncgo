@@ -246,12 +246,13 @@ RPC 请求(TTHeader)
 
 `ncgo add infra <kind>`(或手动从
 `internal/assets/_data/kitex/optional/<kind>.go` 拷贝)按 kind 落到
-`internal/base/{data,registry,observability}/` 下。每个文件只发布类型化
+`internal/base/{data,registry}/` 下。每个文件只发布类型化
 构造函数;Agent 需要把 config struct 与构造函数一起注册到 `server.Run`
-内的 `samber/do` injector(`registry` / `observability` 两个 add-on
-直接当 kitex server option 接入,不走 `do`)。Kitex 侧 add-on 的
+内的 `samber/do` injector(`registry_polaris` add-on 直接当 kitex server /
+client option 接入,不走 `do`)。Kitex 侧 add-on 的
 `goerror.Code` 用字符串(`<kind>_<reason>`),与 Hertz 的数字 errcode 注册
-表不同。
+表不同。observability(可观测性)已由 kitex 基础模板(go-framework OTLP,
+`cfg.Jaeger` 驱动)内置提供,不再以独立 add-on 形态存在。
 
 #### Redis(`data/redis.go`)
 
@@ -287,34 +288,43 @@ RPC 请求(TTHeader)
 - 错误码:`clickhouse_config_missing`、`clickhouse_addresses_missing`、
   `clickhouse_open_failed`、`clickhouse_ping_failed`。
 
-#### Etcd 注册 / 发现(`registry/etcd.go`,kitex 专属)
+#### Polaris 注册 / 发现(`registry/polaris.go`,kitex 专属)
 
-- 暴露:`NewEtcdRegistry(cfg)` 返回 `kitexregistry.Registry`、
-  `NewEtcdResolver(cfg)` 返回 `discovery.Resolver`、
-  `NewRegistryInfo(cfg)` 返回 `*kitexregistry.Info`。
-- 配置 struct:`EtcdConfig{ Endpoints, Username, Password,
-  DialTimeoutSeconds, ServicePrefix, RegistryRetry{Enabled,
-  MaxAttemptTimes, ObserveDelaySeconds, RetryDelaySeconds} }`。
-- 依赖:`github.com/kitex-contrib/registry-etcd`。
-- 错误码:`registry_config_invalid`(endpoints 空 / 负值时长 /
-  `public_addr` 解析失败)。
-- 接线(`server.Run` 内):
+- 暴露：`NewRegistry(cfg)` 返回 `kitexregistry.Registry`、
+  `NewResolver(cfg)` 返回 `discovery.Resolver`,内部委托
+  `kitex-contrib/polaris` 的 `NewPolarisRegistry` / `NewPolarisResolver`。
+- 配置 struct：`PolarisConfig{ Addresses, Namespace, Protocol,
+  TimeoutSeconds, ... }`,支持 `polaris.yaml`(项目根)与 `conf` 两种来源,
+  `Validate()` 基于 goerror 校验。
+- 依赖：`github.com/kitex-contrib/polaris`；`polaris.yaml` 由 add-on 一并
+  产出到项目根,`kitex-contrib/polaris` 默认从工作目录读取。
+- 错误码：`registry_config_invalid`(地址空 / 超时非法 / `polaris.yaml`
+  解析失败)。
+- 接线(仅在 `ncgo add infra registry_polaris --wire` 后,通过
+  `// ncgo:wire:registry:server` / `// ncgo:wire:registry:client` 锚点注入):
   ```go
-  r, err := registry.NewEtcdRegistry(cfg.Registry)
+  r, err := registry.NewRegistry(cfg.Registry)
   if err != nil { return goerror.In("kitex.registry").Wrap(err) }
-  // 把 kitexserver.WithRegistry(r) 加进 kitex server option
+  // server: kitexserver.WithRegistry(r)
+  // client: kitexclient.WithResolver(registry.NewResolver(cfg.Registry))
   ```
+- `--wire` 会自动在 kitex base 的 server option 与 client 构造处插入
+  `WithRegistry` / `WithResolver`;不加 `--wire` 时只产出 `polaris.go` 与
+  `polaris.yaml`,不修改 base server/client。
 
-#### LoongSuite Go Agent observability(`observability/otel.go`,common)
+#### Observability(go-framework OTLP,kitex 基础内置)
 
-- 暴露:`LoongSuiteConfig`、`DefaultLoongSuiteConfig(serviceName)`、
-  `LoongSuiteConfig.Env()`，用于生成标准 `OTEL_*` 环境变量。
-- 不向生成服务添加 SDK 依赖。LoongSuite 通过外部 `otel` CLI 在编译期自动插桩。
-- 构建和运行:
-  ```bash
-  otel go build ./...
-  OTEL_SERVICE_NAME=user-rpc OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 ./<your-binary>
-  ```
+kitex 基础模板已经接入 go-framework OTLP,**不需要** `ncgo add infra` 额外
+add-on。`cfg.Jaeger != nil && cfg.Jaeger.Enable` 时,`server.go` 调用
+`kitexobs "github.com/byx-darwin/go-tools/go-framework/kitex/observability"`
+的 `kitexobs.NewProvider(ctx, config.ObservabilityConfig{Enabled, Endpoint,
+ServiceName})`,把 `provider.ServerSuite()` 挂到 kitex server option,并在
+`server.Run` 退出前 `defer provider.Shutdown()`。
+
+> 历史说明:原 LoongSuite `observability_otel` / `otel` add-on 与
+> `kitex-contrib/registry-etcd` add-on 已在 PR5 中移除。可观测性统一使用
+> go-framework OTLP;注册/发现统一切换到 Polaris。既有的 `otel` /
+> `registry_etcd` kind 现在返回 invalid kind。
 
 ## 4. 文件清单
 
@@ -333,7 +343,7 @@ RPC 请求(TTHeader)
 | `kitex/kitex-template/migration_init.yaml` / `migration_keep.yaml` | sqlc/atlas 迁移占位 |
 | `kitex/kitex-template/makefile.yaml` | Makefile 目标(`make dev`、`make sqlc` 等) |
 | `kitex/sqlc.yaml` | sqlc 配置,结构与 Hertz 版相同 |
-| `kitex/optional/{redis,kafka,es,clickhouse,registry_etcd}.go`、`optional/observability_otel.go` | kitex 族的 `add infra` 素材 |
+| `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris}.go` | kitex 族的 `add infra` 素材(`registry_polaris` 同时产出 `polaris.yaml` 到项目根) |
 
 ## 5. `kitex-template/*.yaml` 语义
 
@@ -378,8 +388,9 @@ kitex 工具通过 `--template-extension` 读取这些记录,然后把每条按 
 - 包名必须匹配目标包(`data`、`registry`、`observability` 等)。
 - 文件顶部注释必须列出依赖和接线说明。
 
-当前已发布:`redis`、`kafka`、`es`、`clickhouse`、`observability_otel`
-(`otel` alias),以及 Kitex-only `registry_etcd`。
+当前已发布:`redis`、`kafka`、`es`、`clickhouse`,以及 Kitex-only
+`registry_polaris`。observability 已由 kitex 基础模板(go-framework OTLP)
+直接提供,不再以独立 add-on 形态存在。
 
 ## 7. 与 Hertz 的差异
 
@@ -389,7 +400,7 @@ kitex 工具通过 `--template-extension` 读取这些记录,然后把每条按 
 | 布局容器 | 单个 `layout.yaml` 列出全部文件 | 每个输出路径一个 YAML 文件 |
 | Handler 模板 | `--customize_package`(`package.yaml`) | per-path 模板 `handler.yaml` |
 | 变量来源 | `data.json`(独立) | 内置于 kitex 渲染上下文 |
-| 可选基础设施 | 5 种(多 `observability_otel`) | 6 种(多 `registry_etcd`) |
+| 可选基础设施 | 4 种(数据类 add-on,observability 由基础模板提供) | 5 种(多 `registry_polaris`) |
 
 ## 8. 维护契约
 

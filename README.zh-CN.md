@@ -313,17 +313,22 @@ ncgo add method device.ListThemes --root . --in usecase
 
 ```bash
 ncgo add infra redis --root .
-ncgo add infra otel --root .                 # observability_otel alias
 ncgo add infra logging --root .              # observability_logging alias
 ncgo add infra canary --root .               # release_canary alias
 ncgo add infra logging --root . --wire       # 可选：自动接入默认 server/client 模板
 ncgo add infra logging --root . --wire --dry-run  # 预览写入/接线，不修改文件
 ncgo add infra logging --root . --wire --dry-run --output json  # 输出机器可读 plan
 ncgo add infra logging --root . --wire --plan  # --dry-run --output json 简写
-ncgo add infra registry_etcd --root .        # kitex only
+ncgo add infra registry_polaris --root . --wire  # kitex only：Polaris 注册/发现 + 自动接线
 ```
 
-common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_otel`（`otel` alias）、`observability_logging`（`logging` alias）、`release_canary`（`canary` alias）。Kitex-only：`registry_etcd`。
+common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_logging`（`logging` alias）、`release_canary`（`canary` alias）。Kitex-only：`registry_polaris`。
+
+可观测性（tracing / OTel）现已内置到 Hertz 与 Kitex 基础模板，统一使用
+go-framework OTLP（Hertz：`cfg.Server.Jaeger` → `hertz/observability.NewProvider`；
+Kitex：`cfg.Jaeger` → `kitex/observability.NewProvider`）。原
+`observability_otel` / `otel` add-on 已移除，`ncgo add infra otel` 现在返回
+invalid kind。
 
 对 Hertz 项目，`redis` 现在默认对应一份由顶层 `cfg.Redis` 经
 `go-middleware/redis.NewUniversalClient` 派生的共享
@@ -332,8 +337,6 @@ common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_otel`（
 时，才会拆出独立连接池。
 
 `kafka`、`es`、`clickhouse` add-on 现在将连接构建委托给 `go-middleware` 工厂方法（`go-middleware/kafka`、`go-middleware/es`、`go-middleware/clickhouse`）。生成的包装结构体（`KafkaWriter`、`KafkaReader`、`ES`、`ClickHouse`）通过 samber/do 接收 go-middleware `Config` 类型，不再直接接收第三方库原始结构体。错误码使用 `go-framework/error.CodeConfigInvalid` 做配置校验，连接失败使用 go-middleware 预定义码（ClickHouse）或项目段码（ES: `40506`）。
-
-`observability_otel` 现在面向 Alibaba LoongSuite Go Agent。它会生成 `internal/base/observability/otel.go`，提供 `OTEL_*` 环境变量辅助，并打印安装 `otel` CLI、使用 `otel go build` 的 next steps；不会自动安装 agent、修改启动代码或增加 SDK 依赖。
 
 `observability_logging` 会生成 `internal/base/logging/logging.go`，并按服务类型额外生成 `hertz.go` 或 `kitex.go`。使用 `go-common/log` 提供结构化日志，支持 `WithCategory` 分类子 Logger、masking 脱敏、OTel trace context 注入，以及 `go-common/error`（`goerror`）结构化错误解析。
 

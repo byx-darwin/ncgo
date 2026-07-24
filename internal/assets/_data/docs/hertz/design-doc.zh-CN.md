@@ -314,11 +314,17 @@ query 文件。
 ### 3.7 可选基础设施片段
 
 `ncgo add infra <kind>` 从
-`internal/assets/_data/hertz/optional/<kind>.go` 或 common
-`internal/assets/_data/optional/<kind>.go` 复制一个 Go 文件。大多数素材会原样写出;
-少数 Hertz helper 资产还会在写入前渲染 `{{.GoModule}}` 占位符。数据客户端
-通常落到 `internal/base/data/`;专门能力可以落到
-`internal/base/observability/` 等包。
+`internal/assets/_data/hertz/optional/<kind>.go` 复制一个 Go 文件。
+数据客户端通常落到 `internal/base/data/`。
+
+> **Observability(可观测性)不再以 add-on 形态存在。** Hertz 基础模板已内置接入
+> go-framework OTLP:`cfg.Server.Jaeger != nil && cfg.Server.Jaeger.Enable`
+> 时,`server.go` 调用
+> `hertzobs "github.com/byx-darwin/go-tools/go-framework/hertz/observability"`
+> 的 `hertzobs.NewProvider(ctx, config.ObservabilityConfig{Enabled, Endpoint,
+> ServiceName})`,执行 `h.Use(provider.ServerMiddleware())`,并
+> `defer provider.Shutdown()`。原 LoongSuite `observability_otel` / `otel`
+> add-on 已在 PR5 中移除,既有的 `otel` kind 现在返回 invalid kind。
 
 #### Redis(`redis.go`)
 
@@ -391,7 +397,7 @@ query 文件。
 | `hertz/package.yaml` | 自定义 `hz` package 模板:handler.go 用 `Handler` struct 委托给 `useCase` 接口,并附带 usecase 桩 | `hz new --customize_package` |
 | `hertz/data.json` | `layout.yaml` 渲染时变量(`GoModule`、`ServiceName`、`WithDatabase`) | `hz new --customize_layout_data_path` |
 | `hertz/sqlc.yaml` | `--db postgres` 时复制到项目里的 sqlc 配置参考 | `mono` 脚手架 |
-| `hertz/optional/{redis,kafka,es,clickhouse}.go`、`optional/observability_otel.go` | `ncgo add infra <kind>` 的 drop-in 文件 | `internal/scaffold/infra` |
+| `hertz/optional/{redis,kafka,es,clickhouse}.go` | `ncgo add infra <kind>` 的 drop-in 文件 | `internal/scaffold/infra` |
 | `hertz/optional/rule_center_client.go` | `--rule-center-addr` 或 `ncgo add rule-center` 生成的 gRPC 客户端 | `mono` 脚手架 |
 
 ## 5. `data.json` 契约
@@ -435,20 +441,19 @@ flag 与文件的对应关系:
 
 ## 7. 可选基础设施
 
-每个 `optional/*.go` 文件都是 `infra.Add` 的素材。大多数会原样写出;少数
-Hertz helper 资产会在写入前渲染 `{{.GoModule}}` 占位符。`infra.Add` 从嵌入 FS
-读取后写到对应目标路径,通常是 `internal/base/data/<kind>.go`,也可以是
-`internal/base/observability/otel.go` 等专门包。
+每个 `optional/*.go` 文件都是 `infra.Add` 的素材。`infra.Add` 从嵌入 FS
+读取后写到对应目标路径,通常是 `internal/base/data/<kind>.go`。
 
 新增 optional 文件的约束:
 
 - **不得** import 项目特有包,只允许 stdlib + 第三方依赖,且要由
   `next steps` 提示用户 `go get`。
-- 包名必须匹配目标包(`data`、`observability` 等)。
+- 包名必须匹配目标包(`data` 等)。
 - 文件顶部注释必须把注册调用片段原样列出。
 
-当前已发布:`redis`、`kafka`、`es`、`clickhouse`、`observability_otel`
-(`otel` alias)。
+当前已发布:`redis`、`kafka`、`es`、`clickhouse`。可观测性由 Hertz
+基础模板(go-framework OTLP,`cfg.Server.Jaeger` 驱动)内置提供,不再以
+独立 add-on 形态存在。
 
 ## 8. 维护契约
 
