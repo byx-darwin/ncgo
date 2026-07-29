@@ -10,14 +10,14 @@
 
 > **The claimed complete solution IS implemented and functional.** Every generation surface (`new` mono/micro × all variants), every add-on (`add` bff/rpc/domain/method/rule-center, all 9 `add infra` kinds), and every lifecycle/agent surface (doctor, ai, mcp, protolint, i18n, export/import, upgrade, extract, version) runs and produces its documented artifacts. Repository self-checks (build/vet/gofmt/test/smoke) are fully green.
 >
-> **However, the diagnostic contract is NOT self-consistent with the scaffold's own default output (2 High gaps):** a freshly generated Hertz project fails `ncgo doctor` and `ncgo protolint` out of the box — once from an import-root mismatch, and once because the default template proto violates ncgo's own PIO206 rule (locked in by golden fixtures). Recommended: fix before claiming "generated projects are day-one healthy".
+> **However, the diagnostic contract WAS NOT self-consistent with the scaffold's own default output (2 High gaps, both FIXED in this PR):** a freshly generated Hertz project used to fail `ncgo doctor` and `ncgo protolint` out of the box — once from an import-root mismatch, and once because the default template proto violated ncgo's own PIO206 rule (locked in by golden fixtures). Both fixes are included here with regression tests; a fresh Hertz project now passes `doctor` with all checks green.
 
 | Tier | Criterion | Result |
 |------|-----------|--------|
 | **T0** repo self-checks | build/vet/gofmt/test/smoke all pass | ✅ 5/5 green |
-| **T1** command + artifact matrix | all cases run, exit 0, documented artifacts present | ✅ 55/55 executed cases PASS (1 SKIP justified) |
+| **T1** command + artifact matrix | all cases run, exit 0, documented artifacts present | ✅ 53 executed: 52 PASS + 1 justified SKIP |
 | **T2** generated projects compile | best-effort | ✅ 2/2 (kitex under documented `make sqlc`-first ordering) |
-| **Self-consistency** | fresh project passes own doctor/protolint | ❌ 2 High gaps (hertz) |
+| **Self-consistency** | fresh project passes own doctor/protolint | ✅ FIXED in this PR (was: 2 High gaps, hertz) |
 
 ## T0 — Repository self-checks
 
@@ -79,7 +79,7 @@ Design evidence (`internal/scaffold/infra/infra.go`): alias normalization via `n
 | C3 `--wire` | PASS | server.go imports internal/base/logging; calls logging.HertzAccessLog/HertzRecovery/HertzRequestID |
 | C4 `--output json` | PASS | stable keys: `dryRun, updated, writtenPath, writtenPaths, wiredPaths, nextSteps, plan` (plan = structured `{kind, action, path|detail}` array) |
 
-### Group D — lifecycle & agent surfaces (19 executed: 18 PASS + 1 SKIP)
+### Group D — lifecycle & agent surfaces (18 executed: 17 PASS + 1 SKIP)
 
 | Case | Command | Exit | Verdict | Evidence |
 |------|---------|------|---------|----------|
@@ -123,20 +123,23 @@ Design evidence (`internal/scaffold/infra/infra.go`): alias normalization via `n
 
 ### Gap #1 — HIGH — protolint import root breaks doctor/protolint on fresh Hertz projects
 
-- **Symptom:** on a freshly generated default Hertz project, `ncgo doctor` reports `✗ [protolint.load] … idl/app/demo.proto:7:8: open <root>/api.proto: no such file or directory` and exits 1; `ncgo protolint` fails identically.
-- **Root cause:** `internal/protolint/load.go:58-59` — `protocompile.SourceResolver{ImportPaths: []string{root}}` uses the project root as the only import root, but the scaffold's default proto emits idl-relative imports (`import "api.proto";`, `import "openapi/annotations.proto";` — matching the `hz -I idl` convention; files at `idl/api.proto`, `idl/openapi/`).
-- **Workaround:** `ncgo protolint --root idl --file app/<name>.proto`.
+**Status: FIXED in this PR.** `internal/protolint/load.go` now resolves imports against the project root plus the scaffold's `idl/` directory when present (`importRoots()`), matching the hz `-I idl` convention. Regression test: `TestLoadHertzGoldenProtoFromProjectRoot`. E2E: fresh `ncgo new` → `ncgo doctor` exits 0 with all 12 checks ✓.
+
+- **Symptom:** on a freshly generated default Hertz project, `ncgo doctor` reported `✗ [protolint.load] … idl/app/demo.proto:7:8: open <root>/api.proto: no such file or directory` and exited 1; `ncgo protolint` failed identically.
+- **Root cause:** `internal/protolint/load.go:58-59` — `protocompile.SourceResolver{ImportPaths: []string{root}}` used the project root as the only import root, but the scaffold's default proto emits idl-relative imports (`import "api.proto";`, `import "openapi/annotations.proto";` — matching the `hz -I idl` convention; files at `idl/api.proto`, `idl/openapi/`).
+- **Workaround (pre-fix):** `ncgo protolint --root idl --file app/<name>.proto`.
 - **Scope:** Hertz only. Kitex placeholder proto has no imports and lints clean (`ok`, exit 0).
-- **Impact:** ncgo's flagship diagnostics fail on day one for the default happy path; CI guidance "run doctor after new" is broken.
-- **Suggested fix:** include the IDL directory in the resolver, e.g. derive from `manifest.service.idl`'s parent (`ImportPaths: []string{root, filepath.Join(root, filepath.Dir(idl))}`), or honor an idl-root convention consistently with `hz`.
+- **Impact (pre-fix):** ncgo's flagship diagnostics failed on day one for the default happy path; CI guidance "run doctor after new" was broken.
+- **Fix applied:** `ImportPaths: []string{root, filepath.Join(root, "idl")}` (idl appended only when it is an existing directory), consistent with the workaround's idl-root convention.
 
 ### Gap #2 — HIGH — default template proto violates ncgo's own PIO206 (locked in by golden fixtures)
 
+**Status: FIXED in this PR.** `(api.body)` removed from `PingResp.message` in `internal/scaffold/mono/files.go` (BFF inherits via delegation to `mono.Generate`); 4 golden fixtures regenerated; regression guards added: `TestGoldenScaffoldProtoLintsClean` (lint-over-golden meta-test via the manifest-driven discovery path doctor uses) and a PIO206 negative assertion in `mono_test.go`. E2E: fresh `ncgo new` → `ncgo protolint` exits 0 with `errors=0`. **Deferred (out of scope):** the PIO402 *warning* on the request `name` field remains — a correct fix requires vendoring PGV `validate.proto` and codegen wiring; tracked in follow-ups.
+
 - **Symptom:** with the import root corrected, the fresh default proto lints `✗ [PIO206] DemoService/Ping response field message must not use request binding annotation api.body` (error) + `! [PIO402]` request field `name` lacks PGV length constraint (warning).
-- **Root cause:** `internal/scaffold/mono/files.go:469` emits `(api.body) = "message",` inside `PingResp` — a request-side binding on a response field, exactly what PIO206 forbids. Same generator omits PGV `validate.rules` on the request `name` field (PIO402).
-- **Aggravating factor:** golden fixtures `internal/scaffold/mono/testdata/mono-{default,with-database,with-rulecenter}/idl/app/demo.proto` (and `internal/scaffold/bff/testdata/bff-default/idl/app/web-bff.proto`) lock the violating output — suite green while the contract self-contradicts.
+- **Root cause:** `internal/scaffold/mono/files.go:469` emitted `(api.body) = "message",` inside `PingResp` — a request-side binding on a response field, exactly what PIO206 forbids. Same generator omits PGV `validate.rules` on the request `name` field (PIO402).
+- **Aggravating factor:** golden fixtures `internal/scaffold/mono/testdata/mono-{default,with-database,with-rulecenter}/idl/app/demo.proto` (and `internal/scaffold/bff/testdata/bff-default/idl/app/web-bff.proto`) locked the violating output — suite green while the contract self-contradicted. (Now fixed: fixtures regenerated, meta-test guards the contract.)
 - **Scope:** Hertz mono + BFF scaffolds.
-- **Suggested fix:** remove `(api.body)` from `PingResp.message` in `files.go`; add `validate.rules` string constraint to request `name`; regenerate golden fixtures (`-update-golden`). Optionally add a meta-test that runs protolint over golden idl output to prevent future self-contradiction.
 
 ### Minor findings
 
@@ -160,6 +163,6 @@ Design evidence (`internal/scaffold/infra/infra.go`): alias normalization via `n
 
 ## Follow-up recommendations
 
-1. **Issue (High):** fix protolint import root (Gap #1) + doctor regression test on a fresh `new` output.
-2. **Issue (High):** fix template PIO206/PIO402 self-violation + golden refresh + lint-over-golden meta-test (Gap #2).
+1. ~~**Issue (High):** fix protolint import root (Gap #1)~~ — **DONE in this PR** (regression test + e2e verified).
+2. ~~**Issue (High):** fix template PIO206 self-violation + golden refresh + lint-over-golden meta-test (Gap #2)~~ — **DONE in this PR**. Residual: PIO402 *warning* on request `name` (needs vendored PGV `validate.proto` + codegen wiring) — suggest a separate enhancement Issue.
 3. **Issue (Minor bundle):** Go toolchain doctor check, extract plan display, import auto-detect docs.

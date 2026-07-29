@@ -229,7 +229,6 @@ func TestGenerateWritesHertzStarterIDLs(t *testing.T) {
 		`message PingReq {`,
 		`(openapi.parameter) = { required: true },`,
 		`message PingResp {`,
-		`(api.body) = "message",`,
 		`service DemoService {`,
 		`rpc Ping(PingReq) returns (PingResp) {`,
 		`option (api.get) = "/ping";`,
@@ -238,6 +237,11 @@ func TestGenerateWritesHertzStarterIDLs(t *testing.T) {
 		if !strings.Contains(string(serviceBody), want) {
 			t.Errorf("demo.proto missing %q\n---\n%s", want, string(serviceBody))
 		}
+	}
+	// PIO206 regression guard: response fields must never carry request-side
+	// binding annotations such as api.body.
+	if strings.Contains(string(serviceBody), "(api.body)") {
+		t.Errorf("demo.proto annotates a response field with (api.body); PIO206 forbids request bindings on response fields")
 	}
 }
 

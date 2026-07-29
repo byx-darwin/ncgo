@@ -466,7 +466,6 @@ service %s {
 		`  };`,
 		``,
 		`  string message = 1 [`,
-		`    (api.body) = "message",`,
 		`    (openapi.property) = {`,
 		`      title: "Response message";`,
 		`      description: "服务返回的响应文本";`,
