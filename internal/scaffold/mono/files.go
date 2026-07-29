@@ -397,6 +397,20 @@ func writeHertzProtoSupportFiles(dir string) error {
 			return fmt.Errorf("scaffold: write %s: %w", full, err)
 		}
 	}
+	// validate.proto (PGV) ships in its own idl/validate/ subdir so the service
+	// proto's `import "validate/validate.proto";` resolves under `-I idl` (hz)
+	// and protolint's [root, root/idl] import roots.
+	validateBody, err := fs.ReadFile(srcFS, filepath.ToSlash(filepath.Join("hertz", "validate", "validate.proto")))
+	if err != nil {
+		return fmt.Errorf("scaffold: read embedded hertz/validate/validate.proto: %w", err)
+	}
+	validatePath := filepath.Join(dir, "idl", "validate", "validate.proto")
+	if err := os.MkdirAll(filepath.Dir(validatePath), 0o755); err != nil {
+		return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(validatePath), err)
+	}
+	if err := os.WriteFile(validatePath, validateBody, 0o644); err != nil {
+		return fmt.Errorf("scaffold: write %s: %w", validatePath, err)
+	}
 	return nil
 }
 
@@ -435,6 +449,7 @@ service %s {
 		``,
 		`import "api.proto";`,
 		`import "openapi/annotations.proto";`,
+		`import "validate/validate.proto";`,
 		``,
 		`option (openapi.document) = {`,
 		`  info: {`,
@@ -448,6 +463,7 @@ service %s {
 		`  string name = 1 [`,
 		`    (api.query) = "name",`,
 		`    (openapi.parameter) = { required: true },`,
+		`    (validate.rules) = { string: { min_len: 1, max_len: 64 } },`,
 		`    (openapi.property) = {`,
 		`      title: "Name";`,
 		`      description: "Ping 请求中的 name 查询参数";`,
