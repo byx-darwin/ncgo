@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"strings"
 
@@ -41,6 +42,18 @@ const (
 	validateRulesOption    protoreflect.FullName = "validate.rules"
 )
 
+// importRoots returns the proto import roots: the project root plus the
+// scaffold's idl directory when present. Generated protos import support
+// files relative to idl/ (hz convention: compile with -I idl) — e.g.
+// idl/app/demo.proto imports "api.proto" which lives at idl/api.proto.
+func importRoots(root string) []string {
+	roots := []string{root}
+	if fi, err := os.Stat(filepath.Join(root, "idl")); err == nil && fi.IsDir() {
+		roots = append(roots, filepath.Join(root, "idl"))
+	}
+	return roots
+}
+
 // Load compiles and normalizes the requested proto entry files.
 func Load(ctx context.Context, opts LoadOptions) (*Model, error) {
 	if opts.Root == "" {
@@ -56,7 +69,7 @@ func Load(ctx context.Context, opts LoadOptions) (*Model, error) {
 
 	compiler := protocompile.Compiler{
 		Resolver: protocompile.WithStandardImports(&protocompile.SourceResolver{
-			ImportPaths: []string{root},
+			ImportPaths: importRoots(root),
 		}),
 		SourceInfoMode: protocompile.SourceInfoStandard,
 	}

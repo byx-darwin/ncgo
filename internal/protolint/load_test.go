@@ -133,3 +133,26 @@ func TestLoadValidatesInputs(t *testing.T) {
 		t.Fatalf("expected error for empty files")
 	}
 }
+
+// TestLoadHertzGoldenProtoFromProjectRoot mirrors how doctor and the
+// protolint CLI invoke Load: Root is the project root and the entry file is
+// the manifest-relative idl path. Scaffold protos import support files
+// relative to the idl/ directory (hz convention: compile with -I idl), e.g.
+// idl/app/demo.proto imports "api.proto" which lives at idl/api.proto, so
+// Load must resolve imports against idl/ in addition to the project root.
+func TestLoadHertzGoldenProtoFromProjectRoot(t *testing.T) {
+	root := filepath.Clean(filepath.Join("..", "scaffold", "mono", "testdata", "mono-default"))
+	model, err := Load(context.Background(), LoadOptions{
+		Root:  root,
+		Files: []string{"idl/app/demo.proto"},
+	})
+	if err != nil {
+		t.Fatalf("Load from project root: %v", err)
+	}
+	if len(model.Files) != 1 {
+		t.Fatalf("got %d files, want 1", len(model.Files))
+	}
+	if got := model.Files[0].Path; got != "idl/app/demo.proto" {
+		t.Fatalf("path = %q, want idl/app/demo.proto", got)
+	}
+}
