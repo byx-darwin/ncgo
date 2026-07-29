@@ -74,11 +74,18 @@ func PlanDomain(opts DomainOptions) (*DomainPlan, error) {
 	if missing != "" {
 		return nil, fmt.Errorf("extract: source file %s is missing", missing)
 	}
+	// --plan is preview-only: the target service may not exist yet, so prefer
+	// its real manifest module when available and otherwise fall back to the
+	// derived sourceModule/to value.
+	targetModule := strings.TrimRight(m.Module, "/") + "/" + filepath.ToSlash(to)
+	if tm, err := manifest.Load(filepath.Join(root, filepath.FromSlash(to))); err == nil && tm.Module != "" {
+		targetModule = tm.Module
+	}
 	return &DomainPlan{
 		Root:         root,
 		Name:         opts.Name,
 		To:           filepath.ToSlash(to),
-		TargetModule: strings.TrimRight(m.Module, "/") + "/" + filepath.ToSlash(to),
+		TargetModule: targetModule,
 		Sources:      sources,
 		NextSteps: []string{
 			"create target RPC service with `ncgo add rpc " + opts.Name + "-rpc --root <workspace>`",

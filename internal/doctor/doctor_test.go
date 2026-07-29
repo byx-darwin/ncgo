@@ -54,7 +54,11 @@ func findChecksByRule(r *Report, rule string) []Check {
 
 func TestRunReportsHzKitexOK(t *testing.T) {
 	r := Run(context.Background(), Options{Runner: &scriptedRunner{
-		out: map[string]string{"hz": "hz version v0.9.7", "kitex": "v0.16.1"},
+		out: map[string]string{
+			"hz":    "hz version v0.9.7",
+			"kitex": "v0.16.1",
+			"go":    "go version go1.25.0 darwin/arm64",
+		},
 	}})
 	if r.Scope != ScopeHost {
 		t.Fatalf("scope = %q, want %q", r.Scope, ScopeHost)
@@ -67,17 +71,67 @@ func TestRunReportsHzKitexOK(t *testing.T) {
 	if !kx.OK {
 		t.Errorf("kitex not OK: %+v", kx)
 	}
+	g := findCheck(t, r, "tool.go")
+	if !g.OK {
+		t.Errorf("go not OK: %+v", g)
+	}
 	if !r.OK() {
 		t.Errorf("report not OK: %+v", r.Checks)
 	}
-	if r.Summary.CheckCount != 2 || r.Summary.PassedCount != 2 || r.Summary.FailedCount != 0 {
+	if r.Summary.CheckCount != 3 || r.Summary.PassedCount != 3 || r.Summary.FailedCount != 0 {
 		t.Fatalf("summary = %+v", r.Summary)
+	}
+}
+
+func TestRunReportsGoOK(t *testing.T) {
+	r := Run(context.Background(), Options{Runner: &scriptedRunner{
+		out: map[string]string{
+			"hz":    "hz version v0.9.7",
+			"kitex": "v0.16.1",
+			"go":    "go version go1.25.0 darwin/arm64",
+		},
+	}})
+	g := findCheck(t, r, "tool.go")
+	if !g.OK {
+		t.Errorf("go not OK: %+v", g)
+	}
+	if !r.OK() {
+		t.Errorf("report not OK: %+v", r.Checks)
+	}
+}
+
+func TestRunFailsWhenGoTooOld(t *testing.T) {
+	r := Run(context.Background(), Options{Runner: &scriptedRunner{
+		out: map[string]string{
+			"hz":    "hz version v0.9.7",
+			"kitex": "v0.16.1",
+			"go":    "go version go1.24.3 linux/amd64",
+		},
+	}})
+	g := findCheck(t, r, "tool.go")
+	if g.OK {
+		t.Errorf("go1.24.3 should fail >= v1.25.0")
+	}
+	if !strings.Contains(g.Message, "below minimum") {
+		t.Errorf("expected 'below minimum' in message: %s", g.Message)
+	}
+	if r.OK() {
+		t.Errorf("report should not be OK when go too old")
+	}
+}
+
+func TestGoTwoComponentVersionParses(t *testing.T) {
+	if got := normalizeGoVersion("go1.25"); got != "v1.25.0" {
+		t.Errorf("normalizeGoVersion(go1.25) = %q, want v1.25.0", got)
+	}
+	if got := normalizeGoVersion("go1.26.5"); got != "v1.26.5" {
+		t.Errorf("normalizeGoVersion(go1.26.5) = %q, want v1.26.5", got)
 	}
 }
 
 func TestRunFailsWhenHzAbsent(t *testing.T) {
 	r := Run(context.Background(), Options{Runner: &scriptedRunner{
-		out: map[string]string{"kitex": "v0.16.1"},
+		out: map[string]string{"kitex": "v0.16.1", "go": "go version go1.25.0 darwin/arm64"},
 	}})
 	hz := findCheck(t, r, "tool.hz")
 	if hz.OK {
@@ -96,7 +150,7 @@ func TestRunFailsWhenHzAbsent(t *testing.T) {
 
 func TestRunFailsWhenHzTooOld(t *testing.T) {
 	r := Run(context.Background(), Options{Runner: &scriptedRunner{
-		out: map[string]string{"hz": "hz version v0.9.6", "kitex": "v0.16.1"},
+		out: map[string]string{"hz": "hz version v0.9.6", "kitex": "v0.16.1", "go": "go version go1.25.0 darwin/arm64"},
 	}})
 	hz := findCheck(t, r, "tool.hz")
 	if hz.OK {
@@ -109,7 +163,7 @@ func TestRunFailsWhenHzTooOld(t *testing.T) {
 
 func TestRunVersionUnparsableIsWarn(t *testing.T) {
 	r := Run(context.Background(), Options{Runner: &scriptedRunner{
-		out: map[string]string{"hz": "garbage", "kitex": "v0.16.1"},
+		out: map[string]string{"hz": "garbage", "kitex": "v0.16.1", "go": "go version go1.25.0 darwin/arm64"},
 	}})
 	hz := findCheck(t, r, "tool.hz")
 	if hz.OK || hz.Severity != SeverityWarn {

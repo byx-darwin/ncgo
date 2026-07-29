@@ -170,6 +170,21 @@ func seedTargetService(t *testing.T, root, module, kind string) {
 	}
 }
 
+func TestPlanDomainUsesTargetManifestModule(t *testing.T) {
+	root := seedProject(t)
+	seedTargetService(t, filepath.Join(root, "services", "device-rpc"), "github.com/acme/device-rpc", manifest.KindKitex)
+	plan, err := PlanDomain(DomainOptions{Root: root, Name: "device"})
+	if err != nil {
+		t.Fatalf("PlanDomain: %v", err)
+	}
+	if plan.TargetModule != "github.com/acme/device-rpc" {
+		t.Errorf("TargetModule = %q, want target manifest module github.com/acme/device-rpc", plan.TargetModule)
+	}
+	if plan.Applied {
+		t.Errorf("plan-only run must not set Applied")
+	}
+}
+
 func TestPlanDomainRequiresSourceFiles(t *testing.T) {
 	root := seedProject(t)
 	missing := filepath.Join(root, "internal", "usecase", "device", "device.go")

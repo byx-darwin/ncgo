@@ -40,9 +40,13 @@ func TestRunDoctor(t *testing.T) {
 		t.Fatalf("seed manifest: %v", err)
 	}
 
-	// Use a runner that reports both hz and kitex as present.
+	// Use a runner that reports hz, kitex, and go as present.
 	runner := &scriptedRunner{
-		out: map[string]string{"hz": "hz version v0.9.7", "kitex": "v0.16.1"},
+		out: map[string]string{
+			"hz":    "hz version v0.9.7",
+			"kitex": "v0.16.1",
+			"go":    "go version go1.25.0 darwin/arm64",
+		},
 	}
 
 	result, err := RunDoctor(context.Background(), DoctorOptions{
@@ -66,7 +70,11 @@ func TestRunDoctor(t *testing.T) {
 func TestRunDoctorHostOnly(t *testing.T) {
 	// When Root is empty, doctor only checks tools (host-level checks).
 	runner := &scriptedRunner{
-		out: map[string]string{"hz": "hz version v0.9.7", "kitex": "v0.16.1"},
+		out: map[string]string{
+			"hz":    "hz version v0.9.7",
+			"kitex": "v0.16.1",
+			"go":    "go version go1.25.0 darwin/arm64",
+		},
 	}
 
 	result, err := RunDoctor(context.Background(), DoctorOptions{
@@ -76,8 +84,8 @@ func TestRunDoctorHostOnly(t *testing.T) {
 	if err != nil {
 		t.Fatalf("RunDoctor: %v", err)
 	}
-	if result.Summary.CheckCount != 2 {
-		t.Fatalf("expected 2 host checks, got %d", result.Summary.CheckCount)
+	if result.Summary.CheckCount != 3 {
+		t.Fatalf("expected 3 host checks, got %d", result.Summary.CheckCount)
 	}
 	if result.Scope != "host" {
 		t.Fatalf("scope = %q, want host", result.Scope)

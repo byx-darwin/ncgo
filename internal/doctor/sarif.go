@@ -303,6 +303,17 @@ func doctorFixedRuleMetadata(c Check) (doctorSARIFRuleMeta, bool) {
 			Tags:         []string{"doctor", "tooling", "kitex", "blocking"},
 			Taxa:         []string{doctorTaxonTooling},
 		},
+		"tool.go": {
+			ID:           "tool.go",
+			Name:         "go toolchain available",
+			Short:        "Checks that the Go toolchain is on PATH and new enough for ncgo.",
+			Full:         "Doctor verifies that the Go toolchain is installed and meets the minimum supported version required to build ncgo and generated projects.",
+			Help:         "Install or upgrade Go, then rerun ncgo doctor to verify the toolchain.",
+			HelpURI:      doctorLifecycleHelpURI,
+			DefaultLevel: "error",
+			Tags:         []string{"doctor", "tooling", "go", "blocking"},
+			Taxa:         []string{doctorTaxonTooling},
+		},
 		"manifest.load": {
 			ID:           "manifest.load",
 			Name:         "service manifest loads",

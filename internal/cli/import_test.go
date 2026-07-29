@@ -389,3 +389,13 @@ func TestRootCmdIncludesImportCommand(t *testing.T) {
 		t.Fatal("import command not registered")
 	}
 }
+
+func TestImportHelpDocumentsKindDetection(t *testing.T) {
+	cmd := newImportCmd()
+	if !strings.Contains(cmd.Long, "marker") {
+		t.Errorf("import Long help should mention generator marker files:\n%s", cmd.Long)
+	}
+	if !strings.Contains(cmd.Long, "--kind") {
+		t.Errorf("import Long help should mention explicit --kind for marker-less scaffolds:\n%s", cmd.Long)
+	}
+}

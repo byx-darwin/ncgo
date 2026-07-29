@@ -26,6 +26,7 @@ import (
 const (
 	MinHzVersion    = "v0.9.7"
 	MinKitexVersion = "v0.16.1"
+	MinGoVersion    = "v1.25.0"
 )
 
 // InstallHint returns a human/agent-readable suggestion for installing the
@@ -36,6 +37,8 @@ func InstallHint(name string) string {
 		return "go install github.com/cloudwego/hertz/cmd/hz@latest  # >= " + MinHzVersion
 	case "kitex":
 		return "go install github.com/cloudwego/kitex/tool/cmd/kitex@latest  # >= " + MinKitexVersion
+	case "go":
+		return "download Go (>= " + MinGoVersion + ") from https://go.dev/dl/"
 	}
 	return ""
 }
