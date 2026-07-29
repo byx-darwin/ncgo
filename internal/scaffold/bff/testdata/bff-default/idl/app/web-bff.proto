@@ -6,6 +6,7 @@ option go_package = "github.com/acme/commerce/services/web-bff/internal/pb;pb";
 
 import "api.proto";
 import "openapi/annotations.proto";
+import "validate/validate.proto";
 
 option (openapi.document) = {
   info: {
@@ -19,6 +20,7 @@ message PingReq {
   string name = 1 [
     (api.query) = "name",
     (openapi.parameter) = { required: true },
+    (validate.rules) = { string: { min_len: 1, max_len: 64 } },
     (openapi.property) = {
       title: "Name";
       description: "Ping 请求中的 name 查询参数";
