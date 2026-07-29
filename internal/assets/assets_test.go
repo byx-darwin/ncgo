@@ -54,6 +54,7 @@ func TestEmbeddedFilesPresent(t *testing.T) {
 		"hertz/optional/kafka.go",
 		"hertz/optional/es.go",
 		"hertz/optional/clickhouse.go",
+		"hertz/validate/validate.proto",
 		"kitex/sqlc.yaml",
 		"kitex/query/health.sql",
 		"kitex/schema/000001_placeholder.sql",
