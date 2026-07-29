@@ -125,3 +125,65 @@ func truncate(s string, n int) string {
 	}
 	return s
 }
+
+// goVersionRE pulls the goMAJOR.MINOR[.PATCH] token out of `go version`
+// output, e.g. "go version go1.25.0 darwin/arm64". Go omits the patch
+// component in some releases (go1.25), so it is optional here.
+var goVersionRE = regexp.MustCompile(`go[0-9]+\.[0-9]+(?:\.[0-9]+)?`)
+
+// checkGo probes the Go toolchain via `go version`. Unlike hz/kitex, the
+// version token is goX.Y[.Z] (no leading v), so it needs its own parser;
+// comparison still reuses semverCompare after normalization.
+func checkGo(ctx context.Context, r exec.Runner) Check {
+	c := Check{ID: "tool.go", Severity: SeverityError}
+	res, err := r.Run(ctx, exec.Cmd{Name: "go", Args: []string{"version"}})
+	if err != nil {
+		var nf *exec.NotFoundError
+		if errors.As(err, &nf) {
+			c.OK = false
+			c.Message = "go not found on PATH"
+			c.Hint = exec.InstallHint("go")
+			return c
+		}
+		c.OK = false
+		c.Severity = SeverityWarn
+		c.Message = fmt.Sprintf("go present but probe failed: %v", err)
+		c.Hint = exec.InstallHint("go")
+		return c
+	}
+	out := string(res.Stdout) + "\n" + string(res.Stderr)
+	got := goVersionRE.FindString(out)
+	if got == "" {
+		c.OK = false
+		c.Severity = SeverityWarn
+		c.Message = "go version unparsable: " + truncate(out, 80)
+		c.Hint = "expected output to contain a goX.Y.Z token"
+		return c
+	}
+	cmp, err := semverCompare(normalizeGoVersion(got), exec.MinGoVersion)
+	if err != nil {
+		c.OK = false
+		c.Severity = SeverityWarn
+		c.Message = fmt.Sprintf("go: %v", err)
+		return c
+	}
+	if cmp < 0 {
+		c.OK = false
+		c.Message = fmt.Sprintf("go %s is below minimum %s", got, exec.MinGoVersion)
+		c.Hint = exec.InstallHint("go")
+		return c
+	}
+	c.OK = true
+	c.Message = fmt.Sprintf("go %s (>= %s)", got, exec.MinGoVersion)
+	return c
+}
+
+// normalizeGoVersion converts a goX.Y[.Z] token to a strict vX.Y.Z semver,
+// defaulting a missing patch component to 0 (e.g. "go1.25" -> "v1.25.0").
+func normalizeGoVersion(s string) string {
+	parts := strings.Split(strings.TrimPrefix(s, "go"), ".")
+	for len(parts) < 3 {
+		parts = append(parts, "0")
+	}
+	return "v" + strings.Join(parts[:3], ".")
+}

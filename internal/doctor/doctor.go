@@ -99,6 +99,7 @@ func Run(ctx context.Context, opts Options) *Report {
 	}
 	r.Checks = append(r.Checks, checkTool(ctx, runner, "hz", []string{"--version"}, exec.MinHzVersion))
 	r.Checks = append(r.Checks, checkTool(ctx, runner, "kitex", []string{"-version"}, exec.MinKitexVersion))
+	r.Checks = append(r.Checks, checkGo(ctx, runner))
 	if opts.Root != "" {
 		checks, scope := projectChecks(ctx, opts.Root)
 		r.Scope = scope
