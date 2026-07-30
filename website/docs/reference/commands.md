@@ -18,6 +18,7 @@ Top-level commands (from `ncgo --help`):
 | `ncgo i18n` | Inspect project i18n artifacts with structured output |
 | `ncgo extract` | Plan or perform mono-to-micro extractions |
 | `ncgo export` | Export code templates from an existing project |
+| `ncgo help` | Help about any command |
 | `ncgo upgrade` | Upgrade project metadata |
 | `ncgo mcp` | MCP server for AI agents |
 | `ncgo test` | Run generated tests for a project |

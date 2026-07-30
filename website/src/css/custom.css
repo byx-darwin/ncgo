@@ -209,6 +209,9 @@ h1, h2, h3, h4 {
   .reveal-hidden { opacity: 1; transform: none; }
 }
 
+/* No-JS fallback: show reveal content when JavaScript is disabled */
+.no-js .reveal-hidden { opacity: 1; transform: none; }
+
 /* ── Landing layout ───────────────────────── */
 .landing { max-width: 1120px; margin: 0 auto; padding: 0 24px; }
 

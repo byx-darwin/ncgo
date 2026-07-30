@@ -2,7 +2,6 @@ import React from 'react';
 import Layout from '@theme/Layout';
 import Link from '@docusaurus/Link';
 import useDocusaurusContext from '@docusaurus/useDocusaurusContext';
-import Translate from '@docusaurus/Translate';
 import Terminal from '../components/Terminal';
 import FileTree from '../components/FileTree';
 import CommandTabs from '../components/CommandTabs';

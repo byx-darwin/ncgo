@@ -18,6 +18,7 @@ title: 命令参考
 | `ncgo i18n` | 以结构化输出检查项目 i18n 资源 |
 | `ncgo extract` | 计划或执行 mono 到 micro 的提取 |
 | `ncgo export` | 从已有项目导出代码模板 |
+| `ncgo help` | 查看任意命令的帮助 |
 | `ncgo upgrade` | 升级项目元数据 |
 | `ncgo mcp` | 面向 AI agent 的 MCP server |
 | `ncgo test` | 运行项目的生成测试 |
