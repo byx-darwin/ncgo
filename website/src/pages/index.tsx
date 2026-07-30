@@ -4,7 +4,7 @@ import Link from '@docusaurus/Link';
 
 export default function Home() {
   return (
-    <Layout title="Home" description="ncgo — AI-friendly scaffold CLI for Go microservices">
+    <Layout>
       <main style={{ padding: '4rem 1rem', textAlign: 'center' }}>
         <h1>ncgo</h1>
         <p>AI-friendly scaffold CLI for Go microservices.</p>
