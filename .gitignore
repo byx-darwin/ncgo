@@ -22,3 +22,8 @@ coverage.txt
 
 # Claude Code local overrides (user-owned, machine-specific)
 .claude/settings.local.json
+
+# Website (Docusaurus)
+website/node_modules/
+website/build/
+website/.docusaurus/

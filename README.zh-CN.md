@@ -5,6 +5,8 @@
 [![Go 1.25+](https://img.shields.io/badge/Go-1.25%2B-00ADD8?logo=go)](https://go.dev/)
 [![License](https://img.shields.io/github/license/byx-darwin/ncgo)](LICENSE)
 
+**官网：** [byx-darwin.github.io/ncgo](https://byx-darwin.github.io/ncgo/)
+
 面向 AI Agent 的 Go 微服务脚手架 CLI。`ncgo` 内置并维护 Hertz / Kitex 模板，生成项目元数据，调用上游生成器，并为 Claude、Cursor 等 Agent 渲染上下文文件。
 
 如果你希望用一个 CLI 同时解决可复现脚手架、可选基础设施能力以及 Agent 友好的项目上下文，`ncgo` 就是为这个场景设计的。
