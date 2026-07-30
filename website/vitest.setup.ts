@@ -1,6 +1,14 @@
 import '@testing-library/jest-dom/vitest';
 import { vi } from 'vitest';
 
+// Patch vi.useFakeTimers to default to shouldAdvanceTime: true.
+// This prevents deadlocks when userEvent.setup() is used with fake timers,
+// as userEvent's internal async operations need timers to advance.
+const _origUseFakeTimers = vi.useFakeTimers.bind(vi);
+vi.useFakeTimers = (opts?: any) => {
+  return _origUseFakeTimers({ shouldAdvanceTime: true, ...opts });
+};
+
 // jsdom 无 matchMedia：默认「不减少动效」，测试可覆盖
 if (typeof window !== 'undefined' && !window.matchMedia) {
   Object.defineProperty(window, 'matchMedia', {
@@ -18,10 +26,22 @@ if (typeof window !== 'undefined' && !window.matchMedia) {
 }
 
 // jsdom 无 navigator.clipboard
-Object.defineProperty(navigator, 'clipboard', {
-  writable: true,
+// 1. Define our vi.fn()-backed mock as non-configurable.
+const _origDefineProperty = Object.defineProperty;
+_origDefineProperty(navigator, 'clipboard', {
+  writable: false,
+  configurable: false,
   value: { writeText: vi.fn().mockResolvedValue(undefined) },
 });
+// 2. Patch Object.defineProperty so userEvent.setup() cannot replace it.
+//    userEvent would swap writeText for a non-spy class method, breaking
+//    `toHaveBeenCalledWith` assertions in CopyCommand / CommandTabs tests.
+Object.defineProperty = function <T>(obj: T, prop: PropertyKey, desc: PropertyDescriptor & ThisType<T>): T {
+  if (obj === navigator && prop === 'clipboard') {
+    return obj;
+  }
+  return _origDefineProperty.call(Object, obj, prop, desc) as T;
+} as typeof Object.defineProperty;
 
 // jsdom 无 IntersectionObserver：默认不相交（Reveal 组件应降级为可见）
 class MockIntersectionObserver {

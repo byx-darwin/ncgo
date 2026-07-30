@@ -121,3 +121,81 @@ h1, h2, h3, h4 {
 @media (prefers-reduced-motion: reduce) {
   .term-caret { animation: none; }
 }
+
+/* ── FileTree ─────────────────────────────── */
+.filetree {
+  border: 1px solid var(--ncgo-line);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--ncgo-ink-2) 92%, transparent);
+  padding: 12px 4px;
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 13px;
+  line-height: 1.9;
+}
+.filetree-row { display: flex; align-items: center; gap: 8px; }
+.filetree-text { color: var(--ncgo-text-dim); }
+.filetree-ai .filetree-text { color: var(--ncgo-amber); }
+.filetree-badge {
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  color: var(--ncgo-ink);
+  background: var(--ncgo-amber);
+  border-radius: 4px;
+  padding: 1px 5px;
+}
+
+/* ── CopyCommand ──────────────────────────── */
+.copy-command {
+  display: inline-flex;
+  align-items: center;
+  gap: 12px;
+  border: 1px solid var(--ncgo-line);
+  border-radius: 8px;
+  background: var(--ncgo-ink-3);
+  padding: 10px 8px 10px 16px;
+}
+.copy-command-text {
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 14px;
+  color: var(--ncgo-text);
+}
+.copy-command-btn {
+  border: none;
+  background: var(--ncgo-cyan-soft);
+  color: var(--ncgo-cyan);
+  border-radius: 6px;
+  width: 32px;
+  height: 32px;
+  cursor: pointer;
+  font-size: 15px;
+  transition: transform 0.15s ease, background 0.15s ease;
+}
+.copy-command-btn:hover { transform: translateY(-1px); background: rgba(0, 173, 216, 0.24); }
+
+/* ── CommandTabs ──────────────────────────── */
+.command-tabs-list {
+  display: flex;
+  gap: 6px;
+  margin-bottom: -1px;
+  position: relative;
+  z-index: 1;
+}
+.command-tab {
+  border: 1px solid var(--ncgo-line);
+  border-bottom: none;
+  background: transparent;
+  color: var(--ncgo-text-dim);
+  font-family: var(--ifm-font-family-monospace);
+  font-size: 13px;
+  padding: 8px 16px;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  transition: color 0.15s ease, background 0.15s ease;
+}
+.command-tab:hover { color: var(--ncgo-cyan); }
+.command-tab-active {
+  background: var(--ncgo-ink-3);
+  color: var(--ncgo-cyan);
+  font-weight: 600;
+}
