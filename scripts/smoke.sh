@@ -67,27 +67,16 @@ messages = [
 stdin = b""
 for msg in messages:
     body = json.dumps(msg, separators=(",", ":")).encode()
-    stdin += f"Content-Length: {len(body)}\r\n\r\n".encode() + body
+    stdin += body + b"\n"
 
 proc = subprocess.run([bin_path, "mcp", "serve"], input=stdin, stdout=subprocess.PIPE, stderr=subprocess.PIPE, check=True)
 raw = proc.stdout
 responses = []
-pos = 0
-while pos < len(raw):
-    header_end = raw.find(b"\r\n\r\n", pos)
-    if header_end < 0:
-        raise SystemExit("missing MCP frame header")
-    headers = raw[pos:header_end].decode().split("\r\n")
-    length = None
-    for header in headers:
-        if header.lower().startswith("content-length:"):
-            length = int(header.split(":", 1)[1].strip())
-            break
-    if length is None:
-        raise SystemExit("missing MCP content-length")
-    start = header_end + 4
-    responses.append(json.loads(raw[start:start + length]))
-    pos = start + length
+for line in raw.split(b"\n"):
+    line = line.strip()
+    if not line:
+        continue
+    responses.append(json.loads(line))
 
 names = {tool["name"] for tool in responses[1]["result"]["tools"]}
 required = {"ncgo_version", "ncgo_doctor", "ncgo_ai_sync", "ncgo_add_infra", "ncgo_add_method"}

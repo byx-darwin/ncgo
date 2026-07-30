@@ -81,7 +81,7 @@ ncgo 是一个 Go 微服务脚手架 CLI 工具，用于生成 Hertz（HTTP）�
 
 ### 2. MCP 层 (`internal/mcp/`)
 
-- **协议**: JSON-RPC 2.0，Content-Length 分帧
+- **协议**: JSON-RPC 2.0，换行分隔 JSON（MCP stdio 传输，每行一条以 `\n` 结尾的消息）
 - **服务器**: `server.go` 处理 `initialize`、`tools/list`、`tools/call`
 - **工具**（共 12 个，`tools.go`）:
   - `ncgo_version`、`ncgo_doctor`、`ncgo_new`、`ncgo_add_domain`
