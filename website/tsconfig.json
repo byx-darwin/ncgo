@@ -1,0 +1,12 @@
+{
+  "extends": "@docusaurus/tsconfig",
+  "compilerOptions": {
+    "strict": true,
+    "baseUrl": ".",
+    "jsx": "react-jsx",
+    "lib": ["DOM", "DOM.Iterable", "ES2022"],
+    "types": ["@docusaurus/module-type-aliases", "@testing-library/jest-dom"]
+  },
+  "include": ["src", "vitest.setup.ts"],
+  "exclude": ["node_modules", "build", ".docusaurus"]
+}

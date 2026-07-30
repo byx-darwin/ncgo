@@ -1,0 +1,71 @@
+/* 自托管字体（@fontsource） */
+@import '@fontsource/chakra-petch/500.css';
+@import '@fontsource/chakra-petch/700.css';
+@import '@fontsource/ibm-plex-sans/400.css';
+@import '@fontsource/ibm-plex-sans/500.css';
+@import '@fontsource/ibm-plex-sans/600.css';
+@import '@fontsource/jetbrains-mono/400.css';
+@import '@fontsource/jetbrains-mono/600.css';
+
+:root {
+  /* 品牌色 */
+  --ncgo-cyan: #00add8;
+  --ncgo-cyan-soft: rgba(0, 173, 216, 0.14);
+  --ncgo-amber: #ffb454;
+  --ncgo-green: #5ee38f;
+  --ncgo-ink: #0b1622;          /* 深蓝墨底 */
+  --ncgo-ink-2: #0f1f30;
+  --ncgo-ink-3: #132a3f;
+  --ncgo-text: #e6eef6;
+  --ncgo-text-dim: #93a6b8;
+  --ncgo-line: rgba(147, 166, 184, 0.16);
+
+  /* Docusaurus 主题变量映射 */
+  --ifm-color-primary: var(--ncgo-cyan);
+  --ifm-color-primary-dark: #009bc2;
+  --ifm-color-primary-darker: #0092b7;
+  --ifm-color-primary-darkest: #007897;
+  --ifm-color-primary-light: #13c3ea;
+  --ifm-color-primary-lighter: #20c8ec;
+  --ifm-color-primary-lightest: #41d2f0;
+  --ifm-background-color: var(--ncgo-ink);
+  --ifm-background-surface-color: var(--ncgo-ink-2);
+  --ifm-font-family-base: 'IBM Plex Sans', system-ui, sans-serif;
+  --ifm-font-family-monospace: 'JetBrains Mono', ui-monospace, monospace;
+  --ifm-heading-font-family: 'Chakra Petch', 'IBM Plex Sans', sans-serif;
+  --ifm-code-font-size: 90%;
+  --docusaurus-highlighted-code-line-bg: rgba(0, 173, 216, 0.12);
+}
+
+[data-theme='light'] {
+  --ncgo-ink: #f5f8fb;
+  --ncgo-ink-2: #ffffff;
+  --ncgo-ink-3: #eaf1f7;
+  --ncgo-text: #14212e;
+  --ncgo-text-dim: #51677c;
+  --ncgo-line: rgba(20, 33, 46, 0.12);
+  --ifm-background-color: var(--ncgo-ink);
+  --ifm-background-surface-color: var(--ncgo-ink-2);
+}
+
+html {
+  font-family: var(--ifm-font-family-base);
+}
+
+/* 环境背景：细网格 + 双色光晕（非单色霓虹） */
+body {
+  background-color: var(--ncgo-ink);
+  background-image:
+    radial-gradient(ellipse 80% 50% at 15% -10%, var(--ncgo-cyan-soft), transparent 60%),
+    radial-gradient(ellipse 60% 40% at 90% 0%, rgba(255, 180, 84, 0.08), transparent 60%),
+    linear-gradient(var(--ncgo-line) 1px, transparent 1px),
+    linear-gradient(90deg, var(--ncgo-line) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 44px 44px, 44px 44px;
+  background-attachment: fixed;
+  color: var(--ncgo-text);
+}
+
+h1, h2, h3, h4 {
+  font-family: var(--ifm-heading-font-family);
+  letter-spacing: 0.01em;
+}

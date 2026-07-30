@@ -15,6 +15,7 @@ repos:
       - id: check-yaml
       - id: check-merge-conflict
       - id: check-added-large-files
+        exclude: '^website/package-lock\.json$'
 
   - repo: local
     hooks:
