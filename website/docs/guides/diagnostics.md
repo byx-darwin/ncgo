@@ -27,11 +27,15 @@ rewriting generated source files.
 ## Extract domain (mono → micro)
 
 ```bash
-ncgo extract domain --plan
-ncgo extract domain --apply
+ncgo extract domain <name>
+ncgo extract domain <name> --json
+ncgo extract domain <name> --apply
 ```
 
-Conservative mono-to-micro extraction. `--plan` previews; `--apply` performs.
+Conservative mono-to-micro extraction. Running without `--apply` validates the
+domain and prints the files/imports that need to move. `--json` emits a
+machine-readable plan; `--apply` copies the planned files into the target
+Kitex service and rewrites domain-local imports.
 
 ## `ncgo doctor` flags
 
