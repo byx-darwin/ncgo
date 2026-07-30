@@ -1,9 +1,10 @@
 import '@testing-library/jest-dom/vitest';
-import { vi } from 'vitest';
+import { afterAll, vi } from 'vitest';
 
 // Patch vi.useFakeTimers to default to shouldAdvanceTime: true.
 // This prevents deadlocks when userEvent.setup() is used with fake timers,
 // as userEvent's internal async operations need timers to advance.
+// Override per-test if needed: vi.useFakeTimers({ shouldAdvanceTime: false })
 const _origUseFakeTimers = vi.useFakeTimers.bind(vi);
 vi.useFakeTimers = (opts?: any) => {
   return _origUseFakeTimers({ shouldAdvanceTime: true, ...opts });
@@ -36,12 +37,18 @@ _origDefineProperty(navigator, 'clipboard', {
 // 2. Patch Object.defineProperty so userEvent.setup() cannot replace it.
 //    userEvent would swap writeText for a non-spy class method, breaking
 //    `toHaveBeenCalledWith` assertions in CopyCommand / CommandTabs tests.
+//    Scope: restored in afterAll() so this interception does not leak past this setup file.
 Object.defineProperty = function <T>(obj: T, prop: PropertyKey, desc: PropertyDescriptor & ThisType<T>): T {
   if (obj === navigator && prop === 'clipboard') {
+    console.debug('[vitest.setup] blocked navigator.clipboard redefinition via Object.defineProperty');
     return obj;
   }
   return _origDefineProperty.call(Object, obj, prop, desc) as T;
 } as typeof Object.defineProperty;
+
+afterAll(() => {
+  Object.defineProperty = _origDefineProperty;
+});
 
 // jsdom 无 IntersectionObserver：默认不相交（Reveal 组件应降级为可见）
 class MockIntersectionObserver {

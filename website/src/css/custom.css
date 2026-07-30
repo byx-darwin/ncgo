@@ -171,7 +171,7 @@ h1, h2, h3, h4 {
   font-size: 15px;
   transition: transform 0.15s ease, background 0.15s ease;
 }
-.copy-command-btn:hover { transform: translateY(-1px); background: rgba(0, 173, 216, 0.24); }
+.copy-command-btn:hover { transform: translateY(-1px); background: var(--ncgo-cyan-soft); }
 
 /* ── CommandTabs ──────────────────────────── */
 .command-tabs-list {
