@@ -82,7 +82,7 @@ ncgo is a Go microservice scaffold CLI that generates Hertz (HTTP) and Kitex (RP
 
 ### 2. MCP Layer (`internal/mcp/`)
 
-- **Protocol**: JSON-RPC 2.0 with Content-Length framing
+- **Protocol**: JSON-RPC 2.0 over newline-delimited JSON (MCP stdio transport; one `\n`-terminated message per line)
 - **Server**: `server.go` handles `initialize`, `tools/list`, `tools/call`
 - **Tools** (12 total, `tools.go`):
   - `ncgo_version`, `ncgo_doctor`, `ncgo_new`, `ncgo_add_domain`

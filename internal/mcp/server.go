@@ -7,9 +7,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"io"
-	"strconv"
 	"strings"
 )
 
@@ -111,34 +109,19 @@ func fail(id json.RawMessage, code int, msg string) rpcResponse {
 	return rpcResponse{JSONRPC: "2.0", ID: id, Error: &rpcError{Code: code, Message: msg}}
 }
 
+// readFrame reads one newline-delimited JSON message from the MCP stdio
+// transport: a single line terminated by '\n'. Blank lines are tolerated and
+// skipped, and a final message without a trailing newline is still returned.
 func readFrame(r *bufio.Reader) ([]byte, error) {
-	length := -1
 	for {
 		line, err := r.ReadString('\n')
+		if trimmed := strings.TrimRight(line, "\r\n"); trimmed != "" {
+			return []byte(trimmed), nil
+		}
 		if err != nil {
 			return nil, err
 		}
-		line = strings.TrimRight(line, "\r\n")
-		if line == "" {
-			break
-		}
-		k, v, ok := strings.Cut(line, ":")
-		if ok && strings.EqualFold(strings.TrimSpace(k), "Content-Length") {
-			parsed, err := strconv.Atoi(strings.TrimSpace(v))
-			if err != nil {
-				return nil, fmt.Errorf("mcp: invalid Content-Length %q", v)
-			}
-			length = parsed
-		}
 	}
-	if length < 0 {
-		return nil, errors.New("mcp: missing Content-Length")
-	}
-	body := make([]byte, length)
-	if _, err := io.ReadFull(r, body); err != nil {
-		return nil, err
-	}
-	return body, nil
 }
 
 func writeFrame(w io.Writer, resp rpcResponse) error {
@@ -146,13 +129,14 @@ func writeFrame(w io.Writer, resp rpcResponse) error {
 	if err != nil {
 		return err
 	}
-	_, err = fmt.Fprintf(w, "Content-Length: %d\r\n\r\n%s", len(body), body)
+	body = append(body, '\n')
+	_, err = w.Write(body)
 	return err
 }
 
 func EncodeMessage(v any) []byte {
 	body, _ := json.Marshal(v)
-	return []byte(fmt.Sprintf("Content-Length: %d\r\n\r\n%s", len(body), body))
+	return append(body, '\n')
 }
 
 func DecodeResponses(data []byte) ([]rpcResponse, error) {

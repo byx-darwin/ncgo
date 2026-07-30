@@ -7,16 +7,16 @@
 
 **文件**：`internal/mcp/server.go` `readFrame()`
 
-**改法**：解析 Content-Length 后加检查：
+**改法**：MCP stdio 采用换行分隔 JSON（每行一条消息）。为防止恶意客户端发送超大单行导致内存耗尽，在按行读取时加上限检查：
 
 ```go
 const maxFrameSize = 10 * 1024 * 1024 // 10 MB
 
-func readFrame(r io.Reader) ([]byte, error) {
-    // ... 解析 Content-Length header ...
-    length, err := strconv.Atoi(match[1])
-    if length > maxFrameSize {
-        return nil, fmt.Errorf("mcp: Content-Length %d exceeds max %d", length, maxFrameSize)
+func readFrame(r *bufio.Reader) ([]byte, error) {
+    // 按 '\n' 读取单条消息；单行超过 maxFrameSize 则拒绝
+    line, err := r.ReadString('\n')
+    if len(line) > maxFrameSize {
+        return nil, fmt.Errorf("mcp: frame %d bytes exceeds max %d", len(line), maxFrameSize)
     }
     // ...
 }
