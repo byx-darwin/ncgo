@@ -1264,6 +1264,57 @@ func contains(xs []string, want string) bool {
 	return slices.Contains(xs, want)
 }
 
+func anyStrings(xs []any, want string) bool {
+	for _, v := range xs {
+		if s, ok := v.(string); ok && s == want {
+			return true
+		}
+	}
+	return false
+}
+
+func TestAddInfraToolKindEnumIncludesPolarisAdapter(t *testing.T) {
+	input := append(EncodeMessage(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize"}),
+		EncodeMessage(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list"})...)
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	if len(responses) != 2 {
+		t.Fatalf("responses = %d, want 2", len(responses))
+	}
+	listed := responses[1].Result.(map[string]any)["tools"].([]any)
+	var addInfra map[string]any
+	for _, item := range listed {
+		tool := item.(map[string]any)
+		if tool["name"].(string) == "ncgo_add_infra" {
+			addInfra = tool
+			break
+		}
+	}
+	if addInfra == nil {
+		t.Fatal("ncgo_add_infra tool not found in tools/list")
+	}
+	props := addInfra["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	kind, ok := props["kind"].(map[string]any)
+	if !ok {
+		t.Fatalf("ncgo_add_infra schema missing kind property: %+v", props)
+	}
+	enumVals, ok := kind["enum"].([]any)
+	if !ok {
+		t.Fatalf("ncgo_add_infra kind missing enum: %+v", kind)
+	}
+	for _, want := range []string{"polaris_adapter", "polaris-adapter"} {
+		if !anyStrings(enumVals, want) {
+			t.Fatalf("ncgo_add_infra kind enum missing %q; got %v", want, enumVals)
+		}
+	}
+}
+
 func TestServeToolCallNew(t *testing.T) {
 	dir := t.TempDir()
 	input := EncodeMessage(map[string]any{
