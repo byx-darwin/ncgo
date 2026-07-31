@@ -1296,6 +1296,185 @@ func TestAddRegistryPolarisWireForKitexServerAndClient(t *testing.T) {
 	_ = res
 }
 
+// --- rate-limit kind tests (Task 10) ---
+
+func writeKitexServerWithRateLimitMarkers(t *testing.T, root string) {
+	t.Helper()
+	path := filepath.Join(root, "internal", "base", "server", "server.go")
+	body := `package server
+
+import (
+	"context"
+	"log"
+
+	"github.com/cloudwego/kitex/pkg/endpoint"
+	kitexserver "github.com/cloudwego/kitex/server"
+
+	"github.com/x/demo/internal/base/conf"
+	"github.com/x/demo/internal/pkg/interceptor"
+)
+
+func Run(extraOptions ...kitexserver.Option) {
+	cfg := conf.Get()
+	if cfg == nil {
+		cfg = conf.Default()
+	}
+	_ = log.Flags()
+	opts := []kitexserver.Option{
+		kitexserver.WithMiddleware(endpoint.Chain(
+			interceptor.RequestID(),
+			interceptor.AccessLog(),
+			interceptor.Recovery(),
+			// ncgo:wire:ratelimit:server-middleware
+			interceptor.RequestTimeout(0),
+		)),
+		kitexserver.WithErrorHandler(func(ctx context.Context, err error) error { return err }),
+	}
+	// ncgo:wire:ratelimit:static-limit
+	opts = append(opts, extraOptions...)
+	_ = opts
+}
+`
+	writeTestFile(t, path, body)
+}
+
+func writeTestConfYAML(t *testing.T, root, body string) {
+	t.Helper()
+	path := filepath.Join(root, "conf", "dev", "conf.yaml")
+	writeTestFile(t, path, body)
+}
+
+func assertFileContains(t *testing.T, root, relPath, substr string) {
+	t.Helper()
+	body, err := os.ReadFile(filepath.Join(root, relPath))
+	if err != nil {
+		t.Fatalf("read %s: %v", relPath, err)
+	}
+	if !strings.Contains(string(body), substr) {
+		t.Errorf("%s missing %q\n---\n%s", relPath, substr, body)
+	}
+}
+
+func TestAddInfraRateLimitKitex(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	writeKitexServerWithRateLimitMarkers(t, root)
+	writeTestConfYAML(t, root, "env: dev\nserver:\n  name: demo\n")
+	res, err := Add(Options{Root: root, Kind: "rate-limit", Wire: true})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	for _, want := range []string{
+		"internal/pkg/ratelimit/resolver.go",
+		"internal/pkg/ratelimit/store.go",
+		"internal/base/middleware/ratelimit.go",
+	} {
+		assertFileContains(t, root, want, "package ")
+	}
+	assertFileContains(t, root, "internal/base/middleware/ratelimit.go", "func RateLimit(")
+	assertFileContains(t, root, "conf/dev/conf.yaml", "mode: shadow")
+	server := readFile(t, filepath.Join(root, "internal", "base", "server", "server.go"))
+	if !strings.Contains(server, "middleware.RateLimit(cfg.RateLimit)") {
+		t.Errorf("server.go missing middleware wiring:\n%s", server)
+	}
+	if !strings.Contains(server, "middleware.StaticLimitOption(") {
+		t.Errorf("server.go missing static-limit wiring:\n%s", server)
+	}
+	_ = res
+}
+
+func TestAddInfraRateLimitRejectsHertz(t *testing.T) {
+	root := seedProject(t, nil)
+	_, err := Add(Options{Root: root, Kind: "rate-limit", Wire: true})
+	if err == nil || !strings.Contains(err.Error(), "kitex") {
+		t.Fatalf("want kitex-only error, got %v", err)
+	}
+}
+
+func TestAddInfraRateLimitConfMergeExistingBlock(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	existing := "env: dev\nrate_limit:\n  enabled: false\n  mode: enforce\n  backend: memory\n"
+	writeTestConfYAML(t, root, existing)
+	writeKitexServerWithRateLimitMarkers(t, root)
+
+	_, err := Add(Options{Root: root, Kind: "rate-limit", Wire: true})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+	body := readFile(t, filepath.Join(root, "conf", "dev", "conf.yaml"))
+	if !strings.Contains(body, "mode: shadow") {
+		t.Errorf("expected mode: shadow in rate_limit block:\n%s", body)
+	}
+	if !strings.Contains(body, "backend: memory") {
+		t.Errorf("expected backend: memory preserved:\n%s", body)
+	}
+}
+
+func TestAddInfraRateLimitIdempotentWire(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	writeKitexServerWithRateLimitMarkers(t, root)
+	writeTestConfYAML(t, root, "env: dev\n")
+
+	_, err := Add(Options{Root: root, Kind: "rate-limit", Wire: true, Force: true})
+	if err != nil {
+		t.Fatalf("first Add: %v", err)
+	}
+	serverAfterFirst := readFile(t, filepath.Join(root, "internal", "base", "server", "server.go"))
+
+	res, err := Add(Options{Root: root, Kind: "rate-limit", Wire: true, Force: true})
+	if err != nil {
+		t.Fatalf("second Add: %v", err)
+	}
+	if len(res.WiredPaths) != 0 {
+		t.Errorf("second --wire should be idempotent, got wired: %v", res.WiredPaths)
+	}
+	serverAfterSecond := readFile(t, filepath.Join(root, "internal", "base", "server", "server.go"))
+	if serverAfterFirst != serverAfterSecond {
+		t.Errorf("second Add mutated server.go")
+	}
+}
+
+func TestAddInfraRateLimitDryRunDoesNotWrite(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	writeKitexServerWithRateLimitMarkers(t, root)
+	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
+	originalServer := readFile(t, serverPath)
+
+	res, err := Add(Options{Root: root, Kind: "rate-limit", Wire: true, DryRun: true})
+	if err != nil {
+		t.Fatalf("Add --dry-run: %v", err)
+	}
+	if !res.DryRun {
+		t.Errorf("DryRun = false, want true")
+	}
+	// No files should have been written.
+	for _, p := range []string{
+		filepath.Join(root, "internal", "pkg", "ratelimit", "resolver.go"),
+		filepath.Join(root, "internal", "pkg", "ratelimit", "store.go"),
+		filepath.Join(root, "internal", "base", "middleware", "ratelimit.go"),
+		filepath.Join(root, "conf", "dev", "conf.yaml"),
+	} {
+		if _, err := os.Stat(p); !os.IsNotExist(err) {
+			t.Errorf("dry-run wrote %s", p)
+		}
+	}
+	// server.go should not have been modified.
+	if got := readFile(t, serverPath); got != originalServer {
+		t.Errorf("dry-run modified server.go")
+	}
+	// manifest should not have been updated.
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if len(m.Infra) != 0 {
+		t.Errorf("dry-run updated manifest infra = %v, want empty", m.Infra)
+	}
+	// Plan should still report intended work.
+	if !planContains(res.Plan, "file", "create", filepath.Join(root, "internal", "pkg", "ratelimit", "resolver.go"), "") {
+		t.Errorf("Plan missing resolver.go create: %+v", res.Plan)
+	}
+}
+
 func writeKitexServerWithRegistryAnchor(t *testing.T, root string) {
 	t.Helper()
 	path := filepath.Join(root, "internal", "base", "server", "server.go")

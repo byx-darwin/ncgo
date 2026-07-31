@@ -59,11 +59,11 @@ func wire(root, module, serviceKind, kind string, dryRun bool) (*wireResult, err
 }
 
 func wireSupportedKind(kind string) bool {
-	return kind == KindObservabilityLog || kind == KindReleaseCanary || kind == KindRegistryPolaris
+	return kind == KindObservabilityLog || kind == KindReleaseCanary || kind == KindRegistryPolaris || kind == KindRateLimit
 }
 
 func unsupportedWireError() error {
-	return fmt.Errorf("infra: --wire is only supported for %s/%s/%s", KindObservabilityLog, KindReleaseCanary, KindRegistryPolaris)
+	return fmt.Errorf("infra: --wire is only supported for %s/%s/%s/%s", KindObservabilityLog, KindReleaseCanary, KindRegistryPolaris, KindRateLimit)
 }
 
 const (
@@ -73,12 +73,14 @@ const (
 	anchorSourceMarker = "marker"
 	anchorSourceLegacy = "legacy"
 
-	markerLoggingInit             = "// ncgo:wire:logging:init"
-	markerLoggingServerMiddleware = "// ncgo:wire:logging:server-middleware"
-	markerCanaryServerTraffic     = "// ncgo:wire:canary:server-traffic"
-	markerKitexClientMiddleware   = "// ncgo:wire:kitex-client:middleware"
-	markerRegistryServer          = "// ncgo:wire:registry:server"
-	markerRegistryClient          = "// ncgo:wire:registry:client"
+	markerLoggingInit               = "// ncgo:wire:logging:init"
+	markerLoggingServerMiddleware   = "// ncgo:wire:logging:server-middleware"
+	markerCanaryServerTraffic       = "// ncgo:wire:canary:server-traffic"
+	markerKitexClientMiddleware     = "// ncgo:wire:kitex-client:middleware"
+	markerRegistryServer            = "// ncgo:wire:registry:server"
+	markerRegistryClient            = "// ncgo:wire:registry:client"
+	markerRateLimitServerMiddleware = "// ncgo:wire:ratelimit:server-middleware"
+	markerRateLimitStaticLimit      = "// ncgo:wire:ratelimit:static-limit"
 )
 
 func wireHertz(root, module, kind string, dryRun bool) (*wireResult, error) {
@@ -181,6 +183,21 @@ func wireKitex(root, module, kind string, dryRun bool) (*wireResult, error) {
 			return nil, err
 		}
 		s, err = insertOnceMarkerOrAnchorWithPlan(s, "kitexserver.WithRegistry(", markerRegistryServer, "\topts = append(opts, extraOptions...)\n", kitexRegistryServer(), serverPath, &serverPlan, "insert_registry_server", "registry.NewRegistry")
+		if err != nil {
+			return nil, err
+		}
+	case KindRateLimit:
+		s, err = addGoImportWithPlan(s, module+"/internal/base/middleware", serverPath, &serverPlan)
+		if err != nil {
+			return nil, err
+		}
+		s, err = insertAfterMarkerOrAnyWithPlan(s, "middleware.RateLimit(", markerRateLimitServerMiddleware, []string{
+			"\t\t\tinterceptor.RequestID(),\n",
+		}, "\t\t\tmiddleware.RateLimit(cfg.RateLimit),\n", serverPath, &serverPlan, "insert_ratelimit_middleware", "middleware.RateLimit")
+		if err != nil {
+			return nil, err
+		}
+		s, err = insertOnceMarkerOrAnchorWithPlan(s, "middleware.StaticLimitOption(", markerRateLimitStaticLimit, "\topts = append(opts, extraOptions...)\n", "\tif opt := middleware.StaticLimitOption(cfg.RateLimit.Static); opt != nil {\n\t\topts = append(opts, opt)\n\t}\n", serverPath, &serverPlan, "insert_ratelimit_static", "middleware.StaticLimitOption")
 		if err != nil {
 			return nil, err
 		}
