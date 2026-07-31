@@ -229,3 +229,51 @@ func TestEngine_DryRunNeverRoutesToCanary(t *testing.T) {
 		}
 	}
 }
+
+// Regression: repeated/consecutive refresh failures under FailOpen must continue
+// serving the last-known-good value. Forces blocking refreshes by using
+// StaleTTL=0 (no stale window), so every call past TTL triggers a synchronous
+// refresh that goes through the error-preserving branch of refresh().
+func TestCachingDiscoverer_FailOpenKeepsLastKnownGoodAcrossRepeatedFailures(t *testing.T) {
+	now, adv := clock(time.Unix(1000, 0))
+	up := &fakeDiscoverer{ins: staticIns("stable", "canary")}
+	c := NewCachingDiscoverer(up, CacheOptions{TTL: 30 * time.Second, StaleTTL: 0, Jitter: 0, Now: now}, FailOpen, NopObserver{})
+	if got, err := c.Discover(context.Background(), "svc"); err != nil || len(got) != 2 {
+		t.Fatalf("warm-up: n=%d err=%v", len(got), err)
+	}
+	up.err = errors.New("down")
+	adv(31 * time.Second) // past TTL, no stale window -> blocking refresh
+	if got, err := c.Discover(context.Background(), "svc"); err != nil || len(got) != 2 {
+		t.Fatalf("1st failure: n=%d err=%v", len(got), err)
+	}
+	adv(31 * time.Second) // another blocking refresh while still failing
+	if got, err := c.Discover(context.Background(), "svc"); err != nil || len(got) != 2 {
+		t.Fatalf("2nd consecutive failure must still serve last-known-good: n=%d err=%v", len(got), err)
+	}
+	adv(31 * time.Second) // third, to prove the value is retained indefinitely
+	if got, err := c.Discover(context.Background(), "svc"); err != nil || len(got) != 2 {
+		t.Fatalf("3rd consecutive failure must still serve last-known-good: n=%d err=%v", len(got), err)
+	}
+}
+
+func TestCachingRuleProvider_FailOpenKeepsLastKnownGoodAcrossRepeatedFailures(t *testing.T) {
+	now, adv := clock(time.Unix(1000, 0))
+	up := &fakeRuleProvider{rs: RuleSet{Version: 7, Enabled: true, Service: "svc"}}
+	c := NewCachingRuleProvider(up, CacheOptions{TTL: 30 * time.Second, StaleTTL: 0, Jitter: 0, Now: now}, FailOpen, NopObserver{})
+	if rs, err := c.Rules(context.Background(), "svc"); err != nil || rs.Version != 7 {
+		t.Fatalf("warm-up: v=%d err=%v", rs.Version, err)
+	}
+	up.err = errors.New("down")
+	adv(31 * time.Second)
+	if rs, err := c.Rules(context.Background(), "svc"); err != nil || rs.Version != 7 {
+		t.Fatalf("1st failure: v=%d err=%v", rs.Version, err)
+	}
+	adv(31 * time.Second)
+	if rs, err := c.Rules(context.Background(), "svc"); err != nil || rs.Version != 7 {
+		t.Fatalf("2nd consecutive failure must still serve last-known-good: v=%d err=%v", rs.Version, err)
+	}
+	adv(31 * time.Second)
+	if rs, err := c.Rules(context.Background(), "svc"); err != nil || rs.Version != 7 {
+		t.Fatalf("3rd consecutive failure must still serve last-known-good: v=%d err=%v", rs.Version, err)
+	}
+}

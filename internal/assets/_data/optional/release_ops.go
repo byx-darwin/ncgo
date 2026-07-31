@@ -83,11 +83,15 @@ func (o CacheOptions) jitteredTTL() time.Duration {
 }
 
 // cacheEntry is a single cached value with its fetch time and fetch error.
+// hasValue records whether value represents a successfully fetched result; it
+// is used to distinguish "we have a last-known-good value that we must keep
+// serving under FailOpen" from "nothing has ever been fetched successfully".
 type cacheEntry[T any] struct {
-	value   T
-	fetched time.Time
-	ttl     time.Duration
-	err     error
+	value    T
+	fetched  time.Time
+	ttl      time.Duration
+	err      error
+	hasValue bool
 }
 
 func (e cacheEntry[T]) fresh(now time.Time) bool { return now.Sub(e.fetched) < e.ttl }
@@ -150,7 +154,7 @@ func (c *ttlCache[T]) done(key string) {
 func (c *ttlCache[T]) put(key string, value T, err error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	c.ents[key] = cacheEntry[T]{value: value, fetched: c.opts.Now(), ttl: c.opts.jitteredTTL(), err: err}
+	c.ents[key] = cacheEntry[T]{value: value, fetched: c.opts.Now(), ttl: c.opts.jitteredTTL(), err: err, hasValue: err == nil}
 }
 
 // Observer receives decision-level telemetry. Implementations must be safe for
@@ -216,8 +220,10 @@ func (c *CachingDiscoverer) refresh(ctx context.Context, serviceName string) {
 	if err != nil {
 		c.cache.mu.Lock()
 		prev, ok := c.cache.ents[serviceName]
-		if ok && prev.err == nil {
-			c.cache.ents[serviceName] = cacheEntry[[]Instance]{value: prev.value, fetched: prev.fetched, ttl: prev.ttl, err: err}
+		if ok && prev.hasValue {
+			// Preserve the last-known-good value under repeated failures so
+			// FailOpen can keep serving it; record the error for observers.
+			c.cache.ents[serviceName] = cacheEntry[[]Instance]{value: prev.value, fetched: prev.fetched, ttl: prev.ttl, err: err, hasValue: true}
 			c.cache.mu.Unlock()
 			return
 		}
@@ -235,7 +241,7 @@ func (c *CachingDiscoverer) applyPolicy(serviceName string, entry cacheEntry[[]I
 	if c.Policy == FailFast {
 		return nil, entry.err
 	}
-	if entry.value != nil {
+	if entry.hasValue {
 		return entry.value, nil
 	}
 	return []Instance{}, nil
@@ -281,8 +287,10 @@ func (c *CachingRuleProvider) refresh(ctx context.Context, serviceName string) {
 	if err != nil {
 		c.cache.mu.Lock()
 		prev, ok := c.cache.ents[serviceName]
-		if ok && prev.err == nil {
-			c.cache.ents[serviceName] = cacheEntry[RuleSet]{value: prev.value, fetched: prev.fetched, ttl: prev.ttl, err: err}
+		if ok && prev.hasValue {
+			// Preserve the last-known-good rules under repeated failures so
+			// FailOpen can keep serving them; record the error for observers.
+			c.cache.ents[serviceName] = cacheEntry[RuleSet]{value: prev.value, fetched: prev.fetched, ttl: prev.ttl, err: err, hasValue: true}
 			c.cache.mu.Unlock()
 			return
 		}
