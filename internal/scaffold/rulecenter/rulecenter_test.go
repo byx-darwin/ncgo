@@ -127,12 +127,14 @@ func TestAddAcceptsKitex(t *testing.T) {
 	makeKitexManifest(t, dir)
 	writeConfDev(t, dir)
 
-	// Create a dummy server.go to assert the kitex branch does NOT touch it.
+	// Create a dummy server.go that contains the rlOpts marker so that
+	// wireRuleCenterInServer WOULD modify it if called (it must NOT contain
+	// the already-wired sentinel). This makes the no-wire assertion non-vacuous.
 	serverDir := filepath.Join(dir, "internal", "base", "server")
 	if err := os.MkdirAll(serverDir, 0o755); err != nil {
 		t.Fatal(err)
 	}
-	dummyServer := "package server\n\nfunc init() {}\n"
+	dummyServer := "package server\n\nvar rlOpts ratelimit.Options\n\nfunc init() {}\n"
 	serverPath := filepath.Join(serverDir, "server.go")
 	if err := os.WriteFile(serverPath, []byte(dummyServer), 0o644); err != nil {
 		t.Fatal(err)
@@ -149,7 +151,8 @@ func TestAddAcceptsKitex(t *testing.T) {
 	// Conf source.type rewritten to rule_center.
 	assertConfSourceType(t, dir, "rule_center")
 
-	// Kitex branch must NOT wire server.go.
+	// Kitex branch must NOT wire server.go. Byte-equality plus sentinel check
+	// (the sentinel is what wireRuleCenterInServer injects).
 	b, err := os.ReadFile(serverPath)
 	if err != nil {
 		t.Fatal(err)
@@ -157,11 +160,30 @@ func TestAddAcceptsKitex(t *testing.T) {
 	if string(b) != dummyServer {
 		t.Errorf("kitex branch must NOT modify server.go, got diff")
 	}
-	if strings.Contains(string(b), "RuleCenter") {
-		t.Errorf("kitex branch must NOT wire server.go")
+	if strings.Contains(string(b), "middleware.NewRuleCenterClient") {
+		t.Errorf("kitex branch must NOT wire server.go (found injected sentinel)")
 	}
 
-	_ = res
+	// Result must include client + conf paths, but NOT server.go.
+	if !containsPath(res.WrittenPaths, filepath.Join(dir, "internal", "pkg", "middleware", "rule_center_client.go")) {
+		t.Errorf("res.WrittenPaths missing client file, got %v", res.WrittenPaths)
+	}
+	if !containsPath(res.WrittenPaths, filepath.Join(dir, "conf", "dev", "conf.yaml")) {
+		t.Errorf("res.WrittenPaths missing conf path, got %v", res.WrittenPaths)
+	}
+	if containsPath(res.WrittenPaths, serverPath) {
+		t.Errorf("res.WrittenPaths must NOT include server.go for kitex, got %v", res.WrittenPaths)
+	}
+}
+
+// containsPath reports whether path appears in paths (exact match).
+func containsPath(paths []string, path string) bool {
+	for _, p := range paths {
+		if p == path {
+			return true
+		}
+	}
+	return false
 }
 
 func TestWriteRuleCenterClientForceFlag(t *testing.T) {
