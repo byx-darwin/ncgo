@@ -1326,7 +1326,7 @@ golden 测试保证缝合后生成输出**逐字节不变**。
    并把 `mode = shadow` 写入 conf。
 2. **配规则源**: 设置 `rate_limit.source.type`(config / database / rule_center /
    grpc),确认 resolver 能拿到预期规则。
-3. ** shadow 观察(建议 1-2 周)**:
+3. **shadow 观察(建议 1-2 周)**:
    - 观察日志关键字 `ratelimit shadow denied`。
    - 观察 expvar `ratelimit_shadow_denied{service, method}` 打点,确认被标记
      拒绝的请求是否符合预期(caller、method、QPS 区间)。
@@ -1345,16 +1345,22 @@ shadow 模式的关键保障:**计数真实生效**。这意味着 shadow 期间
 拒绝时返回 Kitex `BizStatusError`,业务错误码 **10429**(镜像 HTTP 429):
 
 ```go
-// internal/base/rpcerror/rpcerror.go(生成产物示意)
+// internal/pkg/rpcerror/rpcerror.go (生成产物示意)
+const MetaRetryAfter = "rl-retry-after"
+
 func RateLimited(retryAfter time.Duration) error {
-    return transmeta.AddInfo(transkey.RLRetryAfter, strconv.Itoa(int(retryAfter.Seconds()))).
-        IntoBizStatusError(10429, "rate limited")
+    seconds := int64(defaultRetryAfterSeconds)
+    if retryAfter > 0 {
+        seconds = int64(retryAfter.Seconds())
+    }
+    extra := map[string]string{MetaRetryAfter: strconv.FormatInt(seconds, 10)}
+    return kerrors.NewBizStatusErrorWithExtra(CodeRateLimited, "rate limited", extra)
 }
 ```
 
 - 框架将 `BizStatusError` 计为**业务错误**而非调用失败 → **不会**触发 caller
   侧基于失败率的熔断(服务治理层面的错误比率熔断统计口径不含业务错误)。
-- metainfo transient value 携带 `rl-retry-after`(秒),供 caller 做退避重试。
+- 退避秒数通过 `BizExtra` 携带,键为 `rl-retry-after`,供 caller 做退避重试。
 
 **caller 处理建议**:
 

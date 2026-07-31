@@ -1469,18 +1469,24 @@ Rejections return a Kitex `BizStatusError` with business code **10429** (mirrors
 HTTP 429):
 
 ```go
-// internal/base/rpcerror/rpcerror.go (generated output sketch)
+// internal/pkg/rpcerror/rpcerror.go (generated output sketch)
+const MetaRetryAfter = "rl-retry-after"
+
 func RateLimited(retryAfter time.Duration) error {
-    return transmeta.AddInfo(transkey.RLRetryAfter, strconv.Itoa(int(retryAfter.Seconds()))).
-        IntoBizStatusError(10429, "rate limited")
+    seconds := int64(defaultRetryAfterSeconds)
+    if retryAfter > 0 {
+        seconds = int64(retryAfter.Seconds())
+    }
+    extra := map[string]string{MetaRetryAfter: strconv.FormatInt(seconds, 10)}
+    return kerrors.NewBizStatusErrorWithExtra(CodeRateLimited, "rate limited", extra)
 }
 ```
 
 - The framework counts a `BizStatusError` as a **business error**, not a call
   failure → it does **not** trip caller-side failure-ratio circuit breaking
   (service-governance failure-ratio circuit breakers exclude business errors).
-- A metainfo transient value carries `rl-retry-after` (seconds) for caller
-  backoff.
+- The backoff seconds are carried via `BizExtra` under the key `rl-retry-after`
+  for caller backoff decisions.
 
 **Caller guidance**:
 
