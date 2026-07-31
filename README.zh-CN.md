@@ -323,9 +323,30 @@ ncgo add infra logging --root . --wire --dry-run  # 预览写入/接线，不修
 ncgo add infra logging --root . --wire --dry-run --output json  # 输出机器可读 plan
 ncgo add infra logging --root . --wire --plan  # --dry-run --output json 简写
 ncgo add infra registry_polaris --root . --wire  # kitex only：Polaris 注册/发现 + 自动接线
+ncgo add infra rate-limit --root . --wire         # kitex only：共享 ratelimit 包 + 真实中间件（shadow 优先）
 ```
 
-common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_logging`（`logging` alias）、`release_canary`（`canary` alias）。Kitex-only：`registry_polaris`。
+common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_logging`（`logging` alias）、`release_canary`（`canary` alias）。Kitex-only：`registry_polaris`、`rate-limit`。
+
+`rate-limit` 为 **kitex only**（Hertz 侧使用另一套限流设计）。它把 Kitex 模板
+里 pass-through 的 `RateLimit()` 占位符改写为真实的 `endpoint.Middleware`，底层
+复用与 Hertz 侧同一份 `internal/pkg/ratelimit` 包（resolver + store，单一事实
+来源）。中间件接在 server chain 的 `CallerAllowlist` 之后，并通过
+`// ncgo:wire:ratelimit:static-limit` 标记按需挂载静态 `server.WithLimit` 兜底。
+生成 conf 默认 `mode = shadow`（只计数不拒绝），观察 shadow 日志后再切
+`mode = enforce`。详见
+[rate-limit-dynamic-design.zh-CN.md](internal/assets/_data/docs/hertz/rate-limit-dynamic-design.zh-CN.md)
+§19（双轨模型、shadow-first 运维流程、10429 拒绝语义）。
+
+`ncgo test rate-limit e2e` 对运行中的生成项目做限流验证。对 Kitex 服务通过
+grpcurl 走 gRPC 压测：
+
+```bash
+ncgo test rate-limit e2e --rpc-method MyService.Ping --rpc-payload '{"user":"alice"}'
+```
+
+两段式运行先确认 shadow 模式 0 拒绝（含 `ratelimit shadow denied` 日志），再确认
+enforce 模式返回预期比例的 10429。
 
 可观测性（tracing / OTel）现已内置到 Hertz 与 Kitex 基础模板，统一使用
 go-framework OTLP（Hertz：`cfg.Server.Jaeger` → `hertz/observability.NewProvider`；
