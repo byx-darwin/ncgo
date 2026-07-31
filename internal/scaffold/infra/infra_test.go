@@ -1612,3 +1612,72 @@ func callerServiceMiddleware(caller string) endpoint.Middleware {
 `
 	writeTestFile(t, path, body)
 }
+
+func TestAddInfraPolarisAdapterKitex(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: "polaris-adapter"})
+	if err != nil {
+		t.Fatalf("Add polaris-adapter: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "base", "release", "polaris_adapter.go")
+	if res.WrittenPath != wantPath {
+		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
+	}
+	body, err := os.ReadFile(wantPath)
+	if err != nil {
+		t.Fatalf("read adapter file: %v", err)
+	}
+	for _, want := range []string{"package release", "func NewPolarisSelector("} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("adapter missing %q", want)
+		}
+	}
+	if !res.Updated {
+		t.Errorf("manifest not updated")
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	if !strings.Contains(joined, "go get github.com/polarismesh/polaris-go") {
+		t.Errorf("next-steps missing polaris-go go get:\n%s", joined)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("reload manifest: %v", err)
+	}
+	if !containsString(m.Infra, KindPolarisAdapter) {
+		t.Errorf("manifest.Infra = %v, want contains polaris_adapter", m.Infra)
+	}
+}
+
+func TestAddInfraPolarisAdapterRejectsHertz(t *testing.T) {
+	root := seedProject(t, nil)
+	_, err := Add(Options{Root: root, Kind: "polaris_adapter"})
+	if err == nil || !strings.Contains(err.Error(), "kitex") {
+		t.Fatalf("want kitex-only error, got %v", err)
+	}
+}
+
+func TestAddInfraPolarisAdapterPlan(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: "polaris_adapter", DryRun: true})
+	if err != nil {
+		t.Fatalf("Add dry-run: %v", err)
+	}
+	if !res.DryRun {
+		t.Errorf("expected DryRun=true")
+	}
+	if _, err := os.Stat(filepath.Join(root, "internal", "base", "release", "polaris_adapter.go")); err == nil {
+		t.Errorf("dry-run must not write adapter file")
+	}
+	if len(res.Plan) == 0 {
+		t.Errorf("expected non-empty plan items")
+	}
+}
+
+func containsString(ss []string, s string) bool {
+	for _, v := range ss {
+		if v == s {
+			return true
+		}
+	}
+	return false
+}
