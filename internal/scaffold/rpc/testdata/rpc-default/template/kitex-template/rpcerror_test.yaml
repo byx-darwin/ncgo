@@ -7,7 +7,11 @@ body: |-
 
   import (
       "fmt"
+      "strings"
       "testing"
+      "time"
+
+      "github.com/cloudwego/kitex/pkg/kerrors"
   )
 
   func TestToBizErrorMapsOopsCode(t *testing.T) {
@@ -20,5 +24,19 @@ body: |-
   func TestToBizErrorNil(t *testing.T) {
       if err := ToBizError(nil); err != nil {
           t.Fatalf("expected nil, got %v", err)
+      }
+  }
+
+  func TestRateLimited(t *testing.T) {
+      err := RateLimited(30 * time.Second)
+      bizErr, ok := kerrors.FromBizStatusError(err)
+      if !ok {
+          t.Fatalf("RateLimited must be a BizStatusError, got %T", err)
+      }
+      if bizErr.BizStatusCode() != 10429 {
+          t.Errorf("biz code = %d, want 10429", bizErr.BizStatusCode())
+      }
+      if !strings.Contains(bizErr.BizMessage(), "rate limited") {
+          t.Errorf("biz message = %q", bizErr.BizMessage())
       }
   }
