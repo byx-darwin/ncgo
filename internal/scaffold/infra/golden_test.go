@@ -62,6 +62,18 @@ func TestGenerateGoldenInfraCanary(t *testing.T) {
 	}
 }
 
+// TestGenerateGoldenInfraPolarisAdapter locks the polaris_adapter add-on for a Kitex service.
+func TestGenerateGoldenInfraPolarisAdapter(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindPolarisAdapter, Force: false, DryRun: false})
+	if err != nil {
+		t.Fatalf("Add polaris_adapter: %v", err)
+	}
+	for _, p := range res.WrittenPaths {
+		golden.File(t, filepath.Join("infra-polaris-adapter", filepath.Base(p)), goldenReadFile(t, p))
+	}
+}
+
 func goldenReadFile(t *testing.T, path string) []byte {
 	t.Helper()
 	body, err := os.ReadFile(path)

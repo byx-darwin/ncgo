@@ -864,3 +864,43 @@ After starting `ncgo mcp serve`, agents can call:
 
 Best for: multi-service environments where rate-limit rules should be managed
 centrally and updated without restarting individual services.
+
+## 8. Polaris canary adapter (opt-in, Kitex only)
+
+After enabling `release_canary` (which provides SDK-neutral canary seams in
+`internal/base/release`), you can opt in to a real Polaris backend with:
+
+```bash
+ncgo add infra polaris_adapter --root .
+```
+
+This writes `internal/base/release/polaris_adapter.go` (package `release`) and
+prints the next-step `go get` commands. ncgo itself stays SDK-free — the
+Polaris SDK dependency lives in your project:
+
+```bash
+go get github.com/polarismesh/polaris-go
+go get gopkg.in/yaml.v3
+go get github.com/byx-darwin/go-tools/go-common
+```
+
+Provide Polaris credentials via environment variables (`POLARIS_TOKEN`,
+`POLARIS_NAMESPACE`); never hardcode them. Construct
+`release.NewPolarisSelector(discoveryCfg, ruleCfg)` and feed its `RuleProvider`
+into `KitexCanaryLoadBalancer.RuleProvider`. Tested with `polaris-go v1.7.1`.
+
+**Troubleshooting**
+
+- `addresses is empty` / missing token → construction fails fast. Fix the
+  config or env vars before retrying.
+- Discovery or rule-load failure at runtime → canary routing **fails OPEN** to
+  the Kitex default weighted LB (availability-first). Observe metrics before
+  switching expectations.
+- **Kitex resolver instance-visibility assumption** — if the canary pool is
+  empty, confirm the Kitex resolver (e.g. `registry_polaris`) returns the FULL
+  stable+canary instance set. If the resolver filters by routing, the adapter
+  would need to sit at the LB layer (future work).
+- `release.track` metadata not taking effect → verify the registering side
+  sets `release.track` metadata on instances.
+
+GA hardening (metrics / cache+TTL / dry-run / runtime harness) is future work.

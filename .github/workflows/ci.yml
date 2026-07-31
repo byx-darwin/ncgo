@@ -48,3 +48,6 @@ jobs:
 
       - name: Smoke test
         run: ./scripts/smoke.sh
+
+      - name: Verify polaris adapter compiles against pinned SDK
+        run: ./scripts/verify-polaris-adapter.sh

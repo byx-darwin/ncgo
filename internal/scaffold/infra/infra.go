@@ -30,23 +30,25 @@ import (
 // Kind values supported by `ncgo add infra`. The corresponding template files
 // live in internal/assets/_data/<framework>/optional/ and ship with the binary.
 const (
-	KindRedis            = "redis"
-	KindKafka            = "kafka"
-	KindES               = "es"
-	KindClickHouse       = "clickhouse"
-	KindRegistryPolaris  = "registry_polaris"
-	KindObservabilityLog = "observability_logging"
-	KindLoggingAlias     = "logging"
-	KindReleaseCanary    = "release_canary"
-	KindCanaryAlias      = "canary"
-	KindRateLimit        = "rate_limit"
-	KindRateLimitAlias   = "rate-limit"
+	KindRedis               = "redis"
+	KindKafka               = "kafka"
+	KindES                  = "es"
+	KindClickHouse          = "clickhouse"
+	KindRegistryPolaris     = "registry_polaris"
+	KindObservabilityLog    = "observability_logging"
+	KindLoggingAlias        = "logging"
+	KindReleaseCanary       = "release_canary"
+	KindCanaryAlias         = "canary"
+	KindRateLimit           = "rate_limit"
+	KindRateLimitAlias      = "rate-limit"
+	KindPolarisAdapter      = "polaris_adapter"
+	KindPolarisAdapterAlias = "polaris-adapter"
 )
 
 // SupportedKinds returns all add-on names in canonical order. Some kinds are
 // service-kind specific; Add validates that after loading the manifest.
 func SupportedKinds() []string {
-	return []string{KindRedis, KindKafka, KindES, KindClickHouse, KindObservabilityLog, KindLoggingAlias, KindReleaseCanary, KindCanaryAlias, KindRegistryPolaris, KindRateLimit, KindRateLimitAlias}
+	return []string{KindRedis, KindKafka, KindES, KindClickHouse, KindObservabilityLog, KindLoggingAlias, KindReleaseCanary, KindCanaryAlias, KindRegistryPolaris, KindRateLimit, KindRateLimitAlias, KindPolarisAdapter, KindPolarisAdapterAlias}
 }
 
 func commonKinds() []string {
@@ -54,7 +56,7 @@ func commonKinds() []string {
 }
 
 func kitexOnlyKinds() []string {
-	return []string{KindRegistryPolaris, KindRateLimit}
+	return []string{KindRegistryPolaris, KindRateLimit, KindPolarisAdapter}
 }
 
 // goGetDeps is the source of truth for `go get` dependency next-steps. Keeping
@@ -69,6 +71,7 @@ var goGetDeps = map[string][]string{
 	KindObservabilityLog: {
 		"github.com/byx-darwin/go-tools/go-common",
 	},
+	KindPolarisAdapter: {"github.com/polarismesh/polaris-go", "gopkg.in/yaml.v3", "github.com/byx-darwin/go-tools/go-common"},
 }
 
 var setupSteps = map[string][]string{
@@ -76,6 +79,15 @@ var setupSteps = map[string][]string{
 		"review conf/dev/conf.yaml rate_limit block (source.type: config|database|rule_center)",
 		"observe shadow logs (grep 'ratelimit shadow denied'), then set mode: enforce",
 		"optional: set static.max_qps / static.max_connections for a global safety net",
+		"go mod tidy",
+	},
+	KindPolarisAdapter: {
+		"go get github.com/polarismesh/polaris-go",
+		"go get gopkg.in/yaml.v3",
+		"go get github.com/byx-darwin/go-tools/go-common",
+		"set POLARIS_TOKEN / POLARIS_NAMESPACE env vars (never hardcode credentials)",
+		"wire release.NewPolarisSelector(...) into KitexCanaryLoadBalancer.RuleProvider",
+		"verify kitex resolver returns full stable+canary instance set (see troubleshooting)",
 		"go mod tidy",
 	},
 }
@@ -93,6 +105,7 @@ var outputRelPaths = map[string]string{
 	KindRegistryPolaris:  filepath.Join("internal", "base", "registry", "polaris.go"),
 	KindObservabilityLog: filepath.Join("internal", "base", "logging", "logging.go"),
 	KindReleaseCanary:    filepath.Join("internal", "base", "release", "canary.go"),
+	KindPolarisAdapter:   filepath.Join("internal", "base", "release", "polaris_adapter.go"),
 }
 
 const hertzRedisSharedHelperRelPath = "internal/base/data/redis_shared.go"
@@ -285,6 +298,14 @@ func assetFiles(serviceKind, infraKind string) ([]addOnFile, error) {
 			{SourcePath: "kitex/optional/registry_polaris.yaml", OutputRelPath: "polaris.yaml"},
 		}, nil
 	}
+	if infraKind == KindPolarisAdapter {
+		if serviceKind != manifest.KindKitex {
+			return nil, fmt.Errorf("infra: kind %q is only supported for kitex services", infraKind)
+		}
+		return []addOnFile{
+			{SourcePath: "kitex/optional/polaris_canary_adapter.go", OutputRelPath: outputRelPaths[KindPolarisAdapter]},
+		}, nil
+	}
 	if infraKind == KindObservabilityLog || infraKind == KindReleaseCanary {
 		files := []addOnFile{{
 			SourcePath:    "optional/" + infraKind + ".go",
@@ -459,6 +480,9 @@ func normalizeKind(kind string) (string, error) {
 	}
 	if kind == KindRateLimitAlias {
 		return KindRateLimit, nil
+	}
+	if kind == KindPolarisAdapterAlias {
+		return KindPolarisAdapter, nil
 	}
 	for _, k := range SupportedKinds() {
 		if kind == k {
