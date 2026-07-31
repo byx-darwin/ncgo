@@ -181,3 +181,51 @@ func TestNopObserver_Safe(t *testing.T) {
 	o.ObserveRules("s", 0, nil)
 	o.ObserveFallback("s", "x")
 }
+
+type recordingObserver struct {
+	NopObserver
+	decisions []Decision
+	fallbacks []string
+}
+
+func (r *recordingObserver) ObserveDecision(_ string, d Decision, _ Pools) {
+	r.decisions = append(r.decisions, d)
+}
+func (r *recordingObserver) ObserveFallback(_ string, reason string) {
+	r.fallbacks = append(r.fallbacks, reason)
+}
+
+func weightedRules(canary int) RuleSet {
+	return RuleSet{Version: 1, Enabled: true, Service: "svc", DefaultTrack: TrackStable, Fallback: FallbackStable,
+		Rules: []Rule{{Name: "split", Priority: 10, Track: "", Weighted: &Weighted{Stable: 100 - canary, Canary: canary},
+			Match: Match{}}}}
+}
+
+func TestEngine_SelectRoutesAndObserves(t *testing.T) {
+	obs := &recordingObserver{}
+	disc := StaticDiscoverer(staticIns("stable", "canary"))
+	rules := StaticRuleProvider{RuleSet: weightedRules(50)}
+	e := NewEngine(EngineOptions{ServiceName: "svc", Discoverer: disc, Rules: rules, Observer: obs})
+	sel, err := e.Select(context.Background(), Traffic{UserID: "u1"})
+	if err != nil || !sel.OK {
+		t.Fatalf("select: ok=%v err=%v", sel.OK, err)
+	}
+	if len(obs.decisions) != 1 {
+		t.Fatalf("expected 1 observed decision, got %d", len(obs.decisions))
+	}
+}
+
+func TestEngine_DryRunNeverRoutesToCanary(t *testing.T) {
+	disc := StaticDiscoverer(staticIns("stable", "canary"))
+	rules := StaticRuleProvider{RuleSet: weightedRules(100)} // 100% canary intent
+	e := NewEngine(EngineOptions{ServiceName: "svc", Discoverer: disc, Rules: rules, DryRun: true})
+	for i := 0; i < 20; i++ {
+		sel, err := e.Select(context.Background(), Traffic{UserID: "u" + string(rune('a'+i%5))})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if sel.Instance.Track() == TrackCanary {
+			t.Fatalf("dry-run must not route to canary, got track=%q", sel.Instance.Track())
+		}
+	}
+}

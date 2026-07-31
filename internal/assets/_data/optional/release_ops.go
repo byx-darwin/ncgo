@@ -10,6 +10,7 @@ package release
 
 import (
 	"context"
+	"errors"
 	"log/slog"
 	"math/rand"
 	"sync"
@@ -343,4 +344,69 @@ func (o *SlogObserver) ObserveRules(service string, version int, err error) {
 		return
 	}
 	o.Logger.Debug("canary_rules", slog.String("service", service), slog.Int("version", version))
+}
+
+// EngineOptions configures an Engine.
+type EngineOptions struct {
+	ServiceName string
+	Discoverer  Discoverer   // typically a *CachingDiscoverer
+	Rules       RuleProvider // typically a *CachingRuleProvider
+	Observer    Observer     // optional; NopObserver when nil
+	DryRun      bool         // shadow mode: record intent, route to stable/default
+}
+
+// Engine composes discovery + rules + observation + dry-run over the canonical
+// Decide/SplitInstances/SelectInstance primitives (which remain untouched).
+type Engine struct {
+	ServiceName string
+	Discoverer  Discoverer
+	Rules       RuleProvider
+	Observer    Observer
+	DryRun      bool
+}
+
+func NewEngine(opts EngineOptions) *Engine {
+	if opts.Observer == nil {
+		opts.Observer = NopObserver{}
+	}
+	return &Engine{ServiceName: opts.ServiceName, Discoverer: opts.Discoverer, Rules: opts.Rules, Observer: opts.Observer, DryRun: opts.DryRun}
+}
+
+// Select runs one canary decision. In DryRun mode it observes the real decision
+// but returns the stable/default selection so canary traffic is not affected.
+func (e *Engine) Select(ctx context.Context, traffic Traffic) (Selection, error) {
+	if e.Discoverer == nil {
+		return Selection{}, errors.New("release engine: Discoverer is nil")
+	}
+	instances, err := e.Discoverer.Discover(ctx, e.ServiceName)
+	if err != nil {
+		return Selection{}, err
+	}
+	rules := RuleSet{Enabled: false, Service: e.ServiceName, DefaultTrack: TrackStable, Fallback: FallbackStable}
+	if e.Rules != nil {
+		rules, err = e.Rules.Rules(ctx, e.ServiceName)
+		if err != nil {
+			return Selection{}, err
+		}
+	}
+	pools := SplitInstances(instances)
+	decision := Decide(traffic, rules)
+	e.Observer.ObserveDecision(e.ServiceName, decision, pools)
+
+	if e.DryRun {
+		// Record intent only; route as if canary were never chosen.
+		shadow := decision
+		shadow.Track = normalizeTrackOrDefault(rules.DefaultTrack, TrackStable)
+		shadow.Reason = "dry_run:" + decision.Reason
+		sticky := firstNonEmpty(traffic.StickyKey, traffic.UserID, traffic.TenantID, traffic.Lane, rules.Service)
+		ins, ok := SelectInstance(pools, shadow, sticky)
+		return Selection{Instance: ins, Decision: shadow, Pools: pools, OK: ok}, nil
+	}
+
+	sticky := firstNonEmpty(traffic.StickyKey, traffic.UserID, traffic.TenantID, traffic.Lane, rules.Service)
+	ins, ok := SelectInstance(pools, decision, sticky)
+	if !ok {
+		e.Observer.ObserveFallback(e.ServiceName, "no_instance_for_"+decision.Track)
+	}
+	return Selection{Instance: ins, Decision: decision, Pools: pools, OK: ok}, nil
 }
