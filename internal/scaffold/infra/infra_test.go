@@ -1681,6 +1681,40 @@ func TestAddInfraPolarisAdapterRejectsHertz(t *testing.T) {
 	}
 }
 
+func TestAddInfraPolarisAdapterEmitsOTelObserver(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindPolarisAdapter})
+	if err != nil {
+		t.Fatalf("Add polaris_adapter: %v", err)
+	}
+	obsPath := filepath.Join(root, "internal", "base", "release", "polaris_observer_otel.go")
+	if !slices.Contains(res.WrittenPaths, obsPath) {
+		t.Fatalf("expected polaris_observer_otel.go in WrittenPaths, got %v", res.WrittenPaths)
+	}
+	body, err := os.ReadFile(obsPath)
+	if err != nil {
+		t.Fatalf("read observer file: %v", err)
+	}
+	for _, want := range []string{
+		"package release",
+		"type OTelObserver struct",
+		"func NewOTelObserver(",
+		"go.opentelemetry.io/otel/metric",
+		"func (o *OTelObserver) ObserveDecision(",
+		"func (o *OTelObserver) ObserveFallback(",
+		"func (o *OTelObserver) ObserveDiscovery(",
+		"func (o *OTelObserver) ObserveRules(",
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("observer missing %q", want)
+		}
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	if !strings.Contains(joined, "go get go.opentelemetry.io/otel/metric") {
+		t.Errorf("next-steps missing otel/metric go get:\n%s", joined)
+	}
+}
+
 func TestAddInfraPolarisAdapterPlan(t *testing.T) {
 	root := seedKitexProject(t, nil)
 	res, err := Add(Options{Root: root, Kind: "polaris_adapter", DryRun: true})
