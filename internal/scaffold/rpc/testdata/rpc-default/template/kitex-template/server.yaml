@@ -116,6 +116,10 @@ body: |-
       }
 
       // ncgo:wire:registry:server
+
+      // Optional static rate-limit safety net (after `ncgo add infra rate-limit`):
+      // middleware.StaticLimitOption mounts kitexserver.WithLimit when configured.
+      // ncgo:wire:ratelimit:static-limit
       opts = append(opts, extraOptions...)
 
       svr := svc.NewServer(handler.New{{.ServiceInfo.ServiceName}}Impl(uc), opts...)
