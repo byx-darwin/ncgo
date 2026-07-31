@@ -71,6 +71,19 @@ polaris-go `api/consumer.go` 接口注释（v1.2.0-beta / v1.7.1 一致）：
 
 MVP adapter 自身的 `PolarisDiscoverer` 正确使用 `GetAllInstances`（全量），是唯一可靠的全量来源。
 
+### 验证证据（2026-07-31 复核，可重跑）
+
+```text
+$ grep -n "获取可用的服务列表\|获取完整的服务列表" "$(go env GOMODCACHE)/github.com/polarismesh/polaris-go@*/api/consumer.go"
+100:	// GetInstances 获取可用的服务列表（会执行路由链，默认去掉隔离以及不健康的服务实例）
+102:	// GetAllInstances 获取完整的服务列表（包括隔离及不健康的服务实例）
+
+$ grep -n "GetInstances(getInstances)" "$(go env GOMODCACHE)/github.com/kitex-contrib/polaris@*/resolver.go"
+157:	InstanceResp, err := pr.consumer.GetInstances(getInstances)   # Resolve() 主路径
+```
+
+结论：kitex resolver 的 `Resolve()`（kitex LB `discovery.Result` 的来源）走 `GetInstances`（路由过滤子集）。canary LB 必须基于 adapter 全量 `Discoverer`（`GetAllInstances`），与 resolver 过滤结果解耦（见 §6）。该语义在 polaris-go v1.2.0-beta 与 v1.7.1 一致。
+
 ### 设计决议
 
 canary 路由必须基于 **adapter 的全量 `Discoverer`（GetAllInstances-backed）**，与 kitex resolver 的过滤结果**解耦**（见 §6 LB 改造）。该结论作为硬约束输入 Phase 2 plan 与 Phase 3 实现；Phase 3 首个任务仍保留一次正式验证（含对 polaris-go v1.7.1 的复核与文档化），以关闭 Issue 的前置勾选项。
