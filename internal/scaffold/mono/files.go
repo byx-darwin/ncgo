@@ -282,7 +282,7 @@ func renderSharedFragment(srcFS fs.FS, name string) ([]string, error) {
 			entry = append(entry, "")
 			continue
 		}
-		entry = append(entry, "      "+strings.TrimPrefix(strings.TrimPrefix(bl, "  "), " "))
+		entry = append(entry, "      "+bl)
 	}
 	return entry, nil
 }
