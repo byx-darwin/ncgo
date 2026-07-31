@@ -320,6 +320,12 @@ func assetFiles(serviceKind, infraKind string) ([]addOnFile, error) {
 		default:
 			return nil, fmt.Errorf("infra: unsupported service kind %q", serviceKind)
 		}
+		if infraKind == KindReleaseCanary {
+			files = append(files, addOnFile{
+				SourcePath:    "optional/release_ops.go",
+				OutputRelPath: filepath.Join("internal", "base", "release", "ops.go"),
+			})
+		}
 		return files, nil
 	}
 	srcPath, err := assetPath(serviceKind, infraKind)
