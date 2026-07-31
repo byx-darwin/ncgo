@@ -431,7 +431,7 @@ ncgo add infra polaris_adapter --root .
 # then follow the printed go get next-steps, e.g.:
 #   go get github.com/polarismesh/polaris-go
 #   go get gopkg.in/yaml.v3
-#   go get github.com/bytedance/go-common
+#   go get github.com/byx-darwin/go-tools/go-common
 ```
 
 Provide Polaris credentials via environment variables

@@ -862,6 +862,9 @@ After starting `ncgo mcp serve`, agents can call:
 - `ncgo_add_rule_center` with `addr: "rule-center:8888"` to add rule-center
   support to an existing Hertz service
 
+Best for: multi-service environments where rate-limit rules should be managed
+centrally and updated without restarting individual services.
+
 ## 8. Polaris canary adapter (opt-in, Kitex only)
 
 After enabling `release_canary` (which provides SDK-neutral canary seams in
@@ -878,7 +881,7 @@ Polaris SDK dependency lives in your project:
 ```bash
 go get github.com/polarismesh/polaris-go
 go get gopkg.in/yaml.v3
-go get github.com/bytedance/go-common
+go get github.com/byx-darwin/go-tools/go-common
 ```
 
 Provide Polaris credentials via environment variables (`POLARIS_TOKEN`,
@@ -901,6 +904,3 @@ into `KitexCanaryLoadBalancer.RuleProvider`. Tested with `polaris-go v1.7.1`.
   sets `release.track` metadata on instances.
 
 GA hardening (metrics / cache+TTL / dry-run / runtime harness) is future work.
-
-Best for: multi-service environments where rate-limit rules should be managed
-centrally and updated without restarting individual services.

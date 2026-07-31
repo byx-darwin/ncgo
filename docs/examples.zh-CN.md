@@ -772,6 +772,8 @@ rate_limit:
 - `ncgo_new` 配合 `ruleCenterAddr: "rule-center:8888"` 创建接入规则中心的 Hertz 服务
 - `ncgo_add_rule_center` 配合 `addr: "rule-center:8888"` 为已有 Hertz 服务接入规则中心
 
+适合：多服务环境，需要集中管理限流规则、无需重启各服务即可更新规则的场景。
+
 ## 8. Polaris canary adapter（opt-in，Kitex only）
 
 在已启用 `release_canary`（在 `internal/base/release` 中提供 SDK 中立的 canary seams）之后，可通过以下命令 opt-in 真实 Polaris 后端：
@@ -787,7 +789,7 @@ ncgo add infra polaris_adapter --root .
 ```bash
 go get github.com/polarismesh/polaris-go
 go get gopkg.in/yaml.v3
-go get github.com/bytedance/go-common
+go get github.com/byx-darwin/go-tools/go-common
 ```
 
 通过环境变量提供 Polaris 凭证（`POLARIS_TOKEN`、`POLARIS_NAMESPACE`），禁止
@@ -807,5 +809,3 @@ v1.7.1` 测试通过。
   `release.track` metadata。
 
 GA 加固（metrics / cache+TTL / dry-run / runtime harness）属于后续工作。
-
-适合：多服务环境，需要集中管理限流规则、无需重启各服务即可更新规则的场景。

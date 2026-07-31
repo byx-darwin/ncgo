@@ -362,7 +362,7 @@ ncgo add infra polaris_adapter --root .
 # 然后按打印的 go get 提示执行，例如：
 #   go get github.com/polarismesh/polaris-go
 #   go get gopkg.in/yaml.v3
-#   go get github.com/bytedance/go-common
+#   go get github.com/byx-darwin/go-tools/go-common
 ```
 
 通过环境变量提供 Polaris 凭证（`POLARIS_TOKEN`、`POLARIS_NAMESPACE`），禁止
