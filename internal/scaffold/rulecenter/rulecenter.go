@@ -41,8 +41,8 @@ func Add(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("rule-center: load manifest: %w", err)
 	}
-	if m.Service.Kind != "hertz" {
-		return nil, fmt.Errorf("rule-center: only supported for Hertz services (got %s)", m.Service.Kind)
+	if m.Service.Kind != "hertz" && m.Service.Kind != "kitex" {
+		return nil, fmt.Errorf("rule-center: only supported for hertz/kitex services (got %s)", m.Service.Kind)
 	}
 
 	result := &Result{DryRun: opts.DryRun}
@@ -65,14 +65,17 @@ func Add(opts Options) (*Result, error) {
 		result.WrittenPaths = append(result.WrittenPaths, confPath)
 	}
 
-	// 3. Wire RuleCenter client into server.go if it exists
-	serverPath := filepath.Join(opts.Root, "internal", "base", "server", "server.go")
-	if !opts.DryRun {
-		if _, err := os.Stat(serverPath); err == nil {
-			if err := wireRuleCenterInServer(serverPath); err != nil {
-				return result, fmt.Errorf("rule-center: wire server.go: %w", err)
+	// 3. Wire RuleCenter client into server.go if it exists (hertz only —
+	// kitex rate-limit middleware builds its own client lazily from cfg).
+	if m.Service.Kind == "hertz" {
+		serverPath := filepath.Join(opts.Root, "internal", "base", "server", "server.go")
+		if !opts.DryRun {
+			if _, err := os.Stat(serverPath); err == nil {
+				if err := wireRuleCenterInServer(serverPath); err != nil {
+					return result, fmt.Errorf("rule-center: wire server.go: %w", err)
+				}
+				result.WrittenPaths = append(result.WrittenPaths, serverPath)
 			}
-			result.WrittenPaths = append(result.WrittenPaths, serverPath)
 		}
 	}
 

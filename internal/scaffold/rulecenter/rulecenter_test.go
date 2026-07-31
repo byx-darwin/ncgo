@@ -64,6 +64,54 @@ service:
 	}
 }
 
+// writeConfDev writes a minimal conf/dev/conf.yaml with a rate_limit block so
+// updateConfForRuleCenter has something to operate on. Mirrors the hertz helper.
+func writeConfDev(t *testing.T, dir string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Join(dir, "conf", "dev"), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	conf := `env: dev
+rate_limit:
+  enabled: true
+  source:
+    type: config
+    cache_ttl_seconds: 60
+  backend: memory
+`
+	if err := os.WriteFile(filepath.Join(dir, "conf", "dev", "conf.yaml"), []byte(conf), 0o644); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// assertClientWritten asserts that the shared fragment was materialized at
+// internal/pkg/middleware/rule_center_client.go and contains NewRuleCenterClient.
+func assertClientWritten(t *testing.T, dir string) {
+	t.Helper()
+	p := filepath.Join(dir, "internal", "pkg", "middleware", "rule_center_client.go")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("expected client file at %s: %v", p, err)
+	}
+	if !strings.Contains(string(b), "NewRuleCenterClient") {
+		t.Errorf("client file missing NewRuleCenterClient")
+	}
+}
+
+// assertConfSourceType asserts that conf/dev/conf.yaml's rate_limit.source.type
+// equals want (e.g. "rule_center").
+func assertConfSourceType(t *testing.T, dir, want string) {
+	t.Helper()
+	p := filepath.Join(dir, "conf", "dev", "conf.yaml")
+	b, err := os.ReadFile(p)
+	if err != nil {
+		t.Fatalf("read conf: %v", err)
+	}
+	if !strings.Contains(string(b), "type: "+want) {
+		t.Errorf("conf source.type: want %q, got:\n%s", want, string(b))
+	}
+}
+
 func TestAddRequiresAddr(t *testing.T) {
 	_, err := Add(Options{Addr: ""})
 	if err == nil {
@@ -74,17 +122,46 @@ func TestAddRequiresAddr(t *testing.T) {
 	}
 }
 
-func TestAddRejectsKitex(t *testing.T) {
+func TestAddAcceptsKitex(t *testing.T) {
 	dir := t.TempDir()
 	makeKitexManifest(t, dir)
+	writeConfDev(t, dir)
 
-	_, err := Add(Options{Root: dir, Addr: "localhost:8888"})
-	if err == nil {
-		t.Fatal("expected error for kitex service")
+	// Create a dummy server.go to assert the kitex branch does NOT touch it.
+	serverDir := filepath.Join(dir, "internal", "base", "server")
+	if err := os.MkdirAll(serverDir, 0o755); err != nil {
+		t.Fatal(err)
 	}
-	if !strings.Contains(err.Error(), "only supported for Hertz") {
-		t.Fatalf("unexpected error: %v", err)
+	dummyServer := "package server\n\nfunc init() {}\n"
+	serverPath := filepath.Join(serverDir, "server.go")
+	if err := os.WriteFile(serverPath, []byte(dummyServer), 0o644); err != nil {
+		t.Fatal(err)
 	}
+
+	res, err := Add(Options{Root: dir, Addr: "rule-center:8888"})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	// Client file written and contains NewRuleCenterClient.
+	assertClientWritten(t, dir)
+
+	// Conf source.type rewritten to rule_center.
+	assertConfSourceType(t, dir, "rule_center")
+
+	// Kitex branch must NOT wire server.go.
+	b, err := os.ReadFile(serverPath)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(b) != dummyServer {
+		t.Errorf("kitex branch must NOT modify server.go, got diff")
+	}
+	if strings.Contains(string(b), "RuleCenter") {
+		t.Errorf("kitex branch must NOT wire server.go")
+	}
+
+	_ = res
 }
 
 func TestWriteRuleCenterClientForceFlag(t *testing.T) {
