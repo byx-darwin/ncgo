@@ -4,6 +4,12 @@ templates:
   - kitex-template/ratelimit_proto.yaml
   - kitex-template/ratelimit_handler.yaml
   - kitex-template/ratelimit_middleware.yaml
+  - kitex-template/ratelimit_middleware_test.yaml
+  - kitex-template/ratelimit_shared_resolver.yaml
+  - kitex-template/ratelimit_shared_resolver_test.yaml
+  - kitex-template/ratelimit_shared_store.yaml
+  - kitex-template/ratelimit_shared_store_test.yaml
+  - kitex-template/ratelimit_shared_rule_center_client.yaml
   - kitex-template/ratelimit_sqlc_queries.yaml
   - kitex-template/ratelimit_usecase.yaml
   - kitex-template/ratelimit_repository.yaml

@@ -1,0 +1,488 @@
+# Shared rate-limit resolver (framework-agnostic)
+path: internal/pkg/ratelimit/resolver.go
+update_behavior:
+  type: cover
+body: |-
+  package ratelimit
+
+  import (
+      "context"
+      "regexp"
+      "strings"
+      "sync"
+      "time"
+
+      config "github.com/byx-darwin/go-tools/go-framework/config"
+
+      "{{.Module}}/internal/base/conf"
+  )
+
+  type Lookup struct {
+      Service  string
+      Phase    string
+      AppKey   string
+      Method   string
+      Path     string
+      UserUUID string
+      ClientIP string
+  }
+
+  type ResolvedRule struct {
+      Rule   conf.RateLimitRuleConfig
+      Source string
+  }
+
+  // GRPCClient is implemented by the generated project when a real dynamic
+  // rule-center gRPC client is available.
+  //
+  // Return values must follow this contract:
+  //   - (rule, true, nil): matched a remote rule
+  //   - (nil, false, nil): remote source answered "not found"
+  //   - (nil, false, err): remote query failed
+  type GRPCClient interface {
+      ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error)
+  }
+
+  // DatabaseHook is implemented by the generated project when rate-limit
+  // rules are stored in a business-owned database. In Hertz monolith mode,
+  // it is typically backed by an internal/repository query function.
+  // Return contract is the same as GRPCClient.
+  type DatabaseHook interface {
+      ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error)
+  }
+
+  // ResolveFunc adapts a plain function to both GRPCClient and DatabaseHook.
+  // It is the lightest-weight way to wire a project-specific gRPC client or
+  // repository query into ratelimit.Options without defining extra wrapper structs.
+  type ResolveFunc func(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error)
+
+  func (f ResolveFunc) ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+      if f == nil {
+          return nil, false, nil
+      }
+      return f(ctx, lookup)
+  }
+
+  type Options struct {
+      GRPC       GRPCClient
+      Database   DatabaseHook
+      RuleCenter GRPCClient // rule-center uses same GRPCClient interface
+  }
+
+  type source interface {
+      ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error)
+  }
+
+  type Resolver struct {
+      cfg     conf.RateLimitConfig
+      dynamic source
+  }
+
+  func NewResolver(cfg conf.RateLimitConfig, opts Options) *Resolver {
+      cfg = NormalizeConfig(cfg)
+      var dynamic source
+      switch cfg.Source.Type {
+      case "grpc":
+          dynamic = &grpcSource{client: opts.GRPC, timeout: cfg.GRPC.TimeoutMilliseconds.Duration}
+      case "database":
+          dynamic = &databaseSource{hook: opts.Database, timeout: cfg.Database.QueryTimeoutMilliseconds.Duration}
+      case "rule_center":
+          dynamic = &grpcSource{client: opts.RuleCenter, timeout: cfg.RuleCenter.QueryTimeoutMilliseconds.Duration}
+      }
+      if dynamic != nil {
+          dynamic = newCachedSource(int(cfg.Source.CacheTTLSeconds.Seconds()), dynamic)
+      }
+      return &Resolver{cfg: cfg, dynamic: dynamic}
+  }
+
+  func (r *Resolver) Resolve(ctx context.Context, lookup Lookup) (ResolvedRule, error) {
+      lookup = normalizeLookup(lookup)
+      if r != nil && lookup.Service == "" {
+          lookup.Service = strings.TrimSpace(r.cfg.GRPC.ServiceName)
+      }
+      if r != nil && r.dynamic != nil {
+          rule, found, err := r.dynamic.ResolveRateLimitRule(ctx, lookup)
+          switch {
+          case err == nil && found && rule != nil:
+              return ResolvedRule{Rule: NormalizeRule(*rule), Source: r.cfg.Source.Type}, nil
+          case err != nil && !r.cfg.Source.FallbackOnError:
+              return ResolvedRule{}, err
+          }
+      }
+      phase := conf.RateLimitPhaseConfig{}
+      if r != nil {
+          phase = r.phaseConfig(lookup.Phase)
+      }
+      if rule, ok := matchLocalRule(phase, lookup); ok {
+          return ResolvedRule{Rule: NormalizeRule(rule), Source: "config"}, nil
+      }
+      return ResolvedRule{Rule: NormalizeRule(phase.DefaultRule), Source: "config"}, nil
+  }
+
+  func (r *Resolver) phaseConfig(phase string) conf.RateLimitPhaseConfig {
+      if strings.EqualFold(strings.TrimSpace(phase), "post_auth") {
+          return r.cfg.PostAuth
+      }
+      return r.cfg.PreAuth
+  }
+
+  func NormalizeConfig(cfg conf.RateLimitConfig) conf.RateLimitConfig {
+      if cfg.Source.Type == "" {
+          cfg.Source.Type = "config"
+      }
+      if cfg.Backend == "" {
+          cfg.Backend = "memory"
+      }
+      if cfg.KeyPrefix == "" {
+          cfg.KeyPrefix = "rate_limit"
+      }
+      if cfg.AppKeyHeader == "" {
+          cfg.AppKeyHeader = "X-App-Key"
+      }
+      if cfg.Memory.MaxEntries <= 0 {
+          cfg.Memory.MaxEntries = 100000
+      }
+      if cfg.Source.CacheTTLSeconds.Duration <= 0 {
+          cfg.Source.CacheTTLSeconds = config.Duration{Duration: 60 * time.Second}
+      }
+      if cfg.GRPC.TimeoutMilliseconds.Duration <= 0 {
+          cfg.GRPC.TimeoutMilliseconds = config.Duration{Duration: 200 * time.Millisecond}
+      }
+      cfg.GRPC.ServiceName = strings.TrimSpace(cfg.GRPC.ServiceName)
+      if cfg.Database.QueryTimeoutMilliseconds.Duration <= 0 {
+          cfg.Database.QueryTimeoutMilliseconds = config.Duration{Duration: 200 * time.Millisecond}
+      }
+      if cfg.RuleCenter.QueryTimeoutMilliseconds.Duration <= 0 {
+          cfg.RuleCenter.QueryTimeoutMilliseconds = config.Duration{Duration: 200 * time.Millisecond}
+      }
+      return cfg
+  }
+
+  func NormalizeRule(rule conf.RateLimitRuleConfig) conf.RateLimitRuleConfig {
+      if len(rule.KeyBy) == 0 {
+          rule.KeyBy = []string{"ip"}
+      }
+      if rule.ClientTTLSeconds.Duration <= 0 {
+          rule.ClientTTLSeconds = config.Duration{Duration: 300 * time.Second}
+      }
+      if rule.Strategy == "" {
+          if rule.RequestsPerSecond > 0 || rule.Burst > 0 {
+              rule.Strategy = "token_bucket"
+          } else {
+              rule.Strategy = "fixed_window"
+          }
+      }
+      switch strings.ToLower(strings.TrimSpace(rule.Strategy)) {
+      case "token_bucket":
+          rule.Strategy = "token_bucket"
+          if rule.RequestsPerSecond <= 0 {
+              rule.RequestsPerSecond = 100
+          }
+          if rule.Burst <= 0 {
+              rule.Burst = 200
+          }
+      default:
+          rule.Strategy = "fixed_window"
+          if rule.WindowSeconds.Duration <= 0 {
+              rule.WindowSeconds = config.Duration{Duration: 60 * time.Second}
+          }
+          if rule.MaxRequests <= 0 {
+              rule.MaxRequests = 100
+          }
+      }
+      return rule
+  }
+
+  func matchLocalRule(phase conf.RateLimitPhaseConfig, lookup Lookup) (conf.RateLimitRuleConfig, bool) {
+      bestScore := -1
+      bestRule := conf.RateLimitRuleConfig{}
+      for _, candidate := range phase.Rules {
+          if !candidate.Rule.Enabled {
+              continue
+          }
+          score, ok := matchScore(candidate, lookup)
+          if !ok {
+              continue
+          }
+          if score <= bestScore {
+              continue
+          }
+          bestScore = score
+          bestRule = candidate.Rule
+      }
+      if bestScore >= 0 {
+          return bestRule, true
+      }
+      return conf.RateLimitRuleConfig{}, false
+  }
+
+  func matchScore(candidate conf.RateLimitMatchConfig, lookup Lookup) (int, bool) {
+      candidate = normalizeLocalRateLimitMatch(candidate)
+      if !matchRule(candidate, lookup) {
+          return 0, false
+      }
+      score := candidate.Priority * 1000000
+      if strings.TrimSpace(candidate.AppKey) != "" {
+          score += 100000
+      }
+      if strings.TrimSpace(candidate.Method) != "" {
+          score += 10000
+      }
+      score += localMatchKindRank(candidate) * 1000
+      score += localMatchSpecificity(candidate)
+      return score, true
+  }
+
+  func matchRule(candidate conf.RateLimitMatchConfig, lookup Lookup) bool {
+      candidate = normalizeLocalRateLimitMatch(candidate)
+      if strings.TrimSpace(candidate.AppKey) != "" && !strings.EqualFold(strings.TrimSpace(candidate.AppKey), lookup.AppKey) {
+          return false
+      }
+      if strings.TrimSpace(candidate.Method) != "" && strings.ToUpper(strings.TrimSpace(candidate.Method)) != lookup.Method {
+          return false
+      }
+      switch strings.ToLower(strings.TrimSpace(candidate.MatchKind)) {
+      case "":
+      case "exact":
+          if strings.TrimSpace(candidate.Path) != "" && strings.TrimSpace(candidate.Path) != lookup.Path {
+              return false
+          }
+      case "prefix":
+          if pattern := strings.TrimSpace(candidate.PathPattern); pattern != "" && !strings.HasPrefix(lookup.Path, pattern) {
+              return false
+          }
+      case "glob":
+          if pattern := strings.TrimSpace(candidate.PathPattern); pattern != "" && !globMatch(pattern, lookup.Path) {
+              return false
+          }
+      case "regex":
+          if pattern := strings.TrimSpace(candidate.PathPattern); pattern != "" && !regexMatch(pattern, lookup.Path) {
+              return false
+          }
+      default:
+          return false
+      }
+      return strings.TrimSpace(candidate.AppKey) != "" || strings.TrimSpace(candidate.Method) != "" || strings.TrimSpace(candidate.MatchKind) != "" || strings.TrimSpace(candidate.Path) != "" || strings.TrimSpace(candidate.PathPattern) != ""
+  }
+
+  func normalizeLocalRateLimitMatch(candidate conf.RateLimitMatchConfig) conf.RateLimitMatchConfig {
+      candidate.AppKey = strings.TrimSpace(candidate.AppKey)
+      candidate.Method = strings.ToUpper(strings.TrimSpace(candidate.Method))
+      candidate.MatchKind = strings.ToLower(strings.TrimSpace(candidate.MatchKind))
+      candidate.Path = strings.TrimSpace(candidate.Path)
+      candidate.PathPattern = strings.TrimSpace(candidate.PathPattern)
+      candidate.PathPrefix = strings.TrimSpace(candidate.PathPrefix)
+      if candidate.PathPrefix != "" {
+          if candidate.MatchKind == "" {
+              candidate.MatchKind = "prefix"
+          }
+          if candidate.PathPattern == "" {
+              candidate.PathPattern = candidate.PathPrefix
+          }
+      }
+      if candidate.MatchKind == "" {
+          switch {
+          case candidate.Path != "":
+              candidate.MatchKind = "exact"
+          case candidate.PathPattern != "":
+              candidate.MatchKind = "prefix"
+          }
+      }
+      return candidate
+  }
+
+  func localMatchKindRank(candidate conf.RateLimitMatchConfig) int {
+      switch strings.ToLower(strings.TrimSpace(candidate.MatchKind)) {
+      case "exact":
+          return 4
+      case "prefix":
+          return 3
+      case "glob":
+          return 2
+      case "regex":
+          return 1
+      default:
+          return 0
+      }
+  }
+
+  func localMatchSpecificity(candidate conf.RateLimitMatchConfig) int {
+      switch strings.ToLower(strings.TrimSpace(candidate.MatchKind)) {
+      case "exact":
+          return len(strings.TrimSpace(candidate.Path))
+      case "prefix":
+          return len(strings.TrimSpace(candidate.PathPattern))
+      case "glob":
+          return len(strings.ReplaceAll(strings.TrimSpace(candidate.PathPattern), "*", ""))
+      case "regex":
+          return regexLiteralishLength(strings.TrimSpace(candidate.PathPattern))
+      default:
+          return 0
+      }
+  }
+
+  func globMatch(pattern, path string) bool {
+      if pattern == "" {
+          return false
+      }
+      if !strings.Contains(pattern, "*") {
+          return pattern == path
+      }
+      parts := strings.Split(pattern, "*")
+      idx := 0
+      if !strings.HasPrefix(pattern, "*") {
+          if !strings.HasPrefix(path, parts[0]) {
+              return false
+          }
+          idx = len(parts[0])
+          parts = parts[1:]
+      }
+      lastAnchored := !strings.HasSuffix(pattern, "*")
+      for i, part := range parts {
+          if part == "" {
+              continue
+          }
+          pos := strings.Index(path[idx:], part)
+          if pos < 0 {
+              return false
+          }
+          idx += pos + len(part)
+          if lastAnchored && i == len(parts)-1 && !strings.HasSuffix(path, part) {
+              return false
+          }
+      }
+      return true
+  }
+
+  func regexMatch(pattern, path string) bool {
+      matched, err := regexp.MatchString(pattern, path)
+      return err == nil && matched
+  }
+
+  func regexLiteralishLength(pattern string) int {
+      score := 0
+      escaped := false
+      for _, ch := range pattern {
+          if escaped {
+              if ch != 'A' && ch != 'z' {
+                  score++
+              }
+              escaped = false
+              continue
+          }
+          if ch == '\\' {
+              escaped = true
+              continue
+          }
+          switch ch {
+          case '^', '$', '.', '*', '+', '?', '(', ')', '[', ']', '{', '}', '|':
+          default:
+              score++
+          }
+      }
+      return score
+  }
+
+  func normalizeLookup(lookup Lookup) Lookup {
+      lookup.Service = strings.TrimSpace(lookup.Service)
+      lookup.Phase = strings.ToLower(strings.TrimSpace(lookup.Phase))
+      lookup.AppKey = strings.TrimSpace(lookup.AppKey)
+      lookup.Method = strings.ToUpper(strings.TrimSpace(lookup.Method))
+      lookup.Path = strings.TrimSpace(lookup.Path)
+      lookup.UserUUID = strings.TrimSpace(lookup.UserUUID)
+      lookup.ClientIP = strings.TrimSpace(lookup.ClientIP)
+      return lookup
+  }
+
+  type grpcSource struct {
+      client  GRPCClient
+      timeout time.Duration
+  }
+
+  func (s *grpcSource) ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+      if s == nil || s.client == nil {
+          return nil, false, nil
+      }
+      if s.timeout > 0 {
+          var cancel context.CancelFunc
+          ctx, cancel = context.WithTimeout(ctx, s.timeout)
+          defer cancel()
+      }
+      return s.client.ResolveRateLimitRule(ctx, lookup)
+  }
+
+  type databaseSource struct {
+      hook    DatabaseHook
+      timeout time.Duration
+  }
+
+  func (s *databaseSource) ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+      if s == nil || s.hook == nil {
+          return nil, false, nil
+      }
+      if s.timeout > 0 {
+          var cancel context.CancelFunc
+          ctx, cancel = context.WithTimeout(ctx, s.timeout)
+          defer cancel()
+      }
+      return s.hook.ResolveRateLimitRule(ctx, lookup)
+  }
+
+  type cachedSource struct {
+      next   source
+      ttl    time.Duration
+      mu     sync.Mutex
+      values map[string]cacheEntry
+  }
+
+  type cacheEntry struct {
+      rule      conf.RateLimitRuleConfig
+      found     bool
+      expiresAt time.Time
+  }
+
+  func newCachedSource(ttlSeconds int, next source) source {
+      if next == nil {
+          return nil
+      }
+      ttl := time.Duration(ttlSeconds) * time.Second
+      if ttl <= 0 {
+          ttl = 60 * time.Second
+      }
+      return &cachedSource{next: next, ttl: ttl, values: map[string]cacheEntry{}}
+  }
+
+  func (s *cachedSource) ResolveRateLimitRule(ctx context.Context, lookup Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+      key := cacheKey(lookup)
+      now := time.Now()
+      s.mu.Lock()
+      if entry, ok := s.values[key]; ok && now.Before(entry.expiresAt) {
+          s.mu.Unlock()
+          if !entry.found {
+              return nil, false, nil
+          }
+          rule := entry.rule
+          return &rule, true, nil
+      }
+      s.mu.Unlock()
+
+      rule, found, err := s.next.ResolveRateLimitRule(ctx, lookup)
+      if err != nil {
+          return nil, false, err
+      }
+      entry := cacheEntry{found: found, expiresAt: now.Add(s.ttl)}
+      if found && rule != nil {
+          entry.rule = *rule
+      }
+      s.mu.Lock()
+      s.values[key] = entry
+      s.mu.Unlock()
+      if !found || rule == nil {
+          return nil, false, nil
+      }
+      return rule, true, nil
+  }
+
+  func cacheKey(lookup Lookup) string {
+      return strings.Join([]string{lookup.Service, lookup.Phase, lookup.Method, lookup.Path, lookup.AppKey}, "|")
+  }

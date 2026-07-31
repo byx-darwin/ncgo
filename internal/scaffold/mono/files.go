@@ -201,6 +201,28 @@ func writeKitexTemplate(dir string, preset string) error {
 				path:  "internal/db/schema/000002_rate_limit_rules.sql",
 			},
 		)
+		// Copy shared ratelimit fragments into the kitex-template dir as
+		// ratelimit_shared_*.yaml so the existing ratelimit_ prefix filter
+		// copies them only for the rule-center preset. The layout-rulecenter.yaml
+		// references these names in its templates: list.
+		sharedFragments := []string{
+			"ratelimit/resolver",
+			"ratelimit/resolver_test",
+			"ratelimit/store",
+			"ratelimit/store_test",
+			"ratelimit/rule_center_client",
+		}
+		for _, name := range sharedFragments {
+			base := name[strings.LastIndex(name, "/")+1:]
+			targetName := "ratelimit_shared_" + base + ".yaml"
+			b, err := fs.ReadFile(srcFS, name+".yaml")
+			if err != nil {
+				return fmt.Errorf("scaffold: read embedded %s.yaml: %w", name, err)
+			}
+			if err := os.WriteFile(filepath.Join(tplDir, targetName), b, 0o644); err != nil {
+				return fmt.Errorf("scaffold: write %s: %w", targetName, err)
+			}
+		}
 	}
 	for _, extra := range extras {
 		b, err := fs.ReadFile(srcFS, extra.asset)
