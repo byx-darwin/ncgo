@@ -104,10 +104,11 @@ func runRPCAttackCapture(ctx context.Context, opts E2EOptions, rpcMethod, payloa
 			cmd := exec.CommandContext(ctx, "grpcurl", "-plaintext", "-d", payload, target, rpcMethod)
 			out, err := cmd.CombinedOutput()
 			res := grpcCallResult{latency: time.Since(t0)}
-			if err != nil && parseBizCode(string(out)) == 0 {
+			code := parseBizCode(string(out))
+			if err != nil && code == 0 {
 				res.errOther = true
 			} else {
-				res.bizCode = parseBizCode(string(out))
+				res.bizCode = code
 			}
 			results[idx] = res
 		}(i)
