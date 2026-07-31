@@ -118,6 +118,8 @@ body: |-
 
   type RateLimitConfig struct {
       Enabled      bool                    `yaml:"enabled"`
+      Mode         string                  `yaml:"mode"`                 // shadow | enforce
+      Static       StaticLimitConfig       `yaml:"static"`
       Source       RateLimitSourceConfig   `yaml:"source"`
       GRPC         RateLimitGRPCConfig     `yaml:"grpc"`
       RuleCenter   RateLimitDatabaseConfig `yaml:"rule_center"`
@@ -131,6 +133,11 @@ body: |-
       PostAuth     RateLimitPhaseConfig    `yaml:"post_auth"`
       Memory       MemoryCacheConfig       `yaml:"memory"`
       Redis        RedisConfig    `yaml:"redis"`
+  }
+
+  type StaticLimitConfig struct {
+      MaxQPS         int `yaml:"max_qps"`
+      MaxConnections int `yaml:"max_connections"`
   }
 
   type RateLimitSourceConfig struct {

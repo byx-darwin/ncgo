@@ -1193,6 +1193,312 @@ flowchart LR
 该方案兼顾了动态规则能力、模板通用性、运行时稳定性以及与现有 Hertz 模板
 的兼容性。
 
+## 19. Kitex 服务限流
+
+本章描述 ncgo 在 **Kitex RPC** 服务侧的限流拦截实现。Hertz(HTTP)侧的设计
+见本章之前的各节;Kitex 侧共享同一套限流基建(resolver / store / rule-center
+client),仅在中间件适配层因框架 API 不同而各自实现。
+
+### 19.1 背景与定位
+
+此前 Kitex 模板生成的 `internal/base/middleware/ratelimit.go` 只是一个
+pass-through 占位符(`RateLimit()` 直接 `return next(ctx, req, resp)`),拦截注释
+自述"Rate-limit enforcement for Kitex services will be added in a follow-up"。
+本轮把它替换为真实的限流中间件。
+
+做 Kitex 拦截的原因:
+
+1. **服务自保 / 防雪崩**: 下游变慢 → 上游 goroutine 堆积 → 级联崩溃。RPC 层限流是熔断前的防洪坝。
+2. **Hertz 不是唯一调用方**: 服务间互调(Kitex→Kitex)、定时任务、内部工具直连 RPC,全部绕过 HTTP 入口限流。
+3. **扇出放大**: 1 次 HTTP 请求可扇出为 N 次 RPC,入口限流看不见放大系数。
+4. **多调用方公平性**: 按 caller 维度限流,防 noisy neighbor 吃光下游容量。
+5. **边际成本极低**: rule-center、resolver、store、缓存、降级基建全部已实现,Kitex 侧只需中间件适配层。
+
+定位:
+
+- 与 Hertz 侧**共享** `internal/pkg/ratelimit`(resolver + store)与
+  `rule_center_client`,**单一事实来源**。
+- 中间件层框架各异: Hertz 适配 `app.HandlerFunc`,Kitex 适配 `endpoint.Middleware`。
+- 默认生成即 **shadow 观察模式**(计数真实生效但不拒绝),运营确认后手动切 enforce。
+
+### 19.2 双轨拦截模型
+
+Kitex 侧采用 **双轨** 防护,两条轨道独立生效:
+
+```
+RPC 请求进入 Kitex server
+  │
+  ├─ 【静态轨】server.WithLimit(MaxConnections/MaxQPS)     ← 全局粗粒度兜底
+  │    conf: rate_limit.static.{max_qps,max_connections}     默认 0 = 不挂载
+  │    超限 → kitex 框架层直接拒绝
+  │
+  └─ 【动态轨】WithMiddleware 链:
+       RequestID → AccessLog → Recovery
+       → CallerAllowlist            ← 此处之后 caller 身份已就绪
+       → middleware.RateLimit(cfg.RateLimit)   ★ 新增
+       → RequestTimeout
+            │
+            ├─ Lookup{Service, Method, AppKey, ClientIP, Phase: "post_auth"}
+            ├─ 共享 resolver: 动态源(rule_center/grpc/database)→ 缓存(TTL)
+            │                 → 失败按 fallback_on_error 回退本地 config 规则
+            ├─ 共享 store: memory(hot LRU)| redis(Lua 脚本)
+            └─ 判决:
+                 允许                    → next(ctx, req, resp)
+                 超限 + mode=enforce     → BizStatusError 10429 + metainfo retry-after
+                 超限 + mode=shadow      → 计数/日志/打点,放行  ← 默认模式
+```
+
+两轨职责划分:
+
+| 轨道 | 配置入口 | 作用 | 默认状态 |
+| --- | --- | --- | --- |
+| 静态轨 | `rate_limit.static.{max_qps, max_connections}` | 全局连接数 / QPS 粗粒度兜底,kitex 框架层拒绝 | `0` = 不挂载 |
+| 动态轨 | `rate_limit.mode` + `source.*` / `backend` | 按规则源 + caller/method 维度精细限流 | `mode = shadow`(计数不拒绝) |
+
+### 19.3 共享基建与框架边界
+
+为避免 hertz/kitex 两侧各自维护一份 resolver 与 store 实现,本轮把相关
+asset 从 `hertz/layout.yaml` 抽出为框架无关的共享片段,放到
+`internal/assets/_data/ratelimit/` 目录:
+
+| 共享片段 | 职责 | 单一事实来源 |
+| --- | --- | --- |
+| `resolver.yaml` / `resolver_test.yaml` | 规则解析(动态优先 + 本地兜底 + 缓存) | 是 |
+| `store.yaml` / `store_test.yaml` | 计数后端(memory / redis) | 是 |
+| `rule_center_client.yaml` | rule-center gRPC 客户端 | 是 |
+
+Hertz 的 `hertz/layout.yaml` 是 hz 工具的单文件自定义 layout,不支持外部引用。
+ncgo 在 scaffold 时把形如 `# {{include: ratelimit/resolver}}` 的指令注释展开为
+对应片段内容,hz 工具消费的是已缝合的完整 layout,感知不到指令存在。hertz
+golden 测试保证缝合后生成输出**逐字节不变**。
+
+**核心原则**: resolver / store / rule-center client 单一事实来源;只有中间件
+适配层框架各异:
+
+| 层 | Hertz | Kitex |
+| --- | --- | --- |
+| 中间件签名 | `app.HandlerFunc` | `endpoint.Middleware` |
+| 请求上下文 | `*app.RequestContext` | `rpcinfo.RPCInfo` + `context.Context` |
+| caller 身份 | header / meta | transmeta `x-caller-service` |
+| 拒绝语义 | HTTP `429` | BizStatusError `10429` + metainfo |
+| 静态兜底 | 无(hertz 无对应原语) | `server.WithLimit` |
+
+两侧 `RateLimitConfig` 共享同一份 conf 结构,但默认值不同:**hertz `Mode` 默认
+`enforce`(保持现状行为不变);kitex `Mode` 默认 `shadow`(新能力安全上线)**。
+`Static` 字段仅 kitex 侧生效,hertz 侧忽略。
+
+### 19.4 动态轨数据流
+
+每请求在动态轨中间件内的处理步骤:
+
+1. `!cfg.Enabled` → 直接 `next`。
+2. 从 `rpcinfo.GetRPCInfo(ctx)` 取出 `ServiceName` / `RPCMethod`,从 transmeta
+   取出 caller 服务名(`x-caller-service`)与 caller 地址,拼装
+   `ratelimit.Lookup{Service, Method, AppKey, ClientIP, Phase: "post_auth"}`。
+   `Service` 取自 `cfg.Server.Registry.Name`(服务注册名)。
+3. 调 `resolver.Resolve(ctx, lookup)`:
+   - 先查本地动态规则缓存(cache hit → 直接返回)。
+   - cache miss → 查动态源(rule_center / grpc / database)。
+   - 命中 → 写缓存并返回远程规则。
+   - 未命中 / 失败 → 按 `fallback_on_error` 决定回退旧缓存或本地 config 规则;
+     最终仍报错 → 按 `fail_open` 裁决。
+4. `!rule.Enabled` → 直接 `next`。
+5. 按 `rule.KeyBy` 维度拼接 key(维度缺失时 caller → caller-ip 降级),调
+   `store.Allow(ctx, key, rule)`。**无论 shadow 还是 enforce,`Allow()` 都会真实
+   计数**。
+6. 判决:
+   - 允许 → `next`。
+   - store 错误 → `fail_open` 裁决(默认放行)。
+   - 超限:
+     - `mode = enforce` → `rpcerror.RateLimited(retryAfter)` 返回 BizStatusError
+       `10429` + metainfo `rl-retry-after`。
+     - `mode = shadow` → 计数已由 `Allow()` 完成,仅记录
+       `klog.CtxWarnf(ctx, "ratelimit shadow denied: %s/%s", service, method)`
+       与 `ratelimit_shadow_denied{service, method}` expvar,然后放行。
+
+### 19.5 shadow → enforce 运维流程
+
+默认 `mode = shadow`**只计数、不拒绝**,用于上线初期观察规则是否合理。推荐
+运维流程:
+
+1. **接入**: 在 kitex 项目执行 `ncgo add infra rate-limit`,生成共享
+   `internal/pkg/ratelimit`、真实中间件 `internal/base/middleware/ratelimit.go`,
+   并把 `mode = shadow` 写入 conf。
+2. **配规则源**: 设置 `rate_limit.source.type`(config / database / rule_center /
+   grpc),确认 resolver 能拿到预期规则。
+3. **shadow 观察(建议 1-2 周)**:
+   - 观察日志关键字 `ratelimit shadow denied`。
+   - 观察 expvar `ratelimit_shadow_denied{service, method}` 打点,确认被标记
+     拒绝的请求是否符合预期(caller、method、QPS 区间)。
+   - 若 shadow 拒绝率异常高,说明规则过严或 caller 识别有误,先调规则再切
+     enforce,避免误杀。
+4. **切 enforce**: 确认 shadow 观察期内拒绝分布合理后,改 conf
+   `rate_limit.mode = enforce`,滚动重启。
+5. **复盘 enforce**: 用 e2e 验证(见 §19.8),确认超限请求按预期返回 10429。
+
+shadow 模式的关键保障:**计数真实生效**。这意味着 shadow 期间积累的计数
+行为与 enforce 完全一致——一旦切到 enforce,限流会立即按真实流量生效,不
+存在"冷启动"偏差。
+
+### 19.6 拒绝语义与 caller 处理建议
+
+拒绝时返回 Kitex `BizStatusError`,业务错误码 **10429**(镜像 HTTP 429):
+
+```go
+// internal/pkg/rpcerror/rpcerror.go (生成产物示意)
+const MetaRetryAfter = "rl-retry-after"
+
+func RateLimited(retryAfter time.Duration) error {
+    seconds := int64(defaultRetryAfterSeconds)
+    if retryAfter > 0 {
+        seconds = int64(retryAfter.Seconds())
+    }
+    extra := map[string]string{MetaRetryAfter: strconv.FormatInt(seconds, 10)}
+    return kerrors.NewBizStatusErrorWithExtra(CodeRateLimited, "rate limited", extra)
+}
+```
+
+- 框架将 `BizStatusError` 计为**业务错误**而非调用失败 → **不会**触发 caller
+  侧基于失败率的熔断(服务治理层面的错误比率熔断统计口径不含业务错误)。
+- 退避秒数通过 `BizExtra` 携带,键为 `rl-retry-after`,供 caller 做退避重试。
+
+**caller 处理建议**:
+
+| 场景 | 建议 |
+| --- | --- |
+| 通用 kitex caller | 通过 `bizErr.BizExtra()["rl-retry-after"]` 读取退避秒数,做指数退避重试 |
+| 不重试的幂等场景 | 直接按 10429 限流处理(返回上游 / 降级 / 排队) |
+| 监控告警 | 10429 比例突增 = 下游开始限流,应触发业务告警而非服务可用性告警 |
+| 错误比率熔断 | 10429 为业务错误,不计入 caller 失败率 → 不会误触发熔断 |
+
+### 19.7 静态兜底配置建议
+
+静态轨(`server.WithLimit`)作为全局粗粒度安全网,独立于动态规则:
+
+```yaml
+# conf/dev/conf.yaml
+rate_limit:
+  static:
+    max_qps: 0          # 0 = 不挂载 WithLimit
+    max_connections: 0
+```
+
+`StaticLimitOption(cfg.Static) kitexserver.Option` 在 `max_qps` 与
+`max_connections` 均大于 0 时返回 `kitexserver.WithLimit(&limit.Option{...})`,
+否则返回 nil。astwire 在 server.go 的 `// ncgo:wire:ratelimit:static-limit`
+标记后注入条件挂载语句。
+
+配置建议:
+
+- **默认 0 = 不挂载**,与"默认生成不误伤"原则一致。
+- **压测后设值**: 在准生产压测中确认服务极限 QPS 与最大承载连接数后,设为
+  略低于极限值的阈值(如极限 QPS 的 80%)。静态轨是兜底,不是精细限流工具。
+- **与动态轨独立**: 静态轨超限由 kitex 框架层直接拒绝(连接关闭 / QPS 错误),
+  不经过动态中间件,不产生 shadow 日志。
+- 仅 kitex 侧生效;hertz 无对应原语。
+
+### 19.8 e2e kitex 用法
+
+`ncgo test rate-limit e2e` 通过 `--rpc-method` / `--rpc-payload` 支持 kitex
+RPC 压测,使用 grpcurl 做泛化调用:
+
+```bash
+# 基本用法:对 kitex 服务压测,验证限流
+ncgo test rate-limit e2e --rpc-method MyService.Ping --rpc-payload '{"user":"alice"}'
+
+# 完整参数
+ncgo test rate-limit e2e \
+  --host localhost --port 8080 \
+  --rpc-method MyService.Ping \
+  --rpc-payload '{"user":"alice"}' \
+  --rate 200 --duration 10s \
+  --report report.md
+```
+
+参数说明:
+
+| 参数 | 默认值 | 说明 |
+| --- | --- | --- |
+| `--rpc-method` | `<serviceName>.HealthCheck` | kitex RPC 方法,grpcurl 泛化调用格式 `Service.Method` |
+| `--rpc-payload` | `{}` | RPC JSON 请求体 |
+| `--rate` | 200 | 每秒请求数 |
+| `--duration` | 10s | 压测时长 |
+
+两段式验证:
+
+1. **shadow 段**(conf `mode = shadow`): 断言**0 拒绝** + 日志含
+   `ratelimit shadow denied` 记录 → 证明计数生效且未误杀。
+2. **enforce 段**(conf `mode = enforce`): 断言 10429 比例 → 结果分类
+   PASS / FAIL / WARN。
+
+`--rpc-method` 默认指向 `<serviceName>.HealthCheck`,业务项目应实现一个
+轻量 HealthCheck RPC 作为 e2e 靶点,避免压测污染业务接口。
+
+### 19.9 命令说明
+
+#### `ncgo add infra rate-limit`(kitex-only)
+
+在 kitex 项目中启用真实限流:
+
+```bash
+ncgo add infra rate-limit [--root .] [--dry-run] [--plan] [--output json]
+```
+
+执行结果:
+
+- 写 `internal/pkg/ratelimit/resolver.go`(共享)
+- 写 `internal/pkg/ratelimit/store.go`(共享)
+- 覆盖 `internal/base/middleware/ratelimit.go`(占位符 → 真实中间件)
+- 更新 `conf/dev/conf.yaml`: 写入 `mode: shadow` / `backend` / `source` /
+  `fail_open` / `static` 默认块
+- astwire 接 `internal/base/server/server.go`: 注入
+  `middleware.RateLimit(cfg.RateLimit)` 到 `CallerAllowlist` 之后,注入
+  `middleware.StaticLimitOption(cfg.Static)` 到 `// ncgo:wire:ratelimit:static-limit`
+  标记处
+
+next steps 提示:
+
+- 配置规则源(conf `rate_limit.source.type`)
+- 观察 shadow 日志 1-2 周,确认后改 `mode: enforce`
+- (可选)压测后设置 `static.max_qps` / `static.max_connections`
+
+规则源客户端由中间件内部按 conf 懒初始化(`sync.Once`,建连失败不 panic,落入
+resolver 的 fallback 语义),因此 `add infra rate-limit` 对 server.go 的注入
+保持最小(仅两条调用语句)。提供 `RateLimitWithOptions(cfg, opts)` 供测试注入
+fake。
+
+#### `ncgo add rule-center`(kitex)
+
+rule-center 客户端是纯 grpc + conf 代码,框架无关。kitex 分支:
+
+- 写 `internal/pkg/rulecenter/rule_center_client.go`(与 hertz 同路径)
+- 改 conf `source.type = rule_center` + `rule_center.address`
+- **无需 wire server.go**: kitex 中间件按 §19.4 自建 client,不依赖注入
+
+```bash
+ncgo add rule-center --root ./user-api --addr rule-center:8888
+```
+
+### 19.10 错误处理矩阵
+
+| 故障场景 | 行为 |
+| --- | --- |
+| 规则源(rule-center / db)查询失败 | `fallback_on_error: true` → 旧缓存 / 本地规则;`false` → `fail_open` 裁决 |
+| store(redis)不可用 | `fail_open: true`(默认)→ 放行;`false` → 拒绝 |
+| rule-center client 建连失败 | 不 panic;动态源视为失败,走上一行语义 |
+| Lookup 维度缺失 | KeyBy 降级(caller → ip) |
+| 静态轨超限 | kitex 框架层拒绝(连接关闭 / QPS 错误),与动态轨独立 |
+| shadow 模式任何拒绝判决 | 永不中断:warn 日志 `ratelimit shadow denied` + `ratelimit_shadow_denied{service, method}` |
+
+### 19.11 迁移与兼容性
+
+- **Hertz 零感知**: 抽取是零行为变化的搬移 + include 缝合;hertz golden 逐字节
+  保护。hertz 额外获得 `Mode` 字段但默认 `enforce`,行为不变。
+- **存量 kitex 项目**: 占位符 `internal/base/middleware/ratelimit.go` 经
+  `add infra rate-limit` 覆盖(`update_behavior: cover`);不执行命令则无任何变化。
+- **rule-center preset 存量项目**: 重新生成或执行 add 命令后获得真实中间件;
+  conf 默认 shadow,不会因升级而开始拒绝流量。
+
 ## 附录 A. 接入示例
 
 以下示例用于说明生成项目后如何把真实的 gRPC 规则客户端或 database hook 接到

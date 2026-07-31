@@ -9,6 +9,8 @@ body: |-
 
   import (
       "fmt"
+      "strconv"
+      "time"
 
       goerror "github.com/byx-darwin/go-tools/go-common/error"
       frameworkerror "github.com/byx-darwin/go-tools/go-framework/error"
@@ -16,12 +18,19 @@ body: |-
       "github.com/cloudwego/kitex/pkg/kerrors"
   )
 
+  // MetaRetryAfter is the BizExtra key carrying the suggested backoff (seconds) to callers on rejection.
+  const MetaRetryAfter = "rl-retry-after"
+
+  // defaultRetryAfterSeconds is the fallback backoff hint when ClientTTLSeconds is unset.
+  const defaultRetryAfterSeconds = 60
+
   var (
       CodeInternalError    int32 = frameworkerror.CodeSystem
       CodeNotImplemented   int32 = 10010
       CodePermissionDenied int32 = frameworkerror.CodeAuthFailed
       CodeRPCTimeout       int32 = frameworkerror.CodeRPCTimeout
       CodeConfigInvalid    int32 = frameworkerror.CodeConfigInvalid
+      CodeRateLimited      int32 = 10429
   )
 
   func ToBizError(err error) error {
@@ -62,4 +71,19 @@ body: |-
           return fmt.Sprintf("biz_code=%d biz_msg=%q", biz.BizStatusCode(), biz.BizMessage())
       }
       return ""
+  }
+
+  // RateLimited returns a BizStatusError (biz code 10429, mirroring HTTP 429).
+  // BizStatusError is counted as a business error by Kitex, so it does not
+  // trip caller-side error-ratio circuit breakers. The retry-after hint is
+  // attached via BizExtra so callers can read it for backoff decisions.
+  func RateLimited(retryAfter time.Duration) error {
+      msg := "rate limited"
+      seconds := int64(defaultRetryAfterSeconds)
+      if retryAfter > 0 {
+          seconds = int64(retryAfter.Seconds())
+          msg = fmt.Sprintf("rate limited; retry after %s", retryAfter.Round(time.Second))
+      }
+      extra := map[string]string{MetaRetryAfter: strconv.FormatInt(seconds, 10)}
+      return kerrors.NewBizStatusErrorWithExtra(CodeRateLimited, msg, extra)
   }

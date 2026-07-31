@@ -470,13 +470,13 @@ func renderHertzDockerConfigBlocks(m *manifest.Manifest) []string {
   enabled: true
   source:
     type: database
-    cache_ttl_seconds: 60
+    cache_ttl_seconds: 60s
     fallback_on_error: true
   database:
-    query_timeout_milliseconds: 200
+    query_timeout_milliseconds: 200ms
   rule_center:
     address: "${RULE_CENTER_ADDR:}"
-    query_timeout_milliseconds: 200
+    query_timeout_milliseconds: 200ms
   backend: redis
   fail_open: false
   key_prefix: "%s:rate_limit"
@@ -487,9 +487,9 @@ func renderHertzDockerConfigBlocks(m *manifest.Manifest) []string {
       key_by:
         - ip
       strategy: fixed_window
-      window_seconds: 60
+      window_seconds: 60s
       max_requests: 100
-      client_ttl_seconds: 300
+      client_ttl_seconds: 300s
     rules: []`, m.Service.Name))
 	}
 	return blocks

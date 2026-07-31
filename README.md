@@ -384,12 +384,37 @@ ncgo add infra logging --root . --wire --dry-run  # preview writes/wiring withou
 ncgo add infra logging --root . --wire --dry-run --output json  # machine-readable plan
 ncgo add infra logging --root . --wire --plan  # shorthand for --dry-run --output json
 ncgo add infra registry_polaris --root . --wire  # kitex only: Polaris registry + wire
+ncgo add infra rate-limit --root . --wire         # kitex only: shared ratelimit pkg + real middleware (shadow-first)
 ```
 
 Supported common infra add-ons: `redis`, `kafka`, `es`, `clickhouse`,
 `observability_logging` (`logging` alias),
 and `release_canary` (`canary` alias).
-Kitex-only add-ons: `registry_polaris`.
+Kitex-only add-ons: `registry_polaris`, `rate-limit`.
+
+`rate-limit` is **kitex-only** (Hertz uses a different rate-limit design). It
+rewrites the Kitex template's pass-through `RateLimit()` placeholder into a real
+`endpoint.Middleware` backed by the shared `internal/pkg/ratelimit` package
+(resolver + store, single source of truth with the Hertz side). The middleware is
+wired into the server chain after `CallerAllowlist`, and a static
+`server.WithLimit` safety net is conditionally mounted via the
+`// ncgo:wire:ratelimit:static-limit` marker. The generated conf defaults to
+`mode = shadow` (counted but never rejected); switch to `mode = enforce` after
+observing shadow logs. See
+[rate-limit-dynamic-design.zh-CN.md](internal/assets/_data/docs/hertz/rate-limit-dynamic-design.zh-CN.md)
+(§19) for the dual-track model, shadow-first operations flow, and 10429
+rejection semantics.
+
+`ncgo test rate-limit e2e` verifies a generated project's rate limiting against a
+running instance. For Kitex services it drives the attack over gRPC via grpcurl:
+
+```bash
+ncgo test rate-limit e2e --rpc-method MyService.Ping --rpc-payload '{"user":"alice"}'
+```
+
+The two-stage run first confirms shadow mode produces zero rejections (with
+`ratelimit shadow denied` log lines), then confirms enforce mode returns the
+expected ratio of 10429 responses.
 
 Observability (tracing / OTel) is now built into the Hertz and Kitex base
 templates via go-framework OTLP (Hertz: `cfg.Server.Jaeger` →

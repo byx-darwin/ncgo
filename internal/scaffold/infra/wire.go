@@ -59,11 +59,11 @@ func wire(root, module, serviceKind, kind string, dryRun bool) (*wireResult, err
 }
 
 func wireSupportedKind(kind string) bool {
-	return kind == KindObservabilityLog || kind == KindReleaseCanary || kind == KindRegistryPolaris
+	return kind == KindObservabilityLog || kind == KindReleaseCanary || kind == KindRegistryPolaris || kind == KindRateLimit
 }
 
 func unsupportedWireError() error {
-	return fmt.Errorf("infra: --wire is only supported for %s/%s/%s", KindObservabilityLog, KindReleaseCanary, KindRegistryPolaris)
+	return fmt.Errorf("infra: --wire is only supported for %s/%s/%s/%s", KindObservabilityLog, KindReleaseCanary, KindRegistryPolaris, KindRateLimit)
 }
 
 const (
@@ -73,12 +73,14 @@ const (
 	anchorSourceMarker = "marker"
 	anchorSourceLegacy = "legacy"
 
-	markerLoggingInit             = "// ncgo:wire:logging:init"
-	markerLoggingServerMiddleware = "// ncgo:wire:logging:server-middleware"
-	markerCanaryServerTraffic     = "// ncgo:wire:canary:server-traffic"
-	markerKitexClientMiddleware   = "// ncgo:wire:kitex-client:middleware"
-	markerRegistryServer          = "// ncgo:wire:registry:server"
-	markerRegistryClient          = "// ncgo:wire:registry:client"
+	markerLoggingInit               = "// ncgo:wire:logging:init"
+	markerLoggingServerMiddleware   = "// ncgo:wire:logging:server-middleware"
+	markerCanaryServerTraffic       = "// ncgo:wire:canary:server-traffic"
+	markerKitexClientMiddleware     = "// ncgo:wire:kitex-client:middleware"
+	markerRegistryServer            = "// ncgo:wire:registry:server"
+	markerRegistryClient            = "// ncgo:wire:registry:client"
+	markerRateLimitServerMiddleware = "// ncgo:wire:ratelimit:server-middleware"
+	markerRateLimitStaticLimit      = "// ncgo:wire:ratelimit:static-limit"
 )
 
 func wireHertz(root, module, kind string, dryRun bool) (*wireResult, error) {
@@ -181,6 +183,26 @@ func wireKitex(root, module, kind string, dryRun bool) (*wireResult, error) {
 			return nil, err
 		}
 		s, err = insertOnceMarkerOrAnchorWithPlan(s, "kitexserver.WithRegistry(", markerRegistryServer, "\topts = append(opts, extraOptions...)\n", kitexRegistryServer(), serverPath, &serverPlan, "insert_registry_server", "registry.NewRegistry")
+		if err != nil {
+			return nil, err
+		}
+	case KindRateLimit:
+		s, err = addGoImportWithPlan(s, module+"/internal/base/middleware", serverPath, &serverPlan)
+		if err != nil {
+			return nil, err
+		}
+		// The exists sentinel is the exact inserted form (tab-indented call
+		// followed by newline). The template ships a hint comment
+		// `// middleware.RateLimit(cfg.RateLimit),` which MUST NOT satisfy
+		// this check — prefixing with tabs guarantees only real wired code
+		// matches (the comment has `// ` between the tabs and the call).
+		s, err = insertAfterMarkerOrAnyWithPlan(s, "\t\t\tmiddleware.RateLimit(cfg.RateLimit),\n", markerRateLimitServerMiddleware, []string{
+			"\t\t\tinterceptor.RequestID(),\n",
+		}, "\t\t\tmiddleware.RateLimit(cfg.RateLimit),\n", serverPath, &serverPlan, "insert_ratelimit_middleware", "middleware.RateLimit")
+		if err != nil {
+			return nil, err
+		}
+		s, err = insertOnceMarkerOrAnchorWithPlan(s, "middleware.StaticLimitOption(", markerRateLimitStaticLimit, "\topts = append(opts, extraOptions...)\n", "\tif opt := middleware.StaticLimitOption(cfg.RateLimit.Static); opt != nil {\n\t\topts = append(opts, opt)\n\t}\n", serverPath, &serverPlan, "insert_ratelimit_static", "middleware.StaticLimitOption")
 		if err != nil {
 			return nil, err
 		}
@@ -442,7 +464,7 @@ func addGoImport(src, importPath string) (string, error) {
 
 func addGoImportTracked(src, importPath string) (string, bool, error) {
 	quoted := "\"" + importPath + "\""
-	if strings.Contains(src, quoted) {
+	if importPresentInCode(src, quoted) {
 		return src, false, nil
 	}
 	idx := strings.Index(src, "import (\n")
@@ -451,6 +473,25 @@ func addGoImportTracked(src, importPath string) (string, bool, error) {
 	}
 	insertAt := idx + len("import (\n")
 	return src[:insertAt] + "\t" + quoted + "\n" + src[insertAt:], true, nil
+}
+
+// importPresentInCode reports whether quoted (e.g. "\"github.com/x/foo\"")
+// appears on a non-comment line in src. A line whose trimmed form starts with
+// "//" is a comment and does NOT count — this prevents template hint comments
+// like `// import "github.com/x/foo"` from short-circuiting real import
+// insertion. Comment lines never legitimately contain an import declaration,
+// so this prefilter is safe for all callers.
+func importPresentInCode(src, quoted string) bool {
+	for _, line := range strings.Split(src, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		if strings.Contains(line, quoted) {
+			return true
+		}
+	}
+	return false
 }
 
 func insertOnceStrict(src, exists, anchor, addition string) (string, error) {

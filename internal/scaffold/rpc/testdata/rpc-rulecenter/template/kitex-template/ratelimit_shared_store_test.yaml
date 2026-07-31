@@ -1,0 +1,114 @@
+# Shared rate-limit counter store tests
+path: internal/pkg/ratelimit/store_test.go
+update_behavior:
+  type: cover
+body: |-
+  package ratelimit
+
+  import (
+      "context"
+      "testing"
+      "time"
+
+      config "github.com/byx-darwin/go-tools/go-framework/config"
+
+      "{{.Module}}/internal/base/conf"
+  )
+
+  func TestBuildKeyByAppKey(t *testing.T) {
+      lookup := Lookup{AppKey: "app-1", ClientIP: "127.0.0.1", Path: "/ping"}
+      if got, want := BuildKey(lookup, []string{"ak", "ip"}, "test"), "test:ak:app-1"; got != want {
+          t.Fatalf("key = %q, want %q", got, want)
+      }
+  }
+
+  func TestBuildKeyByAppKeyPath(t *testing.T) {
+      lookup := Lookup{AppKey: "app-1", ClientIP: "127.0.0.1", Path: "/ping"}
+      if got, want := BuildKey(lookup, []string{"ak_path", "ip"}, "test"), "test:ak_path:app-1:/ping"; got != want {
+          t.Fatalf("key = %q, want %q", got, want)
+      }
+  }
+
+  func TestBuildKeyByUserUUIDClaims(t *testing.T) {
+      lookup := Lookup{AppKey: "app-1", UserUUID: "user-1", ClientIP: "127.0.0.1", Path: "/ping"}
+      if got, want := BuildKey(lookup, []string{"ak_user_uuid", "user_uuid", "ip"}, "test"), "test:ak_user_uuid:app-1:user-1"; got != want {
+          t.Fatalf("key = %q, want %q", got, want)
+      }
+  }
+
+  func TestBuildKeyByIP(t *testing.T) {
+      lookup := Lookup{ClientIP: "10.0.0.1", Path: "/ping"}
+      if got, want := BuildKey(lookup, []string{"ip"}, "test"), "test:ip:10.0.0.1"; got != want {
+          t.Fatalf("key = %q, want %q", got, want)
+      }
+  }
+
+  func TestBuildKeyByPath(t *testing.T) {
+      lookup := Lookup{ClientIP: "127.0.0.1", Path: "/orders"}
+      if got, want := BuildKey(lookup, []string{"path"}, "rl"), "rl:path:/orders"; got != want {
+          t.Fatalf("key = %q, want %q", got, want)
+      }
+  }
+
+  func TestBuildKeyByMethodPath(t *testing.T) {
+      lookup := Lookup{Method: "GET", Path: "/orders", ClientIP: "127.0.0.1"}
+      if got, want := BuildKey(lookup, []string{"method_path"}, "rl"), "rl:method_path:GET:/orders"; got != want {
+          t.Fatalf("key = %q, want %q", got, want)
+      }
+  }
+
+  func TestBuildKeyByAKMethodPath(t *testing.T) {
+      lookup := Lookup{AppKey: "app-1", Method: "POST", Path: "/orders", ClientIP: "127.0.0.1"}
+      if got, want := BuildKey(lookup, []string{"ak_method_path"}, "rl"), "rl:ak_method_path:app-1:POST:/orders"; got != want {
+          t.Fatalf("key = %q, want %q", got, want)
+      }
+  }
+
+  func TestBuildKeyFallsBackToIPWhenDimensionEmpty(t *testing.T) {
+      lookup := Lookup{ClientIP: "127.0.0.1", Path: "/ping"}
+      // ak is empty, so ak falls through; ip matches.
+      if got, want := BuildKey(lookup, []string{"ak", "ip"}, "test"), "test:ip:127.0.0.1"; got != want {
+          t.Fatalf("key = %q, want %q", got, want)
+      }
+  }
+
+  func TestBuildKeyFallsBackWhenNoDimensionMatches(t *testing.T) {
+      lookup := Lookup{ClientIP: "10.0.0.1", Path: "/ping"}
+      // keyBy has a dimension not in the switch; falls through loop → default ip key.
+      if got, want := BuildKey(lookup, []string{"unknown_dim"}, "rl"), "rl:ip:10.0.0.1"; got != want {
+          t.Fatalf("key = %q, want %q", got, want)
+      }
+  }
+
+  func TestBuildKeySanitizesSpecialCharacters(t *testing.T) {
+      lookup := Lookup{AppKey: "app:1", ClientIP: "127.0.0.1", Path: "/ping"}
+      if got, want := BuildKey(lookup, []string{"ak"}, "rl"), "rl:ak:app_1"; got != want {
+          t.Fatalf("key = %q, want %q", got, want)
+      }
+  }
+
+  func TestMemoryStoreEvictsLRU(t *testing.T) {
+      store := NewStore(conf.RateLimitConfig{Backend: "memory", Memory: conf.MemoryCacheConfig{MaxEntries: 1}}, nil)
+      rule := conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 1, ClientTTLSeconds: config.Duration{Duration: 60 * time.Second}}
+      if ok, err := store.Allow(context.Background(), "k1", rule); err != nil || !ok {
+          t.Fatalf("allow k1 = %v, %v", ok, err)
+      }
+      if ok, err := store.Allow(context.Background(), "k2", rule); err != nil || !ok {
+          t.Fatalf("allow k2 = %v, %v", ok, err)
+      }
+      if ok, err := store.Allow(context.Background(), "k1", rule); err != nil || !ok {
+          t.Fatalf("allow evicted k1 = %v, %v; want fresh bucket after LRU eviction", ok, err)
+      }
+  }
+
+  func TestNewStoreBackendSelection(t *testing.T) {
+      memStore := NewStore(conf.RateLimitConfig{Backend: "memory"}, nil)
+      if memStore == nil {
+          t.Fatal("memory store should not be nil")
+      }
+      // redis backend with nil client falls back to memory.
+      fallbackStore := NewStore(conf.RateLimitConfig{Backend: "redis"}, nil)
+      if fallbackStore == nil {
+          t.Fatal("fallback store should not be nil when redis client is nil")
+      }
+  }

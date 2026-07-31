@@ -4,13 +4,13 @@ package rulecenter
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
 )
 
 // Options describes a `ncgo add rule-center` invocation.
@@ -41,8 +41,8 @@ func Add(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, fmt.Errorf("rule-center: load manifest: %w", err)
 	}
-	if m.Service.Kind != "hertz" {
-		return nil, fmt.Errorf("rule-center: only supported for Hertz services (got %s)", m.Service.Kind)
+	if m.Service.Kind != "hertz" && m.Service.Kind != "kitex" {
+		return nil, fmt.Errorf("rule-center: only supported for hertz/kitex services (got %s)", m.Service.Kind)
 	}
 
 	result := &Result{DryRun: opts.DryRun}
@@ -65,14 +65,17 @@ func Add(opts Options) (*Result, error) {
 		result.WrittenPaths = append(result.WrittenPaths, confPath)
 	}
 
-	// 3. Wire RuleCenter client into server.go if it exists
-	serverPath := filepath.Join(opts.Root, "internal", "base", "server", "server.go")
-	if !opts.DryRun {
-		if _, err := os.Stat(serverPath); err == nil {
-			if err := wireRuleCenterInServer(serverPath); err != nil {
-				return result, fmt.Errorf("rule-center: wire server.go: %w", err)
+	// 3. Wire RuleCenter client into server.go if it exists (hertz only —
+	// kitex rate-limit middleware builds its own client lazily from cfg).
+	if m.Service.Kind == "hertz" {
+		serverPath := filepath.Join(opts.Root, "internal", "base", "server", "server.go")
+		if !opts.DryRun {
+			if _, err := os.Stat(serverPath); err == nil {
+				if err := wireRuleCenterInServer(serverPath); err != nil {
+					return result, fmt.Errorf("rule-center: wire server.go: %w", err)
+				}
+				result.WrittenPaths = append(result.WrittenPaths, serverPath)
 			}
-			result.WrittenPaths = append(result.WrittenPaths, serverPath)
 		}
 	}
 
@@ -87,12 +90,11 @@ func Add(opts Options) (*Result, error) {
 
 func writeRuleCenterClient(opts Options, m *manifest.Manifest) (string, error) {
 	srcFS := assets.FS()
-	b, err := fs.ReadFile(srcFS, "hertz/optional/rule_center_client.go")
+	b, err := shared.ReadSharedFragmentBody(srcFS, "ratelimit/rule_center_client", m.Module)
 	if err != nil {
-		return "", fmt.Errorf("read embedded template: %w", err)
+		return "", err
 	}
 
-	rendered := strings.ReplaceAll(string(b), "{{.GoModule}}", m.Module)
 	targetDir := filepath.Join(opts.Root, "internal", "pkg", "middleware")
 	target := filepath.Join(targetDir, "rule_center_client.go")
 
@@ -106,7 +108,7 @@ func writeRuleCenterClient(opts Options, m *manifest.Manifest) (string, error) {
 		if err := os.MkdirAll(targetDir, 0o755); err != nil {
 			return "", fmt.Errorf("mkdir %s: %w", targetDir, err)
 		}
-		if err := os.WriteFile(target, []byte(rendered), 0o644); err != nil {
+		if err := os.WriteFile(target, b, 0o644); err != nil {
 			return "", fmt.Errorf("write %s: %w", target, err)
 		}
 	}
@@ -139,7 +141,10 @@ func updateConfForRuleCenter(path, addr string) error {
 
 	// Add rule_center block if not present
 	if !strings.Contains(content, "rule_center:") {
-		content = strings.Replace(content, "source:", fmt.Sprintf("rule_center:\n    address: %q\n    query_timeout_milliseconds: 200\n  source:", addr), 1)
+		// 200ms: unit-bearing duration required by config.Duration.UnmarshalYAML
+		// (both kitex and hertz use go-framework config.Duration which rejects
+		// bare integers with "time: missing unit in duration").
+		content = strings.Replace(content, "source:", fmt.Sprintf("rule_center:\n    address: %q\n    query_timeout_milliseconds: 200ms\n  source:", addr), 1)
 	}
 
 	return os.WriteFile(path, []byte(content), 0o644)

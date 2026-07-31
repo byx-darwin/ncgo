@@ -1,0 +1,269 @@
+# Shared rate-limit counter store (framework-agnostic)
+path: internal/pkg/ratelimit/store.go
+update_behavior:
+  type: cover
+body: |-
+  package ratelimit
+
+  import (
+      "context"
+      "strings"
+      "sync"
+      "time"
+
+      "github.com/redis/go-redis/v9"
+      "github.com/samber/hot"
+
+      "{{.Module}}/internal/base/conf"
+  )
+
+  // Store is the counter backend used by the generated rate-limit middleware.
+  type Store interface {
+      Allow(ctx context.Context, key string, rule conf.RateLimitRuleConfig) (bool, error)
+  }
+
+  const defaultMemoryStoreEntries = 100000
+
+  type rateBucket struct {
+      tokens float64
+      last   time.Time
+  }
+
+  type fixedWindowCounter struct {
+      count int
+      start time.Time
+  }
+
+  type memoryStore struct {
+      mu      sync.Mutex
+      buckets *hot.HotCache[string, *rateBucket]
+      windows *hot.HotCache[string, *fixedWindowCounter]
+  }
+
+  type redisStore struct {
+      client redis.UniversalClient
+  }
+
+  // NewStore builds the counter store for a rate-limit configuration.
+  //
+  // backend="redis" with a non-nil client yields a redis-backed store;
+  // any other combination falls back to the in-memory LRU store.
+  // maxEntries <= 0 defaults to defaultMemoryStoreEntries.
+  func NewStore(cfg conf.RateLimitConfig, redisClient redis.UniversalClient) Store {
+      if cfg.Backend == "redis" && redisClient != nil {
+          return &redisStore{client: redisClient}
+      }
+      maxEntries := cfg.Memory.MaxEntries
+      if maxEntries <= 0 {
+          maxEntries = defaultMemoryStoreEntries
+      }
+      return &memoryStore{
+          buckets: hot.NewHotCache[string, *rateBucket](hot.LRU, maxEntries).Build(),
+          windows: hot.NewHotCache[string, *fixedWindowCounter](hot.LRU, maxEntries).Build(),
+      }
+  }
+
+  func (s *memoryStore) Allow(ctx context.Context, key string, rule conf.RateLimitRuleConfig) (bool, error) {
+      switch strings.ToLower(strings.TrimSpace(rule.Strategy)) {
+      case "token_bucket":
+          return s.allowTokenBucket(ctx, key, rule.RequestsPerSecond, rule.Burst, ruleTTL(rule))
+      default:
+          return s.allowFixedWindow(ctx, key, rule.WindowSeconds.Duration, rule.MaxRequests, ruleTTL(rule))
+      }
+  }
+
+  func (s *memoryStore) allowTokenBucket(ctx context.Context, key string, rate float64, burst int, ttl time.Duration) (bool, error) {
+      _ = ctx
+      if ttl <= 0 {
+          ttl = 300 * time.Second
+      }
+      now := time.Now()
+      burstFloat := float64(burst)
+      s.mu.Lock()
+      defer s.mu.Unlock()
+      bucket, found, err := s.buckets.Get(key)
+      if err != nil {
+          return false, err
+      }
+      if !found || bucket == nil {
+          bucket = &rateBucket{tokens: burstFloat, last: now}
+      }
+      elapsed := now.Sub(bucket.last).Seconds()
+      bucket.tokens += elapsed * rate
+      if bucket.tokens > burstFloat {
+          bucket.tokens = burstFloat
+      }
+      bucket.last = now
+      if bucket.tokens < 1 {
+          s.buckets.SetWithTTL(key, bucket, ttl)
+          return false, nil
+      }
+      bucket.tokens--
+      s.buckets.SetWithTTL(key, bucket, ttl)
+      return true, nil
+  }
+
+  func (s *memoryStore) allowFixedWindow(ctx context.Context, key string, window time.Duration, maxRequests int, ttl time.Duration) (bool, error) {
+      _ = ctx
+      if window <= 0 {
+          window = 60 * time.Second
+      }
+      if ttl <= 0 {
+          ttl = window
+      }
+      now := time.Now()
+      s.mu.Lock()
+      defer s.mu.Unlock()
+      counter, found, err := s.windows.Get(key)
+      if err != nil {
+          return false, err
+      }
+      if !found || counter == nil || now.Sub(counter.start) >= window {
+          counter = &fixedWindowCounter{start: now}
+      }
+      if counter.count >= maxRequests {
+          s.windows.SetWithTTL(key, counter, ttl)
+          return false, nil
+      }
+      counter.count++
+      s.windows.SetWithTTL(key, counter, ttl)
+      return true, nil
+  }
+
+  var redisTokenBucketScript = redis.NewScript(`
+  local key = KEYS[1]
+  local now = tonumber(ARGV[1])
+  local rate = tonumber(ARGV[2])
+  local burst = tonumber(ARGV[3])
+  local ttl = tonumber(ARGV[4])
+  local values = redis.call("HMGET", key, "tokens", "ts")
+  local tokens = tonumber(values[1]) or burst
+  local ts = tonumber(values[2]) or now
+  local elapsed = math.max(0, now - ts) / 1000
+  tokens = math.min(burst, tokens + elapsed * rate)
+  local allowed = 0
+  if tokens >= 1 then
+      tokens = tokens - 1
+      allowed = 1
+  end
+  redis.call("HMSET", key, "tokens", tokens, "ts", now)
+  redis.call("EXPIRE", key, ttl)
+  return allowed
+  `)
+
+  var redisFixedWindowScript = redis.NewScript(`
+  local key = KEYS[1]
+  local windowSeconds = tonumber(ARGV[1])
+  local ttl = tonumber(ARGV[2])
+  local limit = tonumber(ARGV[3])
+  local now = tonumber(ARGV[4])
+  local windowStart = math.floor(now / windowSeconds) * windowSeconds
+  local windowKey = key .. ":" .. tostring(windowStart)
+
+  local current = tonumber(redis.call("GET", windowKey) or "0")
+  if current == 0 then
+      redis.call("SET", windowKey, 1, "EX", ttl)
+      return 1
+  end
+  if current >= limit then
+      return 0
+  end
+  redis.call("INCR", windowKey)
+  return 1
+  `)
+
+  func (s *redisStore) Allow(ctx context.Context, key string, rule conf.RateLimitRuleConfig) (bool, error) {
+      switch strings.ToLower(strings.TrimSpace(rule.Strategy)) {
+      case "token_bucket":
+          ttlSeconds := int(ruleTTL(rule).Seconds())
+          if ttlSeconds <= 0 {
+              ttlSeconds = 300
+          }
+          allowed, err := redisTokenBucketScript.Run(ctx, s.client, []string{key}, time.Now().UnixMilli(), rule.RequestsPerSecond, rule.Burst, ttlSeconds).Int()
+          if err != nil {
+              return false, err
+          }
+          return allowed == 1, nil
+      default:
+          ttlSeconds := int(ruleTTL(rule).Seconds())
+          if ttlSeconds <= 0 {
+              ttlSeconds = int(rule.WindowSeconds.Seconds())
+          }
+          if ttlSeconds <= 0 {
+              ttlSeconds = 60
+          }
+          allowed, err := redisFixedWindowScript.Run(ctx, s.client, []string{key}, int(rule.WindowSeconds.Seconds()), ttlSeconds, rule.MaxRequests, time.Now().Unix()).Int()
+          if err != nil {
+              return false, err
+          }
+          return allowed == 1, nil
+      }
+  }
+
+  // BuildKey renders the counter key for a resolved rule. Dimension tokens
+  // mirror the legacy hertz rateLimitKey output byte-for-byte so existing
+  // counters keep their identity after the extraction.
+  func BuildKey(lookup Lookup, keyBy []string, prefix string) string {
+      for _, part := range keyBy {
+          switch strings.TrimSpace(part) {
+          case "ak_user_uuid":
+              if lookup.AppKey != "" && lookup.UserUUID != "" {
+                  return joinKeyParts(prefix, "ak_user_uuid", lookup.AppKey, lookup.UserUUID)
+              }
+          case "user_uuid":
+              if lookup.UserUUID != "" {
+                  return joinKeyParts(prefix, "user_uuid", lookup.UserUUID)
+              }
+          case "ak":
+              if lookup.AppKey != "" {
+                  return joinKeyParts(prefix, "ak", lookup.AppKey)
+              }
+          case "path":
+              return joinKeyParts(prefix, "path", lookup.Path)
+          case "method_path":
+              return joinKeyParts(prefix, "method_path", lookup.Method, lookup.Path)
+          case "ak_path":
+              if lookup.AppKey != "" {
+                  return joinKeyParts(prefix, "ak_path", lookup.AppKey, lookup.Path)
+              }
+          case "ak_method_path":
+              if lookup.AppKey != "" {
+                  return joinKeyParts(prefix, "ak_method_path", lookup.AppKey, lookup.Method, lookup.Path)
+              }
+          case "ip":
+              if lookup.ClientIP != "" {
+                  return joinKeyParts(prefix, "ip", lookup.ClientIP)
+              }
+          }
+      }
+      return joinKeyParts(prefix, "ip", lookup.ClientIP)
+  }
+
+  func sanitizeKeyPart(s string) string {
+      s = strings.TrimSpace(s)
+      if s == "" {
+          return ""
+      }
+      return strings.NewReplacer(":", "_", " ", "_", "\n", "_").Replace(s)
+  }
+
+  func joinKeyParts(parts ...string) string {
+      safe := make([]string, 0, len(parts))
+      for _, part := range parts {
+          cleaned := sanitizeKeyPart(part)
+          if cleaned != "" {
+              safe = append(safe, cleaned)
+          }
+      }
+      return strings.Join(safe, ":")
+  }
+
+  func ruleTTL(rule conf.RateLimitRuleConfig) time.Duration {
+      if rule.ClientTTLSeconds.Duration > 0 {
+          return rule.ClientTTLSeconds.Duration
+      }
+      if strings.EqualFold(strings.TrimSpace(rule.Strategy), "fixed_window") && rule.WindowSeconds.Duration > 0 {
+          return rule.WindowSeconds.Duration
+      }
+      return 300 * time.Second
+  }

@@ -1288,6 +1288,358 @@ This design adopts:
 The result balances dynamic-rule capability, template generality, runtime
 stability, and compatibility with the existing Hertz template family.
 
+## 19. Kitex Service Rate-Limit Enforcement
+
+This chapter describes ncgo's rate-limit interception on the **Kitex RPC**
+side. The Hertz (HTTP) design lives in the sections above; the Kitex side shares
+the same rate-limit infrastructure (resolver / store / rule-center client) and
+only differs in the middleware adaptation layer, where the two frameworks expose
+different APIs.
+
+### 19.1 Background and Positioning
+
+Previously the Kitex template generated `internal/base/middleware/ratelimit.go`
+as a pass-through placeholder (`RateLimit()` simply returned
+`next(ctx, req, resp)`), with a comment noting that "Rate-limit enforcement for
+Kitex services will be added in a follow-up." This cycle replaces it with a
+real middleware.
+
+Why Kitex-side interception matters:
+
+1. **Self-protection / cascade prevention**: a slow downstream causes upstream
+   goroutine pile-up and cascading failure. RPC-level rate limiting is the
+   flood dam that sits in front of circuit breaking.
+2. **Hertz is not the only caller**: service-to-service calls (Kitex→Kitex),
+   cron jobs, and internal tools that dial RPC directly all bypass HTTP-edge
+   rate limiting.
+3. **Fan-out amplification**: one HTTP request can fan out into N RPC calls, and
+   edge rate limiting cannot see the amplification factor.
+4. **Multi-caller fairness**: per-caller limiting prevents a noisy neighbor from
+   exhausting downstream capacity.
+5. **Very low marginal cost**: the rule-center, resolver, store, caching, and
+   fallback infrastructure already exists; the Kitex side only needs a
+   middleware adaptation layer.
+
+Positioning:
+
+- **Shares** `internal/pkg/ratelimit` (resolver + store) and the
+  `rule_center_client` with the Hertz side — **single source of truth**.
+- The middleware layer is framework-specific: Hertz adapts `app.HandlerFunc`,
+  Kitex adapts `endpoint.Middleware`.
+- Generated projects default to **shadow observation mode** (counted but never
+   rejected); operators switch to enforce manually after observation.
+
+### 19.2 Dual-Track Interception Model
+
+The Kitex side uses a **dual-track** defense. The two tracks operate
+independently:
+
+```
+RPC request enters the Kitex server
+  │
+  ├─ [static track] server.WithLimit(MaxConnections/MaxQPS)   ← coarse global safety net
+  │    conf: rate_limit.static.{max_qps,max_connections}        default 0 = not mounted
+  │    over-limit → rejected by the Kitex framework layer
+  │
+  └─ [dynamic track] WithMiddleware chain:
+       RequestID → AccessLog → Recovery
+       → CallerAllowlist            ← caller identity is ready after this point
+       → middleware.RateLimit(cfg.RateLimit)   ★ new
+       → RequestTimeout
+            │
+            ├─ Lookup{Service, Method, AppKey, ClientIP, Phase: "post_auth"}
+            ├─ shared resolver: dynamic source (rule_center/grpc/database)→ cache (TTL)
+            │                     → on failure, fall back to local config rules per fallback_on_error
+            ├─ shared store: memory (hot LRU)| redis (Lua script)
+            └─ verdict:
+                  allow                   → next(ctx, req, resp)
+                  over-limit + mode=enforce → BizStatusError 10429 + metainfo retry-after
+                  over-limit + mode=shadow  → count / log / metric, then pass  ← default
+```
+
+Track responsibilities:
+
+| Track | Config entry | Role | Default state |
+| --- | --- | --- | --- |
+| Static | `rate_limit.static.{max_qps, max_connections}` | Coarse global connection/QPS safety net, rejected by the Kitex framework | `0` = not mounted |
+| Dynamic | `rate_limit.mode` + `source.*` / `backend` | Fine-grained limiting by rule source + caller/method dimension | `mode = shadow` (counted, never rejected) |
+
+### 19.3 Shared Infrastructure and Framework Boundary
+
+To stop the Hertz and Kitex sides from each maintaining their own copy of the
+resolver and store, this cycle extracts the relevant assets from
+`hertz/layout.yaml` into framework-neutral shared snippets under
+`internal/assets/_data/ratelimit/`:
+
+| Shared snippet | Responsibility | Single source of truth? |
+| --- | --- | --- |
+| `resolver.yaml` / `resolver_test.yaml` | Rule resolution (dynamic-first + local fallback + cache) | Yes |
+| `store.yaml` / `store_test.yaml` | Counter backend (memory / redis) | Yes |
+| `rule_center_client.yaml` | rule-center gRPC client | Yes |
+
+Hertz's `hertz/layout.yaml` is a single-file custom layout consumed by the `hz`
+tool and cannot reference external files. Before writing
+`template/layout.yaml`, ncgo expands directive comments such as
+`# {{include: ratelimit/resolver}}` into the corresponding snippet content. The
+`hz` tool consumes the already-assembled layout and never sees the directives.
+Hertz golden tests guarantee the assembled output is **byte-for-byte identical**
+to the pre-extraction output.
+
+**Core principle**: resolver / store / rule-center client are a single source of
+truth; only the middleware adaptation layer is framework-specific:
+
+| Layer | Hertz | Kitex |
+| --- | --- | --- |
+| Middleware signature | `app.HandlerFunc` | `endpoint.Middleware` |
+| Request context | `*app.RequestContext` | `rpcinfo.RPCInfo` + `context.Context` |
+| Caller identity | header / meta | transmeta `x-caller-service` |
+| Rejection semantics | HTTP `429` | BizStatusError `10429` + metainfo |
+| Static safety net | none (no Hertz equivalent) | `server.WithLimit` |
+
+Both sides share the same `RateLimitConfig` struct, but the defaults differ:
+**Hertz `Mode` defaults to `enforce`** (preserving existing behavior); **Kitex
+`Mode` defaults to `shadow`** (safe rollout of the new capability). The `Static`
+field only takes effect on the Kitex side; Hertz ignores it.
+
+### 19.4 Dynamic-Track Request Flow
+
+Per-request handling inside the dynamic-track middleware:
+
+1. `!cfg.Enabled` → call `next` directly.
+2. Pull `ServiceName` / `RPCMethod` from `rpcinfo.GetRPCInfo(ctx)`, pull the
+   caller service name (`x-caller-service`) and caller address from transmeta,
+   and assemble
+   `ratelimit.Lookup{Service, Method, AppKey, ClientIP, Phase: "post_auth"}`.
+   `Service` comes from `cfg.Server.Registry.Name` (the service registry name).
+3. Call `resolver.Resolve(ctx, lookup)`:
+   - Check the local dynamic-rule cache first (cache hit → return immediately).
+   - Cache miss → query the dynamic source (rule_center / grpc / database).
+   - Found → populate the cache and return the remote rule.
+   - Not found / error → per `fallback_on_error`, fall back to stale cache or
+     local config rules; if an error still remains, decide via `fail_open`.
+4. `!rule.Enabled` → call `next` directly.
+5. Build the key from the `rule.KeyBy` dimensions (caller → caller-ip fallback
+   on missing dimensions) and call `store.Allow(ctx, key, rule)`. **Both shadow
+   and enforce call `Allow()`, so counting is always real.**
+6. Verdict:
+   - Allow → `next`.
+   - Store error → `fail_open` decision (default: pass).
+   - Over-limit:
+     - `mode = enforce` → `rpcerror.RateLimited(retryAfter)` returns a
+       BizStatusError `10429` plus metainfo `rl-retry-after`.
+     - `mode = shadow` → counting is already done by `Allow()`; only
+       `klog.CtxWarnf(ctx, "ratelimit shadow denied: %s/%s", service, method)`
+       and the `ratelimit_shadow_denied{service, method}` expvar are recorded,
+       then the request passes.
+
+### 19.5 Shadow → Enforce Operations Flow
+
+The default `mode = shadow` **counts but never rejects**, so operators can
+observe whether the rules are reasonable before enforcement. Recommended flow:
+
+1. **Onboard**: run `ncgo add infra rate-limit` in the Kitex project, which
+   generates the shared `internal/pkg/ratelimit`, rewrites
+   `internal/base/middleware/ratelimit.go` from placeholder to real middleware,
+   and writes `mode = shadow` into the conf.
+2. **Configure the rule source**: set `rate_limit.source.type` (config /
+   database / rule_center / grpc) and confirm the resolver returns the expected
+   rules.
+3. **Shadow observation (recommended 1–2 weeks)**:
+   - Watch the log keyword `ratelimit shadow denied`.
+   - Watch the `ratelimit_shadow_denied{service, method}` expvar metric to
+     confirm the requests flagged for rejection match expectations (caller,
+     method, QPS range).
+   - If the shadow rejection rate is abnormally high, the rules are too strict
+     or caller identification is wrong — tune the rules before switching to
+     enforce to avoid false positives.
+4. **Switch to enforce**: once the shadow observation window shows a sensible
+   rejection distribution, change conf `rate_limit.mode = enforce` and roll the
+   restart.
+5. **Verify enforce**: run the e2e test (see §19.8) to confirm over-limit
+   requests return 10429 as expected.
+
+Key shadow guarantee: **counting is real**. This means the counting behavior
+accumulated during the shadow period is identical to enforce behavior — once you
+switch to enforce, rate limiting takes effect immediately against real traffic
+with no "cold start" bias.
+
+### 19.6 Rejection Semantics and Caller Guidance
+
+Rejections return a Kitex `BizStatusError` with business code **10429** (mirrors
+HTTP 429):
+
+```go
+// internal/pkg/rpcerror/rpcerror.go (generated output sketch)
+const MetaRetryAfter = "rl-retry-after"
+
+func RateLimited(retryAfter time.Duration) error {
+    seconds := int64(defaultRetryAfterSeconds)
+    if retryAfter > 0 {
+        seconds = int64(retryAfter.Seconds())
+    }
+    extra := map[string]string{MetaRetryAfter: strconv.FormatInt(seconds, 10)}
+    return kerrors.NewBizStatusErrorWithExtra(CodeRateLimited, "rate limited", extra)
+}
+```
+
+- The framework counts a `BizStatusError` as a **business error**, not a call
+  failure → it does **not** trip caller-side failure-ratio circuit breaking
+  (service-governance failure-ratio circuit breakers exclude business errors).
+- The backoff seconds are carried via `BizExtra` under the key `rl-retry-after`
+  for caller backoff decisions.
+
+**Caller guidance**:
+
+| Scenario | Recommendation |
+| --- | --- |
+| Generic Kitex caller | Read the backoff seconds via `bizErr.BizExtra()["rl-retry-after"]` and retry with exponential backoff |
+| Idempotent, no-retry case | Handle 10429 directly as rate-limited (propagate upstream / degrade / queue) |
+| Monitoring / alerting | A spike in 10429 ratio = downstream is rate-limiting; trigger a business alert, not a service-availability alert |
+| Failure-ratio circuit breaking | 10429 is a business error and does not count toward caller failure rate → cannot trip the breaker falsely |
+
+### 19.7 Static Safety-Net Configuration Guidance
+
+The static track (`server.WithLimit`) is a coarse global safety net, independent
+of dynamic rules:
+
+```yaml
+# conf/dev/conf.yaml
+rate_limit:
+  static:
+    max_qps: 0          # 0 = do not mount WithLimit
+    max_connections: 0
+```
+
+`StaticLimitOption(cfg.Static) kitexserver.Option` returns
+`kitexserver.WithLimit(&limit.Option{...})` when both `max_qps` and
+`max_connections` are greater than 0, otherwise nil. astwire injects the
+conditional mount statement after the `// ncgo:wire:ratelimit:static-limit`
+marker in server.go.
+
+Configuration guidance:
+
+- **Default 0 = not mounted**, consistent with the "do not harm on generation"
+  principle.
+- **Set after load testing**: after confirming the service's peak QPS and max
+   connection capacity in pre-production load tests, set the values slightly
+   below the observed limits (e.g. 80% of peak QPS). The static track is a
+   safety net, not a fine-grained limiter.
+- **Independent of the dynamic track**: static-track rejections are issued by the
+   Kitex framework layer (connection close / QPS error), do not pass through the
+   dynamic middleware, and produce no shadow logs.
+- Only takes effect on the Kitex side; Hertz has no equivalent primitive.
+
+### 19.8 E2E for Kitex
+
+`ncgo test rate-limit e2e` supports Kitex RPC load testing via `--rpc-method` /
+`--rpc-payload`, using grpcurl for generic invocation:
+
+```bash
+# Basic usage: load-test a Kitex service to verify rate limiting
+ncgo test rate-limit e2e --rpc-method MyService.Ping --rpc-payload '{"user":"alice"}'
+
+# Full flags
+ncgo test rate-limit e2e \
+  --host localhost --port 8080 \
+  --rpc-method MyService.Ping \
+  --rpc-payload '{"user":"alice"}' \
+  --rate 200 --duration 10s \
+  --report report.md
+```
+
+Flag reference:
+
+| Flag | Default | Description |
+| --- | --- | --- |
+| `--rpc-method` | `<serviceName>.HealthCheck` | Kitex RPC method, grpcurl generic-invocation format `Service.Method` |
+| `--rpc-payload` | `{}` | RPC JSON request body |
+| `--rate` | 200 | Requests per second |
+| `--duration` | 10s | Attack duration |
+
+Two-stage verification:
+
+1. **Shadow stage** (conf `mode = shadow`): assert **zero rejections** plus log
+   lines containing `ratelimit shadow denied` → proves counting is live without
+   false positives.
+2. **Enforce stage** (conf `mode = enforce`): assert the 10429 ratio → result
+   classified as PASS / FAIL / WARN.
+
+`--rpc-method` defaults to `<serviceName>.HealthCheck`. Projects should implement
+a lightweight HealthCheck RPC as the e2e target so load testing does not pollute
+business endpoints.
+
+### 19.9 Command Reference
+
+#### `ncgo add infra rate-limit` (kitex-only)
+
+Enables real rate limiting in a Kitex project:
+
+```bash
+ncgo add infra rate-limit [--root .] [--dry-run] [--plan] [--output json]
+```
+
+Effect:
+
+- Writes `internal/pkg/ratelimit/resolver.go` (shared)
+- Writes `internal/pkg/ratelimit/store.go` (shared)
+- Overwrites `internal/base/middleware/ratelimit.go` (placeholder → real middleware)
+- Updates `conf/dev/conf.yaml`: writes the `mode: shadow` / `backend` / `source`
+  / `fail_open` / `static` defaults block
+- astwires `internal/base/server/server.go`: injects
+  `middleware.RateLimit(cfg.RateLimit)` after `CallerAllowlist`, and injects
+  `middleware.StaticLimitOption(cfg.Static)` at the
+  `// ncgo:wire:ratelimit:static-limit` marker
+
+Next-step hints:
+
+- Configure the rule source (conf `rate_limit.source.type`)
+- Observe shadow logs for 1–2 weeks, then change `mode: enforce`
+- (Optional) after load testing, set `static.max_qps` / `static.max_connections`
+
+The rule-source client is built lazily inside the middleware from the conf
+(`sync.Once`; a connection failure does not panic and falls into the resolver's
+fallback semantics), so `add infra rate-limit` keeps its server.go injection
+minimal (just two call statements). `RateLimitWithOptions(cfg, opts)` is provided
+for tests that inject fakes.
+
+#### `ncgo add rule-center` (kitex)
+
+The rule-center client is pure grpc + conf code and is framework-neutral. The
+Kitex branch:
+
+- Writes `internal/pkg/rulecenter/rule_center_client.go` (same path as Hertz)
+- Edits conf `source.type = rule_center` + `rule_center.address`
+- **No server.go wiring**: the Kitex middleware builds its own client per §19.4
+  and needs no injection
+
+```bash
+ncgo add rule-center --root ./user-api --addr rule-center:8888
+```
+
+### 19.10 Error-Handling Matrix
+
+| Failure scenario | Behavior |
+| --- | --- |
+| Rule-source (rule-center / db) query fails | `fallback_on_error: true` → stale cache / local rules; `false` → `fail_open` decision |
+| Store (redis) unavailable | `fail_open: true` (default) → pass; `false` → reject |
+| rule-center client connection failure | Does not panic; dynamic source is treated as failed and follows the row above |
+| Missing Lookup dimensions | KeyBy fallback (caller → ip) |
+| Static-track over-limit | Rejected by the Kitex framework layer (connection close / QPS error); independent of the dynamic track |
+| Any rejection verdict in shadow mode | Never interrupts: warn log `ratelimit shadow denied` + `ratelimit_shadow_denied{service, method}` |
+
+### 19.11 Migration and Compatibility
+
+- **Hertz-unaware**: the extraction is a behavior-preserving move plus include
+  assembly; Hertz golden tests enforce byte-for-byte equality. Hertz gains the
+  `Mode` field but defaults to `enforce`, so its behavior is unchanged.
+- **Existing Kitex projects**: the placeholder
+  `internal/base/middleware/ratelimit.go` is overwritten by
+  `add infra rate-limit` (`update_behavior: cover`); projects that never run the
+  command are completely unaffected.
+- **Existing rule-center preset projects**: after re-generating or running the
+  add command they get the real middleware; the conf defaults to shadow, so an
+  upgrade never starts rejecting traffic.
+
 ## Appendix A. Integration Examples
 
 The examples below show how a generated project can connect a real gRPC rule

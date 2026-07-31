@@ -24,6 +24,7 @@ import (
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	planpkg "github.com/byx-darwin/ncgo/internal/scaffold/plan"
 	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
+	"gopkg.in/yaml.v3"
 )
 
 // Kind values supported by `ncgo add infra`. The corresponding template files
@@ -38,12 +39,14 @@ const (
 	KindLoggingAlias     = "logging"
 	KindReleaseCanary    = "release_canary"
 	KindCanaryAlias      = "canary"
+	KindRateLimit        = "rate_limit"
+	KindRateLimitAlias   = "rate-limit"
 )
 
 // SupportedKinds returns all add-on names in canonical order. Some kinds are
 // service-kind specific; Add validates that after loading the manifest.
 func SupportedKinds() []string {
-	return []string{KindRedis, KindKafka, KindES, KindClickHouse, KindObservabilityLog, KindLoggingAlias, KindReleaseCanary, KindCanaryAlias, KindRegistryPolaris}
+	return []string{KindRedis, KindKafka, KindES, KindClickHouse, KindObservabilityLog, KindLoggingAlias, KindReleaseCanary, KindCanaryAlias, KindRegistryPolaris, KindRateLimit, KindRateLimitAlias}
 }
 
 func commonKinds() []string {
@@ -51,7 +54,7 @@ func commonKinds() []string {
 }
 
 func kitexOnlyKinds() []string {
-	return []string{KindRegistryPolaris}
+	return []string{KindRegistryPolaris, KindRateLimit}
 }
 
 // goGetDeps is the source of truth for `go get` dependency next-steps. Keeping
@@ -68,7 +71,14 @@ var goGetDeps = map[string][]string{
 	},
 }
 
-var setupSteps = map[string][]string{}
+var setupSteps = map[string][]string{
+	KindRateLimit: {
+		"review conf/dev/conf.yaml rate_limit block (source.type: config|database|rule_center)",
+		"observe shadow logs (grep 'ratelimit shadow denied'), then set mode: enforce",
+		"optional: set static.max_qps / static.max_connections for a global safety net",
+		"go mod tidy",
+	},
+}
 
 var commonAssetKinds = map[string]bool{
 	KindObservabilityLog: true,
@@ -153,11 +163,17 @@ func Add(opts Options) (*Result, error) {
 	paths := make([]string, 0, len(files)+1)
 	filePlans := make([]PlanItem, 0, len(files)+1)
 	for _, file := range files {
-		body, err := fs.ReadFile(assets.FS(), file.SourcePath)
-		if err != nil {
-			return nil, fmt.Errorf("infra: read embedded %s: %w", file.SourcePath, err)
+		var body []byte
+		if file.PreRenderedBody != nil {
+			body = renderAssetBody(file.PreRenderedBody, m.Module)
+		} else {
+			var err error
+			body, err = fs.ReadFile(assets.FS(), file.SourcePath)
+			if err != nil {
+				return nil, fmt.Errorf("infra: read embedded %s: %w", file.SourcePath, err)
+			}
+			body = renderAssetBody(body, m.Module)
 		}
-		body = renderAssetBody(body, m.Module)
 		dst := filepath.Join(root, file.OutputRelPath)
 		action, err := plannedFileAction(dst, opts.Force)
 		if err != nil {
@@ -175,6 +191,15 @@ func Add(opts Options) (*Result, error) {
 		writes = append(writes, *confWrite)
 		paths = append(paths, confWrite.Path)
 		filePlans = append(filePlans, PlanItem{Kind: "file", Action: confWrite.Action, Path: confWrite.Path})
+	}
+	rateLimitConfWrite, err := planKitexRateLimitConfigWrite(root, m.Service.Kind, kind, opts.Force)
+	if err != nil {
+		return nil, err
+	}
+	if rateLimitConfWrite != nil {
+		writes = append(writes, *rateLimitConfWrite)
+		paths = append(paths, rateLimitConfWrite.Path)
+		filePlans = append(filePlans, PlanItem{Kind: "file", Action: rateLimitConfWrite.Action, Path: rateLimitConfWrite.Path})
 	}
 	wiredPaths := []string(nil)
 	wirePlans := []PlanItem(nil)
@@ -232,6 +257,10 @@ func Add(opts Options) (*Result, error) {
 type addOnFile struct {
 	SourcePath    string
 	OutputRelPath string
+	// PreRenderedBody, when non-nil, is written verbatim (after the caller has
+	// performed its own placeholder rendering). Used for shared fragments whose
+	// source yaml wraps the body under a `body:` field.
+	PreRenderedBody []byte
 }
 
 type plannedWrite struct {
@@ -241,6 +270,12 @@ type plannedWrite struct {
 }
 
 func assetFiles(serviceKind, infraKind string) ([]addOnFile, error) {
+	if infraKind == KindRateLimit {
+		if serviceKind != manifest.KindKitex {
+			return nil, fmt.Errorf("infra: kind %q is only supported for kitex services", infraKind)
+		}
+		return rateLimitAssetFiles()
+	}
 	if infraKind == KindRegistryPolaris {
 		if serviceKind != manifest.KindKitex {
 			return nil, fmt.Errorf("infra: kind %q is only supported for kitex services", infraKind)
@@ -295,6 +330,7 @@ func renderAssetBody(body []byte, module string) []byte {
 		return body
 	}
 	rendered := strings.ReplaceAll(string(body), "{{.GoModule}}", module)
+	rendered = strings.ReplaceAll(rendered, "{{.Module}}", module)
 	return []byte(rendered)
 }
 
@@ -420,6 +456,9 @@ func normalizeKind(kind string) (string, error) {
 	}
 	if kind == KindCanaryAlias {
 		return KindReleaseCanary, nil
+	}
+	if kind == KindRateLimitAlias {
+		return KindRateLimit, nil
 	}
 	for _, k := range SupportedKinds() {
 		if kind == k {
@@ -553,4 +592,233 @@ func nextSteps(kind, serviceKind, serviceName string) []string {
 	}
 	steps = append(steps, "go mod tidy")
 	return steps
+}
+
+// rateLimitAssetFiles returns the add-on files for the rate_limit kind (kitex
+// only). Shared fragments under ratelimit/*.yaml are pre-rendered via
+// shared.ReadSharedFragmentBody; the kitex middleware template is parsed for
+// its `body:` and written to the `path:` declared inside the yaml.
+func rateLimitAssetFiles() ([]addOnFile, error) {
+	srcFS := assets.FS()
+	sharedFragments := []struct {
+		name   string // asset name under ratelimit/ (no .yaml suffix)
+		target string // relative output path
+	}{
+		{"ratelimit/resolver", filepath.Join("internal", "pkg", "ratelimit", "resolver.go")},
+		{"ratelimit/resolver_test", filepath.Join("internal", "pkg", "ratelimit", "resolver_test.go")},
+		{"ratelimit/store", filepath.Join("internal", "pkg", "ratelimit", "store.go")},
+		{"ratelimit/store_test", filepath.Join("internal", "pkg", "ratelimit", "store_test.go")},
+	}
+	files := make([]addOnFile, 0, len(sharedFragments)+1)
+	// Module placeholder is resolved below with an empty string; the real
+	// module is substituted when Add() renders bodies. Because shared
+	// fragments require the module at read time, we delay rendering: pass
+	// a zero-module ReadSharedFragmentBody here, and let Add()'s
+	// renderAssetBody handle the final substitution via PreRenderedBody's
+	// re-rendering path. Instead, pre-render with a sentinel that we
+	// replace below.
+	//
+	// Simplification: we read the yaml body here with module=""; Add()'s
+	// PreRenderedBody path writes the bytes verbatim, so we must render
+	// {{.Module}} at this point. Because we don't know the module here,
+	// we read the raw body and defer rendering by returning the fragment
+	// source path; the caller will re-render via renderAssetBody. The
+	// cleanest approach is to read the yaml, extract its body, and store
+	// it as PreRenderedBody with {{.Module}} placeholder intact; then
+	// Add() substitutes the module in renderAssetBody on the
+	// PreRenderedBody too. We achieve that by skipping PreRenderedBody
+	// and using SourcePath + a custom body extractor at read time — but
+	// that requires more plumbing. Instead, read the body here with
+	// module="{{.Module}}" literal placeholder preserved (i.e. read raw
+	// and do not substitute).
+	for _, frag := range sharedFragments {
+		body, err := readSharedFragmentBodyRaw(srcFS, frag.name)
+		if err != nil {
+			return nil, err
+		}
+		files = append(files, addOnFile{
+			OutputRelPath:   frag.target,
+			PreRenderedBody: body,
+		})
+	}
+	// Middleware template: parse yaml for body, keep {{.Module}} intact for
+	// Add() to render.
+	mwBody, mwPath, err := readKitexRateLimitMiddlewareTemplate(srcFS)
+	if err != nil {
+		return nil, err
+	}
+	files = append(files, addOnFile{
+		OutputRelPath:   filepath.FromSlash(mwPath),
+		PreRenderedBody: mwBody,
+	})
+	return files, nil
+}
+
+// readKitexRateLimitMiddlewareTemplate parses the kitex ratelimit middleware
+// yaml template and returns the body (with {{.Module}} placeholder preserved)
+// and the declared target path.
+func readKitexRateLimitMiddlewareTemplate(srcFS fs.FS) ([]byte, string, error) {
+	b, err := fs.ReadFile(srcFS, "kitex/kitex-template/ratelimit_middleware.yaml")
+	if err != nil {
+		return nil, "", fmt.Errorf("infra: read ratelimit middleware template: %w", err)
+	}
+	var doc struct {
+		Path string `yaml:"path"`
+		Body string `yaml:"body"`
+	}
+	if err := yaml.Unmarshal(b, &doc); err != nil {
+		return nil, "", fmt.Errorf("infra: parse ratelimit middleware template: %w", err)
+	}
+	if doc.Path == "" {
+		return nil, "", fmt.Errorf("infra: ratelimit middleware template missing path")
+	}
+	return []byte(doc.Body), doc.Path, nil
+}
+
+// planKitexRateLimitConfigRead returns the path of conf/dev/conf.yaml for the
+// given root.
+func kitexRateLimitConfPath(root string) string {
+	return filepath.Join(root, "conf", "dev", "conf.yaml")
+}
+
+// planKitexRateLimitConfigWrite returns a planned write for the rate_limit
+// config block when serviceKind is kitex and infraKind is rate_limit.
+func planKitexRateLimitConfigWrite(root, serviceKind, infraKind string, force bool) (*plannedWrite, error) {
+	if serviceKind != manifest.KindKitex || infraKind != KindRateLimit {
+		return nil, nil
+	}
+	return planKitexRateLimitConfig(root, force)
+}
+
+// readSharedFragmentBodyRaw reads a shared fragment yaml (canonical kitex
+// format: path/update_behavior/body) and returns just the body field with
+// placeholders like {{.Module}} preserved for later rendering by
+// renderAssetBody.
+func readSharedFragmentBodyRaw(srcFS fs.FS, name string) ([]byte, error) {
+	b, err := fs.ReadFile(srcFS, name+".yaml")
+	if err != nil {
+		return nil, fmt.Errorf("infra: read shared fragment %s: %w", name, err)
+	}
+	var frag struct {
+		Body string `yaml:"body"`
+	}
+	if err := yaml.Unmarshal(b, &frag); err != nil {
+		return nil, fmt.Errorf("infra: parse shared fragment %s: %w", name, err)
+	}
+	return []byte(frag.Body), nil
+}
+
+// planKitexRateLimitConfig merges the rate_limit block into conf/dev/conf.yaml
+// for kitex services. If no rate_limit: top-level key exists, a default block
+// is appended. If one exists, enabled is set to true and mode is set to shadow
+// within the block's scope only.
+func planKitexRateLimitConfig(root string, force bool) (*plannedWrite, error) {
+	path := kitexRateLimitConfPath(root)
+	current, err := os.ReadFile(path)
+	if err != nil {
+		if errors.Is(err, fs.ErrNotExist) {
+			body := defaultRateLimitConfBlock()
+			return &plannedWrite{Path: path, Body: []byte(body), Action: "create"}, nil
+		}
+		return nil, fmt.Errorf("infra: read %s: %w", path, err)
+	}
+	merged, changed := mergeKitexRateLimitConfig(string(current))
+	if !changed {
+		return nil, nil
+	}
+	return &plannedWrite{Path: path, Body: []byte(merged), Action: "update"}, nil
+}
+
+func defaultRateLimitConfBlock() string {
+	return `rate_limit:
+  enabled: true
+  mode: shadow
+  backend: memory
+  fail_open: true
+  source:
+    type: config
+    cache_ttl_seconds: 60s
+    fallback_on_error: true
+  static:
+    max_qps: 0
+    max_connections: 0
+`
+}
+
+// mergeKitexRateLimitConfig updates an existing conf.yaml. If rate_limit: is
+// missing, appends the default block. If present, sets enabled: true and
+// mode: shadow within the rate_limit scope only. Returns (merged, changed).
+//
+// Only TOP-LEVEL keys within the rate_limit block are flipped — nested keys
+// (e.g. pre_auth.enabled) are left untouched. Top-level keys are identified
+// by having the same indent as the first direct child of rate_limit:.
+func mergeKitexRateLimitConfig(src string) (string, bool) {
+	if !hasTopLevelConfigKey(src, "rate_limit") {
+		trimmed := strings.TrimRight(src, "\n")
+		if trimmed == "" {
+			return defaultRateLimitConfBlock(), true
+		}
+		return trimmed + "\n\n" + defaultRateLimitConfBlock(), true
+	}
+	// Scoped replacement within rate_limit block. Find the rate_limit:
+	// line and the next top-level key (or EOF). Track the indent of the
+	// first direct child so we only flip top-level keys.
+	lines := strings.Split(src, "\n")
+	startIdx := -1
+	endIdx := len(lines)
+	childIndent := -1
+	for i, line := range lines {
+		if startIdx == -1 {
+			if strings.HasPrefix(line, "rate_limit:") {
+				startIdx = i
+			}
+			continue
+		}
+		// End when we hit another top-level key (non-empty, non-comment,
+		// not indented).
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
+			endIdx = i
+			break
+		}
+		if childIndent == -1 {
+			childIndent = len(line) - len(strings.TrimLeft(line, " \t"))
+		}
+	}
+	if startIdx == -1 {
+		return src, false
+	}
+	changed := false
+	for i := startIdx + 1; i < endIdx; i++ {
+		line := lines[i]
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		// Only flip direct children of rate_limit: (at childIndent).
+		// Deeper lines belong to nested sub-blocks and must not be touched.
+		if childIndent >= 0 && indent != childIndent {
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "enabled:") {
+			if !strings.Contains(trimmed, "true") {
+				indentStr := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+				lines[i] = indentStr + "enabled: true"
+				changed = true
+			}
+		} else if strings.HasPrefix(trimmed, "mode:") {
+			if !strings.Contains(trimmed, "shadow") {
+				indentStr := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+				lines[i] = indentStr + "mode: shadow"
+				changed = true
+			}
+		}
+	}
+	if !changed {
+		return src, false
+	}
+	return strings.Join(lines, "\n"), true
 }
