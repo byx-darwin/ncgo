@@ -772,4 +772,40 @@ rate_limit:
 - `ncgo_new` 配合 `ruleCenterAddr: "rule-center:8888"` 创建接入规则中心的 Hertz 服务
 - `ncgo_add_rule_center` 配合 `addr: "rule-center:8888"` 为已有 Hertz 服务接入规则中心
 
+## 8. Polaris canary adapter（opt-in，Kitex only）
+
+在已启用 `release_canary`（在 `internal/base/release` 中提供 SDK 中立的 canary seams）之后，可通过以下命令 opt-in 真实 Polaris 后端：
+
+```bash
+ncgo add infra polaris_adapter --root .
+```
+
+这会写入 `internal/base/release/polaris_adapter.go`（package `release`），并
+打印下一步的 `go get` 命令。ncgo 本身保持无 SDK 依赖 —— Polaris SDK 依赖落在
+你的项目中：
+
+```bash
+go get github.com/polarismesh/polaris-go
+go get gopkg.in/yaml.v3
+go get github.com/bytedance/go-common
+```
+
+通过环境变量提供 Polaris 凭证（`POLARIS_TOKEN`、`POLARIS_NAMESPACE`），禁止
+硬编码。构造 `release.NewPolarisSelector(discoveryCfg, ruleCfg)`，把它的
+`RuleProvider` 喂给 `KitexCanaryLoadBalancer.RuleProvider`。基于 `polaris-go
+v1.7.1` 测试通过。
+
+**Troubleshooting**
+
+- `addresses is empty` / 缺 token → 构造期直接失败。先修 config / env 再重试。
+- 运行时发现/规则加载失败 → canary 路由 **fail OPEN** 到 Kitex 默认加权 LB
+  （可用性优先）。先观察指标，再调整预期。
+- **Kitex resolver 实例可见性假设** —— 如果 canary pool 为空，确认 Kitex
+  resolver（如 `registry_polaris`）返回的是全量 stable+canary 实例集合。
+  如果 resolver 按路由做了过滤，adapter 需要直接坐到 LB 层（后续工作）。
+- `release.track` metadata 未生效 → 检查注册端是否在实例上设置了
+  `release.track` metadata。
+
+GA 加固（metrics / cache+TTL / dry-run / runtime harness）属于后续工作。
+
 适合：多服务环境，需要集中管理限流规则、无需重启各服务即可更新规则的场景。

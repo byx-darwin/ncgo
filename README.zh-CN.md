@@ -147,7 +147,7 @@ make dev
 | `ncgo import` | 为已有的 Hertz/Kitex 项目反向生成 `.ncgo/manifest.yaml` |
 | `ncgo add domain` | 生成 usecase / repository / DI register 文件 |
 | `ncgo add method` | 在 ncgo anchor 标记中插入方法桩 |
-| `ncgo add infra` | 添加 Redis / logging / canary 等可选基础设施 helper |
+| `ncgo add infra` | 添加 Redis / logging / canary / polaris_adapter 等可选基础设施 helper |
 | `ncgo add rpc` / `ncgo add bff` | 在 micro 工作区中新增服务 |
 | `ncgo ai init claude` | 初始化 hand-authored `.claude` starter files（`--preset minimal` 或 `--preset team`） |
 | `ncgo ai sync` | 生成 `AGENTS.md`、`CLAUDE.md`、`.claude/generated/project-context.md` 与 Cursor 规则 |
@@ -324,9 +324,10 @@ ncgo add infra logging --root . --wire --dry-run --output json  # 输出机器�
 ncgo add infra logging --root . --wire --plan  # --dry-run --output json 简写
 ncgo add infra registry_polaris --root . --wire  # kitex only：Polaris 注册/发现 + 自动接线
 ncgo add infra rate-limit --root . --wire         # kitex only：共享 ratelimit 包 + 真实中间件（shadow 优先）
+ncgo add infra polaris_adapter --root .           # kitex only：opt-in 真实 Polaris canary adapter
 ```
 
-common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_logging`（`logging` alias）、`release_canary`（`canary` alias）。Kitex-only：`registry_polaris`、`rate-limit`。
+common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_logging`（`logging` alias）、`release_canary`（`canary` alias）。Kitex-only：`registry_polaris`、`rate-limit`、`polaris_adapter`。
 
 `rate-limit` 为 **kitex only**（Hertz 侧使用另一套限流设计）。它把 Kitex 模板
 里 pass-through 的 `RateLimit()` 占位符改写为真实的 `endpoint.Middleware`，底层
@@ -347,6 +348,41 @@ ncgo test rate-limit e2e --rpc-method MyService.Ping --rpc-payload '{"user":"ali
 
 两段式运行先确认 shadow 模式 0 拒绝（含 `ratelimit shadow denied` 日志），再确认
 enforce 模式返回预期比例的 10429。
+
+`polaris_adapter` 是一个 **opt-in、kitex only** 的 add-on，把 `release_canary`
+提供的 SDK 中立的 `internal/base/release` seams 接到真实的 Polaris 后端（基于
+`polaris-go`）。它会写入 `internal/base/release/polaris_adapter.go`（package
+`release`），并在 stdout 打印下一步的 `go get` 命令。ncgo 本身保持无 SDK 依赖
+—— Polaris SDK 依赖落在用户项目中，不进入 ncgo。
+
+在 `release_canary` 已经就位之后启用：
+
+```bash
+ncgo add infra polaris_adapter --root .
+# 然后按打印的 go get 提示执行，例如：
+#   go get github.com/polarismesh/polaris-go
+#   go get gopkg.in/yaml.v3
+#   go get github.com/bytedance/go-common
+```
+
+通过环境变量提供 Polaris 凭证（`POLARIS_TOKEN`、`POLARIS_NAMESPACE`），禁止
+硬编码。把 adapter 接入 Kitex canary load balancer：构造
+`release.NewPolarisSelector(discoveryCfg, ruleCfg)`，把它的 `RuleProvider`
+喂给 `KitexCanaryLoadBalancer.RuleProvider`。adapter 基于 `polaris-go v1.7.1`
+测试通过。
+
+**Troubleshooting**
+
+- `addresses is empty` / 缺 token → 构造期直接失败。先修 config / env 再重试。
+- 运行时发现/规则加载失败 → canary 路由 **fail OPEN** 到 Kitex 默认加权 LB
+  （可用性优先）。先观察指标，再调整预期。
+- **Kitex resolver 实例可见性假设** —— 如果 canary pool 为空，确认 Kitex
+  resolver（如 `registry_polaris`）返回的是全量 stable+canary 实例集合。
+  如果 resolver 按路由做了过滤，adapter 需要直接坐到 LB 层（后续工作）。
+- `release.track` metadata 未生效 → 检查注册端是否在实例上设置了
+  `release.track` metadata。
+
+GA 加固（metrics / cache+TTL / dry-run / runtime harness）属于后续工作。
 
 可观测性（tracing / OTel）现已内置到 Hertz 与 Kitex 基础模板，统一使用
 go-framework OTLP（Hertz：`cfg.Server.Jaeger` → `hertz/observability.NewProvider`；

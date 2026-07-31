@@ -173,7 +173,7 @@ below.
 | `ncgo import` | Generate `.ncgo/manifest.yaml` for an existing Hertz/Kitex project |
 | `ncgo add domain` | Generate usecase / repository / DI register files |
 | `ncgo add method` | Insert a method stub at ncgo anchor markers |
-| `ncgo add infra` | Add optional infra helpers such as Redis / logging / canary |
+| `ncgo add infra` | Add optional infra helpers such as Redis / logging / canary / polaris_adapter |
 | `ncgo add rpc` / `ncgo add bff` | Add services inside a micro workspace |
 | `ncgo ai init claude` | Bootstrap hand-authored `.claude` starter files (`--preset minimal` or `--preset team`) |
 | `ncgo ai sync` | Render `AGENTS.md`, `CLAUDE.md`, `.claude/generated/project-context.md`, and Cursor rules |
@@ -385,12 +385,13 @@ ncgo add infra logging --root . --wire --dry-run --output json  # machine-readab
 ncgo add infra logging --root . --wire --plan  # shorthand for --dry-run --output json
 ncgo add infra registry_polaris --root . --wire  # kitex only: Polaris registry + wire
 ncgo add infra rate-limit --root . --wire         # kitex only: shared ratelimit pkg + real middleware (shadow-first)
+ncgo add infra polaris_adapter --root .           # kitex only: opt-in real Polaris canary adapter
 ```
 
 Supported common infra add-ons: `redis`, `kafka`, `es`, `clickhouse`,
 `observability_logging` (`logging` alias),
 and `release_canary` (`canary` alias).
-Kitex-only add-ons: `registry_polaris`, `rate-limit`.
+Kitex-only add-ons: `registry_polaris`, `rate-limit`, `polaris_adapter`.
 
 `rate-limit` is **kitex-only** (Hertz uses a different rate-limit design). It
 rewrites the Kitex template's pass-through `RateLimit()` placeholder into a real
@@ -415,6 +416,46 @@ ncgo test rate-limit e2e --rpc-method MyService.Ping --rpc-payload '{"user":"ali
 The two-stage run first confirms shadow mode produces zero rejections (with
 `ratelimit shadow denied` log lines), then confirms enforce mode returns the
 expected ratio of 10429 responses.
+
+`polaris_adapter` is an **opt-in, kitex-only** add-on that wires the
+SDK-neutral `internal/base/release` seams (from `release_canary`) to a real
+Polaris backend via `polaris-go`. It writes
+`internal/base/release/polaris_adapter.go` (package `release`) and prints the
+next-step `go get` commands on stdout. ncgo itself stays SDK-free — the Polaris
+SDK dependency lives in the user's project, not in ncgo.
+
+Enable it after `release_canary` is already in place:
+
+```bash
+ncgo add infra polaris_adapter --root .
+# then follow the printed go get next-steps, e.g.:
+#   go get github.com/polarismesh/polaris-go
+#   go get gopkg.in/yaml.v3
+#   go get github.com/bytedance/go-common
+```
+
+Provide Polaris credentials via environment variables
+(`POLARIS_TOKEN`, `POLARIS_NAMESPACE`); never hardcode them. Wire the adapter
+into the Kitex canary load balancer by constructing
+`release.NewPolarisSelector(discoveryCfg, ruleCfg)` and feeding its
+`RuleProvider` into `KitexCanaryLoadBalancer.RuleProvider`. The adapter was
+tested with `polaris-go v1.7.1`.
+
+**Troubleshooting**
+
+- `addresses is empty` / missing token → construction fails fast. Fix the
+  config / env vars before retrying.
+- Discovery or rule-load failure at runtime → canary routing **fails OPEN** to
+  the Kitex default weighted LB (availability-first). Observe metrics before
+  switching expectations.
+- **Kitex resolver instance-visibility assumption** — if the canary pool is
+  empty, confirm the Kitex resolver (e.g. `registry_polaris`) returns the FULL
+  stable+canary instance set. If the resolver filters by routing, the adapter
+  would need to sit at the LB layer (future work).
+- `release.track` metadata not taking effect → verify the registering side
+  sets `release.track` metadata on instances.
+
+GA hardening (metrics / cache+TTL / dry-run / runtime harness) is future work.
 
 Observability (tracing / OTel) is now built into the Hertz and Kitex base
 templates via go-framework OTLP (Hertz: `cfg.Server.Jaeger` →
