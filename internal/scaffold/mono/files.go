@@ -11,6 +11,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
 	"gopkg.in/yaml.v3"
 )
 
@@ -136,7 +137,7 @@ func writeHertzTemplate(dir string, opts Options) error {
 	}
 	// Generate rule center client when address is provided
 	if opts.RuleCenterAddr != "" {
-		b, err := readSharedFragmentBody(srcFS, "ratelimit/rule_center_client", opts.Module)
+		b, err := shared.ReadSharedFragmentBody(srcFS, "ratelimit/rule_center_client", opts.Module)
 		if err != nil {
 			return fmt.Errorf("scaffold: %w", err)
 		}
@@ -283,23 +284,6 @@ func renderSharedFragment(srcFS fs.FS, name string) ([]string, error) {
 		entry = append(entry, "      "+bl)
 	}
 	return entry, nil
-}
-
-// readSharedFragmentBody reads a shared fragment yaml (canonical kitex format:
-// path/update_behavior/body fields, body 2-space indented, {{.Module}}
-// placeholder) and returns the body with the module placeholder rendered.
-func readSharedFragmentBody(srcFS fs.FS, name, module string) ([]byte, error) {
-	b, err := fs.ReadFile(srcFS, name+".yaml")
-	if err != nil {
-		return nil, fmt.Errorf("read shared fragment %s: %w", name, err)
-	}
-	var frag struct {
-		Body string `yaml:"body"`
-	}
-	if err := yaml.Unmarshal(b, &frag); err != nil {
-		return nil, fmt.Errorf("parse shared fragment %s: %w", name, err)
-	}
-	return []byte(strings.ReplaceAll(frag.Body, "{{.Module}}", module)), nil
 }
 
 // writeKitexGoMod pre-writes the project go.mod for a kitex scaffold so the

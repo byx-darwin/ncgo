@@ -4,14 +4,13 @@ package rulecenter
 
 import (
 	"fmt"
-	"io/fs"
 	"os"
 	"path/filepath"
 	"strings"
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
-	"gopkg.in/yaml.v3"
+	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
 )
 
 // Options describes a `ncgo add rule-center` invocation.
@@ -88,7 +87,7 @@ func Add(opts Options) (*Result, error) {
 
 func writeRuleCenterClient(opts Options, m *manifest.Manifest) (string, error) {
 	srcFS := assets.FS()
-	b, err := readSharedFragmentBody(srcFS, "ratelimit/rule_center_client", m.Module)
+	b, err := shared.ReadSharedFragmentBody(srcFS, "ratelimit/rule_center_client", m.Module)
 	if err != nil {
 		return "", err
 	}
@@ -112,23 +111,6 @@ func writeRuleCenterClient(opts Options, m *manifest.Manifest) (string, error) {
 	}
 
 	return target, nil
-}
-
-// readSharedFragmentBody reads a shared fragment yaml (canonical kitex format:
-// path/update_behavior/body fields, body 2-space indented, {{.Module}}
-// placeholder) and returns the body with the module placeholder rendered.
-func readSharedFragmentBody(srcFS fs.FS, name, module string) ([]byte, error) {
-	b, err := fs.ReadFile(srcFS, name+".yaml")
-	if err != nil {
-		return nil, fmt.Errorf("read shared fragment %s: %w", name, err)
-	}
-	var frag struct {
-		Body string `yaml:"body"`
-	}
-	if err := yaml.Unmarshal(b, &frag); err != nil {
-		return nil, fmt.Errorf("parse shared fragment %s: %w", name, err)
-	}
-	return []byte(strings.ReplaceAll(frag.Body, "{{.Module}}", module)), nil
 }
 
 func updateConfForRuleCenter(path, addr string) error {

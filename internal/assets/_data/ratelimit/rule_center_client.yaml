@@ -2,6 +2,8 @@
 path: internal/pkg/middleware/rule_center_client.go
 update_behavior:
   type: cover
+# body uses clip chomping (|, not |-) on purpose: the generated file must keep
+# the trailing newline of the original asset for golden byte-identity.
 body: |
   // Optional rule-center gRPC client for Hertz HTTP services.
   //
