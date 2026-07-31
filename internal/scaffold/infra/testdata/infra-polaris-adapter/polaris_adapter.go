@@ -14,7 +14,7 @@
 //	POLARIS_TOKEN      Polaris auth token (empty = no auth)
 //	POLARIS_NAMESPACE  default namespace when cfg.Namespace is empty
 //
-// Tested with polaris-go v1.x (see scripts/verify-polaris-adapter.sh).
+// Tested with polaris-go v1.7.1 (see scripts/verify-polaris-adapter.sh).
 
 package release
 
@@ -23,6 +23,7 @@ import (
 	"os"
 
 	polaris "github.com/polarismesh/polaris-go"
+	"github.com/polarismesh/polaris-go/pkg/config"
 	"github.com/polarismesh/polaris-go/pkg/model"
 	"gopkg.in/yaml.v3"
 
@@ -87,33 +88,41 @@ func NewPolarisSelector(discoveryCfg PolarisDiscoveryConfig, ruleCfg PolarisRule
 }
 
 // sdkClient is the ONLY polaris-go-coupled implementation of polarisAPI.
+// It holds a polaris ConsumerAPI (service discovery) and ConfigAPI (config
+// file reads) built from a shared Configuration so addresses and auth are
+// configured exactly once.
 type sdkClient struct {
-	api polaris.SDKContext
+	consumer  polaris.ConsumerAPI
+	configAPI polaris.ConfigAPI
 }
 
 func newSDKClient(addresses []string) (*sdkClient, error) {
 	if len(addresses) == 0 {
 		return nil, goerror.In("release.polaris").Code("config_invalid").Public("polaris configuration is invalid").New("addresses is empty")
 	}
-	cfg := polaris.NewDefaultConfiguration()
-	cfg.GetGlobal().GetServerConnector().SetAddresses(addresses)
+	cfg := config.NewDefaultConfiguration(addresses)
 	if token := os.Getenv("POLARIS_TOKEN"); token != "" {
 		// polaris-go reads auth from config; token value is never logged.
-		cfg.GetGlobal().GetServerConnector().SetAuthToken(token)
+		cfg.GetGlobal().GetServerConnector().SetToken(token)
 	}
-	api, err := polaris.NewSDKContextByConfig(cfg)
+	consumer, err := polaris.NewConsumerAPIByConfig(cfg)
 	if err != nil {
 		return nil, goerror.In("release.polaris").Code("sdk_init_failed").Public("polaris client init failed").Wrap(err)
 	}
-	return &sdkClient{api: api}, nil
+	configAPI, err := polaris.NewConfigAPIByConfig(cfg)
+	if err != nil {
+		consumer.Destroy()
+		return nil, goerror.In("release.polaris").Code("sdk_init_failed").Public("polaris client init failed").Wrap(err)
+	}
+	return &sdkClient{consumer: consumer, configAPI: configAPI}, nil
 }
 
-func (c *sdkClient) listInstances(ctx context.Context, cfg PolarisDiscoveryConfig) ([]PolarisInstance, error) {
+func (c *sdkClient) listInstances(_ context.Context, cfg PolarisDiscoveryConfig) ([]PolarisInstance, error) {
 	ns := firstNonEmpty(cfg.Namespace, os.Getenv("POLARIS_NAMESPACE"), "default")
 	req := &polaris.GetAllInstancesRequest{}
 	req.Namespace = ns
 	req.Service = cfg.Service
-	resp, err := c.api.GetConsumer().GetAllInstances(ctx, req)
+	resp, err := c.consumer.GetAllInstances(req)
 	if err != nil {
 		return nil, goerror.In("release.polaris").Code("list_instances_failed").Public("polaris discovery failed").Wrap(err)
 	}
@@ -124,13 +133,9 @@ func (c *sdkClient) listInstances(ctx context.Context, cfg PolarisDiscoveryConfi
 	return out, nil
 }
 
-func (c *sdkClient) loadRuleBytes(ctx context.Context, cfg PolarisRuleConfig) ([]byte, error) {
+func (c *sdkClient) loadRuleBytes(_ context.Context, cfg PolarisRuleConfig) ([]byte, error) {
 	ns := firstNonEmpty(cfg.Namespace, os.Getenv("POLARIS_NAMESPACE"), "default")
-	req := &polaris.GetConfigFileRequest{}
-	req.Namespace = ns
-	req.FileGroup = cfg.Group
-	req.FileName = cfg.FileName
-	file, err := c.api.GetConfigAPI().GetConfigFile(ctx, req)
+	file, err := c.configAPI.GetConfigFile(ns, cfg.Group, cfg.FileName)
 	if err != nil {
 		return nil, goerror.In("release.polaris").Code("load_rules_failed").Public("polaris rule load failed").Wrap(err)
 	}
@@ -145,7 +150,7 @@ func instanceFromPolaris(ins model.Instance, namespace, service string) PolarisI
 		meta[k] = v
 	}
 	return PolarisInstance{
-		ID:        ins.GetInstanceKey(),
+		ID:        ins.GetId(),
 		Namespace: namespace,
 		Service:   service,
 		Host:      ins.GetHost(),
