@@ -5,11 +5,13 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"time"
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"gopkg.in/yaml.v3"
 )
 
 const hertzAPIProto = `syntax = "proto2";
@@ -102,6 +104,12 @@ func writeHertzTemplate(dir string, opts Options) error {
 		b, err := fs.ReadFile(srcFS, "hertz/"+name)
 		if err != nil {
 			return fmt.Errorf("scaffold: read embedded hertz/%s: %w", name, err)
+		}
+		if name == "layout.yaml" {
+			b, err = expandIncludes(b, srcFS)
+			if err != nil {
+				return fmt.Errorf("scaffold: expand hertz/layout.yaml: %w", err)
+			}
 		}
 		if err := os.WriteFile(filepath.Join(tplDir, name), b, 0o644); err != nil {
 			return fmt.Errorf("scaffold: write %s: %w", name, err)
@@ -223,6 +231,60 @@ func writeKitexTemplate(dir string, preset string) error {
 		}
 	}
 	return nil
+}
+
+var includeDirectiveRE = regexp.MustCompile(`^(\s*)#\s*\{\{include:\s*([A-Za-z0-9_/.-]+)\}\}\s*$`)
+
+// expandIncludes replaces "# {{include: <asset>}}" directive lines in a hertz
+// layout.yaml with the referenced shared fragment rendered as a layout entry.
+// Fragments use the canonical kitex template format (path/body, {{.Module}}
+// placeholder, 2-space body indent); hz consumes the expanded result, so
+// directives never leave ncgo. Output is deterministic for golden tests.
+func expandIncludes(layout []byte, srcFS fs.FS) ([]byte, error) {
+	lines := strings.Split(string(layout), "\n")
+	var out []string
+	for _, line := range lines {
+		m := includeDirectiveRE.FindStringSubmatch(line)
+		if m == nil {
+			out = append(out, line)
+			continue
+		}
+		name := m[2]
+		entry, err := renderSharedFragment(srcFS, name)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, entry...)
+	}
+	return []byte(strings.Join(out, "\n")), nil
+}
+
+func renderSharedFragment(srcFS fs.FS, name string) ([]string, error) {
+	b, err := fs.ReadFile(srcFS, name+".yaml")
+	if err != nil {
+		return nil, fmt.Errorf("scaffold: read shared fragment %s: %w", name, err)
+	}
+	var frag struct {
+		Path string `yaml:"path"`
+		Body string `yaml:"body"`
+	}
+	if err := yaml.Unmarshal(b, &frag); err != nil {
+		return nil, fmt.Errorf("scaffold: parse shared fragment %s: %w", name, err)
+	}
+	body := strings.ReplaceAll(frag.Body, "{{.Module}}", "{{.GoModule}}")
+	entry := []string{
+		"  - path: " + frag.Path,
+		`    delims: ["{{", "}}"]`,
+		"    body: |-",
+	}
+	for _, bl := range strings.Split(body, "\n") {
+		if bl == "" {
+			entry = append(entry, "")
+			continue
+		}
+		entry = append(entry, "      "+strings.TrimPrefix(strings.TrimPrefix(bl, "  "), " "))
+	}
+	return entry, nil
 }
 
 // writeKitexGoMod pre-writes the project go.mod for a kitex scaffold so the
