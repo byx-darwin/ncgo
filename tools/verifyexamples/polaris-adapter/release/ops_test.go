@@ -1,8 +1,11 @@
 package release
 
 import (
+	"bytes"
 	"context"
 	"errors"
+	"log/slog"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -148,4 +151,33 @@ func TestCachingRuleProvider_FreshAndFailOpen(t *testing.T) {
 	if err != nil || rs.Version != 1 {
 		t.Fatalf("FailOpen stale rules: version=%d err=%v", rs.Version, err)
 	}
+}
+
+func TestSlogObserver_DecisionDoesNotLeakCredentials(t *testing.T) {
+	var buf bytes.Buffer
+	logger := slog.New(slog.NewJSONHandler(&buf, nil))
+	obs := NewSlogObserver(logger)
+	pools := Pools{Stable: staticIns("stable"), Canary: staticIns("canary")}
+	obs.ObserveDecision("svc", Decision{Track: TrackCanary, Reason: "weighted", Rule: "r1"}, pools)
+	obs.ObserveDiscovery("svc", 2, nil)
+	obs.ObserveFallback("svc", "empty_canary")
+	out := buf.String()
+	for _, want := range []string{"canary_decision", "canary", "weighted"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("log missing %q: %s", want, out)
+		}
+	}
+	for _, bad := range []string{"POLARIS_TOKEN", "token"} {
+		if strings.Contains(strings.ToLower(out), strings.ToLower(bad)) {
+			t.Errorf("log may leak credentials (%q): %s", bad, out)
+		}
+	}
+}
+
+func TestNopObserver_Safe(t *testing.T) {
+	var o Observer = NopObserver{}
+	o.ObserveDecision("s", Decision{}, Pools{})
+	o.ObserveDiscovery("s", 0, nil)
+	o.ObserveRules("s", 0, nil)
+	o.ObserveFallback("s", "x")
 }

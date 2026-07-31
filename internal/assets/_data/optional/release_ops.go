@@ -10,6 +10,7 @@ package release
 
 import (
 	"context"
+	"log/slog"
 	"math/rand"
 	"sync"
 	"time"
@@ -299,4 +300,47 @@ func (c *CachingRuleProvider) applyPolicy(entry cacheEntry[RuleSet]) (RuleSet, e
 		return RuleSet{}, entry.err
 	}
 	return entry.value, nil
+}
+
+// SlogObserver emits structured decision logs via log/slog (standard library).
+type SlogObserver struct{ Logger *slog.Logger }
+
+func NewSlogObserver(logger *slog.Logger) *SlogObserver {
+	if logger == nil {
+		logger = slog.Default()
+	}
+	return &SlogObserver{Logger: logger}
+}
+
+func (o *SlogObserver) ObserveDecision(service string, d Decision, pools Pools) {
+	o.Logger.Info("canary_decision",
+		slog.String("service", service),
+		slog.String("track", d.Track),
+		slog.String("reason", d.Reason),
+		slog.String("rule", d.Rule),
+		slog.String("fallback", d.Fallback),
+		slog.Int("pool_stable", len(pools.Stable)),
+		slog.Int("pool_canary", len(pools.Canary)),
+		slog.Int("pool_unknown", len(pools.Unknown)),
+	)
+}
+
+func (o *SlogObserver) ObserveFallback(service, reason string) {
+	o.Logger.Warn("canary_fallback", slog.String("service", service), slog.String("reason", reason))
+}
+
+func (o *SlogObserver) ObserveDiscovery(service string, instances int, err error) {
+	if err != nil {
+		o.Logger.Error("canary_discovery_error", slog.String("service", service), slog.String("error", err.Error()))
+		return
+	}
+	o.Logger.Debug("canary_discovery", slog.String("service", service), slog.Int("instances", instances))
+}
+
+func (o *SlogObserver) ObserveRules(service string, version int, err error) {
+	if err != nil {
+		o.Logger.Error("canary_rule_error", slog.String("service", service), slog.String("error", err.Error()))
+		return
+	}
+	o.Logger.Debug("canary_rules", slog.String("service", service), slog.Int("version", version))
 }
