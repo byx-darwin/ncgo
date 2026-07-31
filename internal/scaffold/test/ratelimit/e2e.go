@@ -30,6 +30,8 @@ type E2EOptions struct {
 	Cleanup       bool
 	DryRun        bool
 	Report        string // output report file path (.md or .json)
+	RPCMethod     string // kitex: RPC method to invoke (defaults to <serviceName>.HealthCheck)
+	RPCPayload    string // kitex: JSON payload for the RPC call (defaults to "{}")
 }
 
 // E2EResult holds the result of an e2e test run.
@@ -114,13 +116,19 @@ func E2E(ctx context.Context, opts E2EOptions) (*E2EResult, error) {
 	}
 
 	// 5. Health check
-	checkPath := opts.ReadinessPath
-	if checkPath == "" {
-		checkPath = opts.Paths[0]
-	}
-	targetURL := fmt.Sprintf("http://%s:%d%s", opts.Host, opts.Port, checkPath)
-	if err := waitForReady(ctx, targetURL, 2*time.Second, 30*time.Second); err != nil {
-		return result, fmt.Errorf("service not ready at %s: %w", targetURL, err)
+	if kind == manifest.KindKitex {
+		if err := waitForReadyTCP(ctx, opts.Host, opts.Port, 2*time.Second, 30*time.Second); err != nil {
+			return result, fmt.Errorf("service not ready at %s:%d: %w", opts.Host, opts.Port, err)
+		}
+	} else {
+		checkPath := opts.ReadinessPath
+		if checkPath == "" {
+			checkPath = opts.Paths[0]
+		}
+		targetURL := fmt.Sprintf("http://%s:%d%s", opts.Host, opts.Port, checkPath)
+		if err := waitForReady(ctx, targetURL, 2*time.Second, 30*time.Second); err != nil {
+			return result, fmt.Errorf("service not ready at %s: %w", targetURL, err)
+		}
 	}
 
 	// 6. Seed rules (only for database/rule_center/grpc sources)
@@ -136,7 +144,20 @@ func E2E(ctx context.Context, opts E2EOptions) (*E2EResult, error) {
 
 	// 7. Run attack
 	attackStart := time.Now()
-	ar, err := runAttackCapture(ctx, opts.Root, opts.Host, opts.Port, opts.Rate, opts.Duration, opts.Paths)
+	var ar *attackResult
+	if kind == manifest.KindKitex {
+		method := opts.RPCMethod
+		if method == "" {
+			method = serviceName + ".HealthCheck"
+		}
+		payload := opts.RPCPayload
+		if payload == "" {
+			payload = `{}`
+		}
+		ar, err = runRPCAttackCapture(ctx, opts, method, payload)
+	} else {
+		ar, err = runAttackCapture(ctx, opts.Root, opts.Host, opts.Port, opts.Rate, opts.Duration, opts.Paths)
+	}
 	if err != nil {
 		return result, fmt.Errorf("run attack: %w", err)
 	}

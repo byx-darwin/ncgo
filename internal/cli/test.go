@@ -83,7 +83,7 @@ func newRateLimitRunCmd() *cobra.Command {
 }
 
 func newRateLimitE2ECmd() *cobra.Command {
-	var root, host, duration, dsn, report, output, readinessPath string
+	var root, host, duration, dsn, report, output, readinessPath, rpcMethod, rpcPayload string
 	var port, rate int
 	var paths []string
 	var cleanup, plan bool
@@ -98,6 +98,7 @@ and optionally generate a report.
   ncgo test rate-limit e2e --report report.md
   ncgo test rate-limit e2e --plan
   ncgo test rate-limit e2e --readiness-path /healthz --paths /ping
+  ncgo test rate-limit e2e --rpc-method MyService.Ping --rpc-payload '{"user":"alice"}'
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if plan {
@@ -115,6 +116,8 @@ and optionally generate a report.
 				Cleanup:       cleanup,
 				DryRun:        plan,
 				Report:        report,
+				RPCMethod:     rpcMethod,
+				RPCPayload:    rpcPayload,
 			})
 			if err != nil {
 				return err
@@ -140,6 +143,8 @@ and optionally generate a report.
 	cmd.Flags().StringVar(&report, "report", "", "Output report file (.md or .json)")
 	cmd.Flags().StringVar(&output, "output", "text", "Output format: text or json")
 	cmd.Flags().BoolVar(&plan, "plan", false, "Dry-run: show plan without executing")
+	cmd.Flags().StringVar(&rpcMethod, "rpc-method", "", "Kitex RPC method to invoke (defaults to <serviceName>.HealthCheck)")
+	cmd.Flags().StringVar(&rpcPayload, "rpc-payload", "", "Kitex RPC JSON payload (defaults to \"{}\")")
 	return cmd
 }
 
