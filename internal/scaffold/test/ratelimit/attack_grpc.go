@@ -2,14 +2,12 @@ package ratelimit
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"net"
 	"os/exec"
 	"regexp"
 	"sort"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 )
@@ -20,18 +18,31 @@ type grpcCallResult struct {
 	latency  time.Duration
 }
 
-var bizCodeRE = regexp.MustCompile(`"code"\s*:\s*(\d+)`)
+var (
+	// bizCodeWireRE matches the kitex biz-error stringification that surfaces
+	// in grpcurl's ERROR output for a BizStatusError, e.g.:
+	//   ERROR: ... rpc error: code = Internal desc = biz error: code=10429, msg=rate limited
+	// The `code=` form (no spaces) is kitex-specific and will NOT match gRPC
+	// status names like `code = Unavailable` (space before `=` and non-digit).
+	bizCodeWireRE = regexp.MustCompile(`code=(\d+)`)
+	// bizCodeJSONRE matches the JSON-shape `{"code": 10429}` for forward
+	// compatibility with grpcurl -type=json or synthetic test fixtures.
+	bizCodeJSONRE = regexp.MustCompile(`"code"\s*:\s*(\d+)`)
+)
 
-// parseBizCode extracts a kitex biz status code from grpcurl JSON output.
-// Returns 0 when the call carried no biz error.
+// parseBizCode extracts a kitex biz status code from grpcurl output.
+// The real wire format is a gRPC error line containing `code=10429` (the
+// biz code embedded in the kitex biz-status trailer). Falls back to the
+// JSON `"code": 10429` shape for grpcurl -type=json output. Returns 0
+// when no biz error is present.
 func parseBizCode(output string) int {
-	var payload struct {
-		Code int `json:"code"`
+	// 1) Real wire format: kitex biz error message `code=10429`.
+	if m := bizCodeWireRE.FindStringSubmatch(output); m != nil {
+		n, _ := strconv.Atoi(m[1])
+		return n
 	}
-	if err := json.Unmarshal([]byte(strings.TrimSpace(output)), &payload); err == nil {
-		return payload.Code
-	}
-	if m := bizCodeRE.FindStringSubmatch(output); m != nil {
+	// 2) JSON fallback: grpcurl -type=json or synthetic test fixtures.
+	if m := bizCodeJSONRE.FindStringSubmatch(output); m != nil {
 		n, _ := strconv.Atoi(m[1])
 		return n
 	}

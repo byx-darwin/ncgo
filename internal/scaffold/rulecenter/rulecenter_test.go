@@ -267,7 +267,7 @@ rate_limit:
 	if !strings.Contains(content, `address: "localhost:8888"`) {
 		t.Error("expected rule_center address to be set")
 	}
-	if !strings.Contains(content, "query_timeout_milliseconds: 200") {
-		t.Error("expected query_timeout_milliseconds to be set")
+	if !strings.Contains(content, "query_timeout_milliseconds: 200ms") {
+		t.Errorf("expected query_timeout_milliseconds: 200ms (unit-bearing), got:\n%s", content)
 	}
 }

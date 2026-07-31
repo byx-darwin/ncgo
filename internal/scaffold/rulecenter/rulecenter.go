@@ -141,7 +141,10 @@ func updateConfForRuleCenter(path, addr string) error {
 
 	// Add rule_center block if not present
 	if !strings.Contains(content, "rule_center:") {
-		content = strings.Replace(content, "source:", fmt.Sprintf("rule_center:\n    address: %q\n    query_timeout_milliseconds: 200\n  source:", addr), 1)
+		// 200ms: unit-bearing duration required by config.Duration.UnmarshalYAML
+		// (both kitex and hertz use go-framework config.Duration which rejects
+		// bare integers with "time: missing unit in duration").
+		content = strings.Replace(content, "source:", fmt.Sprintf("rule_center:\n    address: %q\n    query_timeout_milliseconds: 200ms\n  source:", addr), 1)
 	}
 
 	return os.WriteFile(path, []byte(content), 0o644)

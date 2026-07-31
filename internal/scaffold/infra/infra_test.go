@@ -1325,11 +1325,16 @@ func Run(extraOptions ...kitexserver.Option) {
 			interceptor.RequestID(),
 			interceptor.AccessLog(),
 			interceptor.Recovery(),
+			// Optional rate-limit wiring (after ` + "`ncgo add infra rate-limit`" + `):
+			// import "github.com/x/demo/internal/base/middleware"
+			// middleware.RateLimit(cfg.RateLimit),
 			// ncgo:wire:ratelimit:server-middleware
 			interceptor.RequestTimeout(0),
 		)),
 		kitexserver.WithErrorHandler(func(ctx context.Context, err error) error { return err }),
 	}
+	// Optional static rate-limit safety net (after ` + "`ncgo add infra rate-limit`" + `):
+	// middleware.StaticLimitOption mounts kitexserver.WithLimit when configured.
 	// ncgo:wire:ratelimit:static-limit
 	opts = append(opts, extraOptions...)
 	_ = opts
@@ -1373,10 +1378,17 @@ func TestAddInfraRateLimitKitex(t *testing.T) {
 	assertFileContains(t, root, "internal/base/middleware/ratelimit.go", "func RateLimit(")
 	assertFileContains(t, root, "conf/dev/conf.yaml", "mode: shadow")
 	server := readFile(t, filepath.Join(root, "internal", "base", "server", "server.go"))
-	if !strings.Contains(server, "middleware.RateLimit(cfg.RateLimit)") {
-		t.Errorf("server.go missing middleware wiring:\n%s", server)
+	// Check for the REAL (tab-indented, non-comment) middleware call. The
+	// fixture includes the hint comment `// middleware.RateLimit(...)` which
+	// must NOT satisfy this check — the tab prefix ensures only real wired
+	// code matches.
+	if !strings.Contains(server, "\t\t\tmiddleware.RateLimit(cfg.RateLimit),\n") {
+		t.Errorf("server.go missing real middleware wiring (comment-only does not count):\n%s", server)
 	}
-	if !strings.Contains(server, "middleware.StaticLimitOption(") {
+	if !strings.Contains(server, "\t\"github.com/x/demo/internal/base/middleware\"\n") {
+		t.Errorf("server.go missing real middleware import (comment-only does not count):\n%s", server)
+	}
+	if !strings.Contains(server, "\tif opt := middleware.StaticLimitOption(cfg.RateLimit.Static);") {
 		t.Errorf("server.go missing static-limit wiring:\n%s", server)
 	}
 	_ = res
@@ -1406,6 +1418,56 @@ func TestAddInfraRateLimitConfMergeExistingBlock(t *testing.T) {
 	}
 	if !strings.Contains(body, "backend: memory") {
 		t.Errorf("expected backend: memory preserved:\n%s", body)
+	}
+}
+
+// TestMergeKitexRateLimitConfigPreservesNestedKeys exercises the I5 fix:
+// top-level enabled:/mode: are flipped, but nested enabled:/mode: keys inside
+// sub-blocks like pre_auth: must be left untouched.
+func TestMergeKitexRateLimitConfigPreservesNestedKeys(t *testing.T) {
+	src := `env: dev
+rate_limit:
+  enabled: false
+  mode: enforce
+  backend: memory
+  pre_auth:
+    enabled: false
+    default_rule:
+      enabled: true
+      mode: strict
+  post_auth:
+    enabled: false
+`
+	merged, changed := mergeKitexRateLimitConfig(src)
+	if !changed {
+		t.Fatalf("expected merge to report changed")
+	}
+	// Top-level keys flipped:
+	if !strings.Contains(merged, "  enabled: true\n") {
+		t.Errorf("expected top-level enabled: true, got:\n%s", merged)
+	}
+	if !strings.Contains(merged, "  mode: shadow\n") {
+		t.Errorf("expected top-level mode: shadow, got:\n%s", merged)
+	}
+	// Nested pre_auth.enabled must remain false:
+	if !strings.Contains(merged, "    enabled: false\n") {
+		t.Errorf("expected nested pre_auth.enabled: false preserved, got:\n%s", merged)
+	}
+	// Nested post_auth.enabled must remain false:
+	if strings.Count(merged, "    enabled: false\n") < 2 {
+		t.Errorf("expected both nested enabled: false preserved, got:\n%s", merged)
+	}
+	// Nested default_rule.enabled must remain true (untouched):
+	if !strings.Contains(merged, "      enabled: true\n") {
+		t.Errorf("expected nested default_rule.enabled: true preserved, got:\n%s", merged)
+	}
+	// Nested mode: strict must remain (not flipped to shadow):
+	if !strings.Contains(merged, "      mode: strict\n") {
+		t.Errorf("expected nested mode: strict preserved, got:\n%s", merged)
+	}
+	// Backend preserved:
+	if !strings.Contains(merged, "  backend: memory\n") {
+		t.Errorf("expected backend preserved, got:\n%s", merged)
 	}
 }
 

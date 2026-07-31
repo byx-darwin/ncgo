@@ -191,7 +191,12 @@ func wireKitex(root, module, kind string, dryRun bool) (*wireResult, error) {
 		if err != nil {
 			return nil, err
 		}
-		s, err = insertAfterMarkerOrAnyWithPlan(s, "middleware.RateLimit(", markerRateLimitServerMiddleware, []string{
+		// The exists sentinel is the exact inserted form (tab-indented call
+		// followed by newline). The template ships a hint comment
+		// `// middleware.RateLimit(cfg.RateLimit),` which MUST NOT satisfy
+		// this check — prefixing with tabs guarantees only real wired code
+		// matches (the comment has `// ` between the tabs and the call).
+		s, err = insertAfterMarkerOrAnyWithPlan(s, "\t\t\tmiddleware.RateLimit(cfg.RateLimit),\n", markerRateLimitServerMiddleware, []string{
 			"\t\t\tinterceptor.RequestID(),\n",
 		}, "\t\t\tmiddleware.RateLimit(cfg.RateLimit),\n", serverPath, &serverPlan, "insert_ratelimit_middleware", "middleware.RateLimit")
 		if err != nil {
@@ -459,7 +464,7 @@ func addGoImport(src, importPath string) (string, error) {
 
 func addGoImportTracked(src, importPath string) (string, bool, error) {
 	quoted := "\"" + importPath + "\""
-	if strings.Contains(src, quoted) {
+	if importPresentInCode(src, quoted) {
 		return src, false, nil
 	}
 	idx := strings.Index(src, "import (\n")
@@ -468,6 +473,25 @@ func addGoImportTracked(src, importPath string) (string, bool, error) {
 	}
 	insertAt := idx + len("import (\n")
 	return src[:insertAt] + "\t" + quoted + "\n" + src[insertAt:], true, nil
+}
+
+// importPresentInCode reports whether quoted (e.g. "\"github.com/x/foo\"")
+// appears on a non-comment line in src. A line whose trimmed form starts with
+// "//" is a comment and does NOT count — this prevents template hint comments
+// like `// import "github.com/x/foo"` from short-circuiting real import
+// insertion. Comment lines never legitimately contain an import declaration,
+// so this prefilter is safe for all callers.
+func importPresentInCode(src, quoted string) bool {
+	for _, line := range strings.Split(src, "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "//") {
+			continue
+		}
+		if strings.Contains(line, quoted) {
+			return true
+		}
+	}
+	return false
 }
 
 func insertOnceStrict(src, exists, anchor, addition string) (string, error) {

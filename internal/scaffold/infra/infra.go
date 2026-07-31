@@ -748,6 +748,10 @@ func defaultRateLimitConfBlock() string {
 // mergeKitexRateLimitConfig updates an existing conf.yaml. If rate_limit: is
 // missing, appends the default block. If present, sets enabled: true and
 // mode: shadow within the rate_limit scope only. Returns (merged, changed).
+//
+// Only TOP-LEVEL keys within the rate_limit block are flipped — nested keys
+// (e.g. pre_auth.enabled) are left untouched. Top-level keys are identified
+// by having the same indent as the first direct child of rate_limit:.
 func mergeKitexRateLimitConfig(src string) (string, bool) {
 	if !hasTopLevelConfigKey(src, "rate_limit") {
 		trimmed := strings.TrimRight(src, "\n")
@@ -757,11 +761,12 @@ func mergeKitexRateLimitConfig(src string) (string, bool) {
 		return trimmed + "\n\n" + defaultRateLimitConfBlock(), true
 	}
 	// Scoped replacement within rate_limit block. Find the rate_limit:
-	// line and the next top-level key (or EOF). Replace enabled:/mode:
-	// inside that window.
+	// line and the next top-level key (or EOF). Track the indent of the
+	// first direct child so we only flip top-level keys.
 	lines := strings.Split(src, "\n")
 	startIdx := -1
 	endIdx := len(lines)
+	childIndent := -1
 	for i, line := range lines {
 		if startIdx == -1 {
 			if strings.HasPrefix(line, "rate_limit:") {
@@ -778,23 +783,36 @@ func mergeKitexRateLimitConfig(src string) (string, bool) {
 			endIdx = i
 			break
 		}
+		if childIndent == -1 {
+			childIndent = len(line) - len(strings.TrimLeft(line, " \t"))
+		}
 	}
 	if startIdx == -1 {
 		return src, false
 	}
 	changed := false
-	for i := startIdx; i < endIdx; i++ {
-		trimmed := strings.TrimSpace(lines[i])
+	for i := startIdx + 1; i < endIdx; i++ {
+		line := lines[i]
+		if line == "" || strings.HasPrefix(line, "#") {
+			continue
+		}
+		indent := len(line) - len(strings.TrimLeft(line, " \t"))
+		// Only flip direct children of rate_limit: (at childIndent).
+		// Deeper lines belong to nested sub-blocks and must not be touched.
+		if childIndent >= 0 && indent != childIndent {
+			continue
+		}
+		trimmed := strings.TrimSpace(line)
 		if strings.HasPrefix(trimmed, "enabled:") {
 			if !strings.Contains(trimmed, "true") {
-				indent := lines[i][:len(lines[i])-len(strings.TrimLeft(lines[i], " \t"))]
-				lines[i] = indent + "enabled: true"
+				indentStr := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+				lines[i] = indentStr + "enabled: true"
 				changed = true
 			}
 		} else if strings.HasPrefix(trimmed, "mode:") {
 			if !strings.Contains(trimmed, "shadow") {
-				indent := lines[i][:len(lines[i])-len(strings.TrimLeft(lines[i], " \t"))]
-				lines[i] = indent + "mode: shadow"
+				indentStr := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
+				lines[i] = indentStr + "mode: shadow"
 				changed = true
 			}
 		}

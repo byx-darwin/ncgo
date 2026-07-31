@@ -11,10 +11,33 @@ func TestParseBizCode(t *testing.T) {
 		in   string
 		want int
 	}{
+		// Real wire format: kitex BizStatusError over grpcurl.
+		{
+			"kitex biz error wire format",
+			"ERROR:\n  Code: 13\n  Message: rpc error: code = Internal desc = biz error: code=10429, msg=rate limited; retry after 60s\n\n",
+			10429,
+		},
+		{
+			"kitex biz error compact",
+			"rpc error: code = Internal desc = biz error: code=10429, msg=rate limited\n",
+			10429,
+		},
+		// Negative: gRPC status code names (not digits) must NOT match.
+		{
+			"grpc unavailable no biz code",
+			"ERROR:\n  Code: 14\n  Message: rpc error: code = Unavailable desc = connection refused\n\n",
+			0,
+		},
+		{
+			"grpc internal no biz code",
+			"rpc error: code = Internal desc = some other internal error\n",
+			0,
+		},
+		// JSON fallback (grpcurl -type=json or synthetic).
 		{"rate limited json", `{"code":10429,"msg":"rate limited"}` + "\n", 10429},
 		{"no code field", `{"found":false}`, 0},
 		{"malformed non-json", "grpcurl error: connection refused\n", 0},
-		{"regex fallback", `ERROR: transport failed {"code":10429} <trailing garbage`, 10429},
+		{"regex fallback json-in-garbage", `ERROR: transport failed {"code":10429} <trailing garbage`, 10429},
 		{"empty", "", 0},
 	}
 	for _, tc := range cases {

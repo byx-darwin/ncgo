@@ -309,8 +309,10 @@ body: |-
           }
       }
       if c.RateLimit.Enabled {
-          if c.RateLimit.Source.Type != "database" && c.RateLimit.Source.Type != "grpc" {
-              return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("rate_limit.source.type must be database or grpc")
+          switch c.RateLimit.Source.Type {
+          case "", "config", "database", "rule_center", "grpc":
+          default:
+              return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("rate_limit.source.type must be config, database, rule_center, or grpc")
           }
           if c.RateLimit.Source.Type == "grpc" && c.RateLimit.GRPC.Target == "" {
               return goerror.In("config").Code(frameworkerror.CodeConfigInvalid).Public("config_invalid").New("rate_limit.grpc.target is empty")
