@@ -65,6 +65,9 @@ body: |-
   	if bizErr.BizStatusCode() != 10429 {
   		t.Errorf("biz code = %d, want 10429", bizErr.BizStatusCode())
   	}
+  	if v := bizErr.BizExtra()["rl-retry-after"]; v == "" {
+  		t.Errorf("BizExtra[\"rl-retry-after\"] missing; want retry-after hint")
+  	}
   	if store.calls != 1 {
   		t.Errorf("store.calls = %d, want 1", store.calls)
   	}

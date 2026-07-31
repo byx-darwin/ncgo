@@ -39,4 +39,18 @@ body: |-
       if !strings.Contains(bizErr.BizMessage(), "rate limited") {
           t.Errorf("biz message = %q", bizErr.BizMessage())
       }
+      if v, ok := bizErr.BizExtra()[MetaRetryAfter]; !ok || v != "30" {
+          t.Errorf("BizExtra[%q] = %q, want %q", MetaRetryAfter, v, "30")
+      }
+  }
+
+  func TestRateLimitedDefaultRetryAfter(t *testing.T) {
+      err := RateLimited(0)
+      bizErr, ok := kerrors.FromBizStatusError(err)
+      if !ok {
+          t.Fatalf("RateLimited must be a BizStatusError, got %T", err)
+      }
+      if v := bizErr.BizExtra()[MetaRetryAfter]; v != "60" {
+          t.Errorf("BizExtra[%q] = %q, want %q (default)", MetaRetryAfter, v, "60")
+      }
   }

@@ -10,7 +10,6 @@ body: |-
   import (
   	"context"
   	"expvar"
-  	"strconv"
   	"strings"
   	"sync"
   	"time"
@@ -27,9 +26,6 @@ body: |-
   	"{{.Module}}/internal/pkg/ratelimit"
   	"{{.Module}}/internal/pkg/rpcerror"
   )
-
-  // MetaRetryAfter carries the suggested backoff to callers on rejection.
-  const MetaRetryAfter = "rl-retry-after"
 
   var shadowDenied = expvar.NewMap("ratelimit_shadow_denied")
 
@@ -89,7 +85,6 @@ body: |-
   			}
   			if !ok {
   				if enforce {
-  					ctx = metainfo.WithValue(ctx, MetaRetryAfter, retryAfterSeconds(rule))
   					return rpcerror.RateLimited(rule.ClientTTLSeconds.Duration)
   				}
   				shadowDenied.Add(lookup.Service+"/"+lookup.Method, 1)
@@ -109,16 +104,6 @@ body: |-
   	}
   	return kitexserver.WithLimit(&limit.Option{MaxQPS: s.MaxQPS, MaxConnections: s.MaxConnections})
   }
-
-  func retryAfterSeconds(rule conf.RateLimitRuleConfig) string {
-  	d := rule.ClientTTLSeconds.Duration
-  	if d <= 0 {
-  		d = 60 * time.Second
-  	}
-  	return formatInt(int64(d.Seconds()))
-  }
-
-  func formatInt(v int64) string { return strconv.FormatInt(v, 10) }
 
   func lookupFromRPCInfo(ctx context.Context) ratelimit.Lookup {
   	var lookup ratelimit.Lookup
@@ -143,6 +128,10 @@ body: |-
   	return lookup
   }
 
+  // ruleCenterOnce/ruleCenterClient: one rule-center address per process
+  // (standard for generated services). Tests bypass via RateLimitWith;
+  // concurrent RateLimit() calls with differing source types route by each
+  // caller's cfg but share the single client.
   var (
   	ruleCenterOnce   sync.Once
   	ruleCenterClient ratelimit.GRPCClient
