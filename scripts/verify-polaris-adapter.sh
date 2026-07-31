@@ -16,6 +16,7 @@ TESTMOD="${REPO_ROOT}/tools/verifyexamples/polaris-adapter"
 RELEASE_PKG="${TESTMOD}/release"
 ADAPTER_ASSET="${REPO_ROOT}/internal/assets/_data/kitex/optional/polaris_canary_adapter.go"
 CANARY_ASSET="${REPO_ROOT}/internal/assets/_data/optional/release_canary.go"
+OPS_ASSET="${REPO_ROOT}/internal/assets/_data/optional/release_ops.go"
 
 if [[ ! -f "${ADAPTER_ASSET}" ]]; then
   echo "ERROR: adapter asset not found: ${ADAPTER_ASSET}" >&2
@@ -25,12 +26,17 @@ if [[ ! -f "${CANARY_ASSET}" ]]; then
   echo "ERROR: canary seam asset not found: ${CANARY_ASSET}" >&2
   exit 1
 fi
+if [[ ! -f "${OPS_ASSET}" ]]; then
+  echo "ERROR: ops asset not found: ${OPS_ASSET}" >&2
+  exit 1
+fi
 
 mkdir -p "${RELEASE_PKG}"
 
 # Refresh the release package from embedded assets (single source of truth).
 cp "${CANARY_ASSET}" "${RELEASE_PKG}/release_canary.go"
 cp "${ADAPTER_ASSET}" "${RELEASE_PKG}/polaris_canary_adapter.go"
+cp "${OPS_ASSET}" "${RELEASE_PKG}/release_ops.go"
 
 # Substitute any {{.Module}} template placeholders (the adapter is
 # module-agnostic today, but keep this for forward compatibility).
@@ -50,5 +56,8 @@ go mod tidy
 # release.NewPolarisSelector, so the adapter's sdkClient / instanceFromPolaris
 # bodies are fully type-checked against the pinned polaris-go.
 go build ./...
+
+# Run the SDK-neutral ops tests (cache, observer, engine).
+go test ./release/ -count=1
 
 echo "polaris-adapter compile OK"
