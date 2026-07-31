@@ -171,6 +171,8 @@ PolarisDiscoverer (SDK, GetAllInstances 全量)         ← MVP 已有
 
 现有 `scripts/verify-polaris-adapter.sh` 编译级门槛保留；新增 `polaris_canary_observer_otel.go` 需纳入验证模块编译（verify `go.mod` 增 OTel 依赖）。
 
+**Harness 位置细化（Plan 阶段确认）。** 运行时 canary harness + SDK-neutral ops 单测最终未落入 `internal/scaffold/test/canary/`,而是作为**已提交的 Go 测试**放在 verify 模块 `tools/verifyexamples/polaris-adapter/release/`（其中 `harness_test.go` 覆盖 AC5 假实例场景，`ops_test.go` 覆盖 cache/SWR/jitter、fail policy、dry-run、observer）。`scripts/verify-polaris-adapter.sh` 相应从原本的**纯编译级门槛**扩展为**编译 + `go test ./release/ -count=1`**，在 CI 内既校验 adapter 对钉住版 polaris-go 的编译一致，也运行 harness 断言。这与既有 `internal/scaffold/test/ratelimit/` 的 vegeta/docker-compose 形态互补——canary harness 无需活 Polaris，纯 Go 内存驱动即可覆盖分流/降级/dry-run 不变量。
+
 ---
 
 ## 8. 契约 / 测试 / 文档影响

@@ -312,6 +312,52 @@ client option 接入,不走 `do`)。Kitex 侧 add-on 的
   `WithRegistry` / `WithResolver`;不加 `--wire` 时只产出 `polaris.go` 与
   `polaris.yaml`,不修改 base server/client。
 
+#### Release 金丝雀 GA 加固(`release_ops.go`,SDK-neutral)
+
+`ncgo add infra release_canary` 产出 `release_ops.go`(仅 stdlib),在 canonical
+`release_canary.go` seam 之上叠加生产级加固装饰器:
+
+- **TTL 缓存**(`CacheOptions`):默认 TTL 30s / stale-while-revalidate 窗口
+  5m / 刷新抖动 ±20%(`Jitter=0.2`);`StaleTTL=0` 关闭 stale 窗口,负值回落到
+  默认值。同 key 刷新走 single-flight。
+- **FailPolicy(降级语义)**:`FailOpen`(默认)在 discovery / rule 出错时返回
+  上次成功值或空池,保可用;`FailFast` 直接拒绝请求。
+- **Observer(可观测性)**:`SlogObserver`(stdlib `log/slog`,默认)输出结构化
+  决策 / 回退 / discovery / rule 日志;OTel metrics observer 随 `polaris_adapter`
+  一同产出,通过 `NewOTelObserver(meter)` 构造(复用 kitex base 已接入的
+  go-framework OTLP meter)。
+- **Engine + DryRun**:`NewEngine(EngineOptions{...})` 组合 discovery + rules
+  + observation。`DryRun=true` 进入 shadow 模式——记录决策意图但实际流量仍
+  走 stable 池——首次上线新 `RuleSet` 时使用。
+
+**Resolver 可见性说明。** `kitex-contrib/polaris` resolver 使用 `GetInstances`,
+返回的是**路由过滤后的子集**。金丝雀 LB 因此通过
+`KitexCanaryLoadBalancer.Discoverer` 获取**完整的 stable+canary 池**——底层
+是 adapter 的 `GetAllInstances`(已缓存)。当 `Discoverer` 为 nil 时,沿用旧
+的 resolver-based `KitexResultDiscoverer` 路径(向后兼容)。
+
+生成项目中的典型接线:
+
+```go
+lister, _ := release.NewPolarisInstanceLister(discoveryCfg)
+cached := release.NewCachingDiscoverer(
+    release.PolarisDiscoverer{Config: discoveryCfg, ListInstances: lister},
+    release.CacheOptions{}, release.FailOpen, obs)
+lb := release.NewKitexCanaryLoadBalancer("svc", rulesProvider, fallbackLB)
+lb.Discoverer = cached
+lb.Observer = obs
+```
+
+**排障(troubleshooting)。**
+- 注册中心不可达:`FailOpen` 下返回 stale 或空池(保可用);`FailFast` 下
+  调用被拒绝。
+- 指标基数问题已规避:rule 名称**只出现在结构化日志中**,不会成为 metric
+  label。
+- 首次上线新 `RuleSet` 时,将 `EngineOptions.DryRun=true` 开到 shadow 模式,
+  直到 shadow 决策符合预期。
+- 凭证仅环境变量(`POLARIS_TOKEN` / `POLARIS_NAMESPACE`);observer 与错误
+  路径绝不记录。
+
 #### Observability(go-framework OTLP,kitex 基础内置)
 
 kitex 基础模板已经接入 go-framework OTLP,**不需要** `ncgo add infra` 额外

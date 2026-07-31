@@ -332,6 +332,57 @@ longer exists as a standalone add-on.
   `polaris.go` and `polaris.yaml` are emitted and the base server/client
   are untouched.
 
+#### Release Canary GA Hardening (`release_ops.go`, SDK-neutral)
+
+`ncgo add infra release_canary` emits `release_ops.go` (stdlib-only) with
+production-hardening decorators over the canonical `release_canary.go` seam:
+
+- **TTL cache** (`CacheOptions`): defaults TTL 30s / stale-while-revalidate
+  window 5m / refresh jitter ±20% (`Jitter=0.2`); `StaleTTL=0` disables the
+  stale window, negative values reset to the default. Backed by single-flight
+  per-key refresh.
+- **FailPolicy**: `FailOpen` (default) serves the last-known-good value or an
+  empty pool on discovery/rule error — availability-preserving; `FailFast`
+  rejects the request instead.
+- **Observer**: `SlogObserver` (stdlib `log/slog`, default) emits structured
+  decision / fallback / discovery / rule logs; OTel metrics observer emitted
+  alongside `polaris_adapter` via `NewOTelObserver(meter)` (reuses the
+  go-framework OTLP meter already wired into the kitex base).
+- **Engine + DryRun**: `NewEngine(EngineOptions{...})` composes discovery +
+  rules + observation. `DryRun=true` shadows the decision (observe + log the
+  intent) while routing traffic to the stable pool — use when first rolling
+  out a new `RuleSet`.
+
+**Resolver-visibility note.** The `kitex-contrib/polaris` resolver uses
+`GetInstances`, which returns a **routing-filtered subset** of instances. The
+canary LB therefore sources the FULL stable+canary pool via
+`KitexCanaryLoadBalancer.Discoverer` — backed by the adapter's
+`GetAllInstances` (cached). When `Discoverer` is nil, the legacy
+resolver-based `KitexResultDiscoverer` path is preserved (backward
+compatible).
+
+Typical wiring in a generated project:
+
+```go
+lister, _ := release.NewPolarisInstanceLister(discoveryCfg)
+cached := release.NewCachingDiscoverer(
+    release.PolarisDiscoverer{Config: discoveryCfg, ListInstances: lister},
+    release.CacheOptions{}, release.FailOpen, obs)
+lb := release.NewKitexCanaryLoadBalancer("svc", rulesProvider, fallbackLB)
+lb.Discoverer = cached
+lb.Observer = obs
+```
+
+**Troubleshooting.**
+- Registry unreachable under `FailOpen`: serves stale or empty pool
+  (availability preserved); under `FailFast` the call is rejected.
+- High metric cardinality is avoided: the rule name appears in structured
+  logs only, never as a metric label.
+- When first rolling out a new `RuleSet`, set `EngineOptions.DryRun=true`
+  until shadow decisions match expectations.
+- Credentials are env-only (`POLARIS_TOKEN` / `POLARIS_NAMESPACE`); never
+  logged by the observer or error paths.
+
 #### Observability (go-framework OTLP, built into the kitex base)
 
 The kitex base template already wires go-framework OTLP; no extra
