@@ -62,6 +62,26 @@ func TestGenerateGoldenInfraCanary(t *testing.T) {
 	}
 }
 
+// TestGenerateGoldenInfraCanaryKitex locks the canary-release add-on for a Kitex service.
+// It shares the infra-canary/ directory with the Hertz variant so that a single
+// `-run TestGenerateGoldenInfraCanary` regenerates both adapters.
+func TestGenerateGoldenInfraCanaryKitex(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindReleaseCanary, Force: false, DryRun: false})
+	if err != nil {
+		t.Fatalf("Add canary kitex: %v", err)
+	}
+	for _, p := range res.WrittenPaths {
+		base := filepath.Base(p)
+		// Skip the SDK-neutral seam and ops file; they are byte-identical to the
+		// Hertz variant and already locked by TestGenerateGoldenInfraCanary.
+		if base == "canary.go" || base == "ops.go" {
+			continue
+		}
+		golden.File(t, filepath.Join("infra-canary", base), goldenReadFile(t, p))
+	}
+}
+
 // TestGenerateGoldenInfraPolarisAdapter locks the polaris_adapter add-on for a Kitex service.
 func TestGenerateGoldenInfraPolarisAdapter(t *testing.T) {
 	root := seedKitexProject(t, nil)

@@ -3,6 +3,7 @@ package infra
 import (
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -492,8 +493,9 @@ func TestAddReleaseCanaryForHertz(t *testing.T) {
 		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
 	}
 	wantAdapterPath := filepath.Join(root, "internal", "base", "release", "hertz.go")
-	if strings.Join(res.WrittenPaths, "\n") != strings.Join([]string{wantPath, wantAdapterPath}, "\n") {
-		t.Errorf("WrittenPaths = %v, want [%s %s]", res.WrittenPaths, wantPath, wantAdapterPath)
+	wantOpsPath := filepath.Join(root, "internal", "base", "release", "ops.go")
+	if strings.Join(res.WrittenPaths, "\n") != strings.Join([]string{wantPath, wantAdapterPath, wantOpsPath}, "\n") {
+		t.Errorf("WrittenPaths = %v, want [%s %s %s]", res.WrittenPaths, wantPath, wantAdapterPath, wantOpsPath)
 	}
 	body, err := os.ReadFile(wantPath)
 	if err != nil {
@@ -526,6 +528,27 @@ func TestAddReleaseCanaryForHertz(t *testing.T) {
 	}
 }
 
+func TestAddReleaseCanaryEmitsOps(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindReleaseCanary})
+	if err != nil {
+		t.Fatalf("Add release_canary: %v", err)
+	}
+	opsPath := filepath.Join(root, "internal", "base", "release", "ops.go")
+	if !slices.Contains(res.WrittenPaths, opsPath) {
+		t.Fatalf("expected ops.go in WrittenPaths, got %v", res.WrittenPaths)
+	}
+	body, err := os.ReadFile(opsPath)
+	if err != nil {
+		t.Fatalf("read ops.go: %v", err)
+	}
+	for _, want := range []string{"package release", "func NewCachingDiscoverer(", "type Observer interface", "func NewEngine("} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("ops.go missing %q", want)
+		}
+	}
+}
+
 func TestAddCanaryAliasRecordsCanonicalKind(t *testing.T) {
 	root := seedKitexProject(t, nil)
 	res, err := Add(Options{Root: root, Kind: KindCanaryAlias})
@@ -537,8 +560,9 @@ func TestAddCanaryAliasRecordsCanonicalKind(t *testing.T) {
 		t.Errorf("WrittenPath = %q, want %q", res.WrittenPath, wantPath)
 	}
 	wantAdapterPath := filepath.Join(root, "internal", "base", "release", "kitex.go")
-	if strings.Join(res.WrittenPaths, "\n") != strings.Join([]string{wantPath, wantAdapterPath}, "\n") {
-		t.Errorf("WrittenPaths = %v, want [%s %s]", res.WrittenPaths, wantPath, wantAdapterPath)
+	wantOpsPath := filepath.Join(root, "internal", "base", "release", "ops.go")
+	if strings.Join(res.WrittenPaths, "\n") != strings.Join([]string{wantPath, wantAdapterPath, wantOpsPath}, "\n") {
+		t.Errorf("WrittenPaths = %v, want [%s %s %s]", res.WrittenPaths, wantPath, wantAdapterPath, wantOpsPath)
 	}
 	adapterBody, err := os.ReadFile(wantAdapterPath)
 	if err != nil {
@@ -880,6 +904,7 @@ func TestAddCanaryWireDryRunForKitexServerAndClientDoesNotWrite(t *testing.T) {
 	wantWritten := []string{
 		filepath.Join(root, "internal", "base", "release", "canary.go"),
 		filepath.Join(root, "internal", "base", "release", "kitex.go"),
+		filepath.Join(root, "internal", "base", "release", "ops.go"),
 	}
 	if strings.Join(res.WrittenPaths, "\n") != strings.Join(wantWritten, "\n") {
 		t.Fatalf("WrittenPaths = %v, want %v", res.WrittenPaths, wantWritten)
@@ -1653,6 +1678,40 @@ func TestAddInfraPolarisAdapterRejectsHertz(t *testing.T) {
 	_, err := Add(Options{Root: root, Kind: "polaris_adapter"})
 	if err == nil || !strings.Contains(err.Error(), "kitex") {
 		t.Fatalf("want kitex-only error, got %v", err)
+	}
+}
+
+func TestAddInfraPolarisAdapterEmitsOTelObserver(t *testing.T) {
+	root := seedKitexProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindPolarisAdapter})
+	if err != nil {
+		t.Fatalf("Add polaris_adapter: %v", err)
+	}
+	obsPath := filepath.Join(root, "internal", "base", "release", "polaris_observer_otel.go")
+	if !slices.Contains(res.WrittenPaths, obsPath) {
+		t.Fatalf("expected polaris_observer_otel.go in WrittenPaths, got %v", res.WrittenPaths)
+	}
+	body, err := os.ReadFile(obsPath)
+	if err != nil {
+		t.Fatalf("read observer file: %v", err)
+	}
+	for _, want := range []string{
+		"package release",
+		"type OTelObserver struct",
+		"func NewOTelObserver(",
+		"go.opentelemetry.io/otel/metric",
+		"func (o *OTelObserver) ObserveDecision(",
+		"func (o *OTelObserver) ObserveFallback(",
+		"func (o *OTelObserver) ObserveDiscovery(",
+		"func (o *OTelObserver) ObserveRules(",
+	} {
+		if !strings.Contains(string(body), want) {
+			t.Errorf("observer missing %q", want)
+		}
+	}
+	joined := strings.Join(res.NextSteps, "\n")
+	if !strings.Contains(joined, "go get go.opentelemetry.io/otel/metric") {
+		t.Errorf("next-steps missing otel/metric go get:\n%s", joined)
 	}
 }
 

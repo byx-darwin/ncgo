@@ -1,11 +1,13 @@
 #!/usr/bin/env bash
-# Compile-only verification gate for the polaris canary adapter asset.
+# Compile + unit-test verification gate for the polaris canary adapter assets.
 #
 # The adapter (internal/assets/_data/kitex/optional/polaris_canary_adapter.go)
 # is the ONLY place ncgo reconciles with the real polaris-go SDK API. ncgo's
-# own CI has no live Polaris server, so this script copies the asset into a
-# dedicated test module that pins polaris-go and `go build`s it. If this
-# passes, the asset compiles against the pinned SDK version.
+# own CI has no live Polaris server, so this script copies the assets into a
+# dedicated test module that pins polaris-go, runs `go build ./...`, then
+# `go test ./release/ -count=1` for the SDK-neutral ops + OTel observer + the
+# runtime canary harness (AC5). If this passes, the assets compile against the
+# pinned SDK version and the engine/cache/observer invariants hold.
 #
 # Usage: ./scripts/verify-polaris-adapter.sh
 
@@ -16,6 +18,8 @@ TESTMOD="${REPO_ROOT}/tools/verifyexamples/polaris-adapter"
 RELEASE_PKG="${TESTMOD}/release"
 ADAPTER_ASSET="${REPO_ROOT}/internal/assets/_data/kitex/optional/polaris_canary_adapter.go"
 CANARY_ASSET="${REPO_ROOT}/internal/assets/_data/optional/release_canary.go"
+OPS_ASSET="${REPO_ROOT}/internal/assets/_data/optional/release_ops.go"
+OTEL_ASSET="${REPO_ROOT}/internal/assets/_data/kitex/optional/polaris_canary_observer_otel.go"
 
 if [[ ! -f "${ADAPTER_ASSET}" ]]; then
   echo "ERROR: adapter asset not found: ${ADAPTER_ASSET}" >&2
@@ -25,12 +29,22 @@ if [[ ! -f "${CANARY_ASSET}" ]]; then
   echo "ERROR: canary seam asset not found: ${CANARY_ASSET}" >&2
   exit 1
 fi
+if [[ ! -f "${OPS_ASSET}" ]]; then
+  echo "ERROR: ops asset not found: ${OPS_ASSET}" >&2
+  exit 1
+fi
+if [[ ! -f "${OTEL_ASSET}" ]]; then
+  echo "ERROR: otel observer asset not found: ${OTEL_ASSET}" >&2
+  exit 1
+fi
 
 mkdir -p "${RELEASE_PKG}"
 
 # Refresh the release package from embedded assets (single source of truth).
 cp "${CANARY_ASSET}" "${RELEASE_PKG}/release_canary.go"
 cp "${ADAPTER_ASSET}" "${RELEASE_PKG}/polaris_canary_adapter.go"
+cp "${OPS_ASSET}" "${RELEASE_PKG}/release_ops.go"
+cp "${OTEL_ASSET}" "${RELEASE_PKG}/polaris_canary_observer_otel.go"
 
 # Substitute any {{.Module}} template placeholders (the adapter is
 # module-agnostic today, but keep this for forward compatibility).
@@ -51,4 +65,7 @@ go mod tidy
 # bodies are fully type-checked against the pinned polaris-go.
 go build ./...
 
-echo "polaris-adapter compile OK"
+# Run the SDK-neutral ops tests (cache, observer, engine).
+go test ./release/ -count=1
+
+echo "polaris-adapter compile + unit OK"
