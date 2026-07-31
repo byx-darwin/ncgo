@@ -136,18 +136,16 @@ func writeHertzTemplate(dir string, opts Options) error {
 	}
 	// Generate rule center client when address is provided
 	if opts.RuleCenterAddr != "" {
-		b, err := fs.ReadFile(srcFS, "hertz/optional/rule_center_client.go")
+		b, err := readSharedFragmentBody(srcFS, "ratelimit/rule_center_client", opts.Module)
 		if err != nil {
-			return fmt.Errorf("scaffold: read embedded hertz/optional/rule_center_client.go: %w", err)
+			return fmt.Errorf("scaffold: %w", err)
 		}
-		// Render {{.GoModule}} placeholder
-		rendered := strings.ReplaceAll(string(b), "{{.GoModule}}", opts.Module)
 		targetDir := filepath.Join(dir, "internal", "pkg", "middleware")
 		if err := os.MkdirAll(targetDir, 0o755); err != nil {
 			return fmt.Errorf("scaffold: mkdir %s: %w", targetDir, err)
 		}
 		target := filepath.Join(targetDir, "rule_center_client.go")
-		if err := os.WriteFile(target, []byte(rendered), 0o644); err != nil {
+		if err := os.WriteFile(target, b, 0o644); err != nil {
 			return fmt.Errorf("scaffold: write rule_center_client.go: %w", err)
 		}
 	}
@@ -285,6 +283,23 @@ func renderSharedFragment(srcFS fs.FS, name string) ([]string, error) {
 		entry = append(entry, "      "+bl)
 	}
 	return entry, nil
+}
+
+// readSharedFragmentBody reads a shared fragment yaml (canonical kitex format:
+// path/update_behavior/body fields, body 2-space indented, {{.Module}}
+// placeholder) and returns the body with the module placeholder rendered.
+func readSharedFragmentBody(srcFS fs.FS, name, module string) ([]byte, error) {
+	b, err := fs.ReadFile(srcFS, name+".yaml")
+	if err != nil {
+		return nil, fmt.Errorf("read shared fragment %s: %w", name, err)
+	}
+	var frag struct {
+		Body string `yaml:"body"`
+	}
+	if err := yaml.Unmarshal(b, &frag); err != nil {
+		return nil, fmt.Errorf("parse shared fragment %s: %w", name, err)
+	}
+	return []byte(strings.ReplaceAll(frag.Body, "{{.Module}}", module)), nil
 }
 
 // writeKitexGoMod pre-writes the project go.mod for a kitex scaffold so the

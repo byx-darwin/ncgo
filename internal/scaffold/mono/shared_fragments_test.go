@@ -19,6 +19,7 @@ func TestSharedRateLimitFragmentsParse(t *testing.T) {
 	}{
 		{"ratelimit/resolver", "internal/pkg/ratelimit/resolver.go", "func NewResolver("},
 		{"ratelimit/resolver_test", "internal/pkg/ratelimit/resolver_test.go", "func TestResolver"},
+		{"ratelimit/rule_center_client", "internal/pkg/middleware/rule_center_client.go", "func NewRuleCenterClient("},
 	} {
 		b, err := fs.ReadFile(srcFS, frag.name+".yaml")
 		if err != nil {

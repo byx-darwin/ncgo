@@ -11,6 +11,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"gopkg.in/yaml.v3"
 )
 
 // Options describes a `ncgo add rule-center` invocation.
@@ -87,12 +88,11 @@ func Add(opts Options) (*Result, error) {
 
 func writeRuleCenterClient(opts Options, m *manifest.Manifest) (string, error) {
 	srcFS := assets.FS()
-	b, err := fs.ReadFile(srcFS, "hertz/optional/rule_center_client.go")
+	b, err := readSharedFragmentBody(srcFS, "ratelimit/rule_center_client", m.Module)
 	if err != nil {
-		return "", fmt.Errorf("read embedded template: %w", err)
+		return "", err
 	}
 
-	rendered := strings.ReplaceAll(string(b), "{{.GoModule}}", m.Module)
 	targetDir := filepath.Join(opts.Root, "internal", "pkg", "middleware")
 	target := filepath.Join(targetDir, "rule_center_client.go")
 
@@ -106,12 +106,29 @@ func writeRuleCenterClient(opts Options, m *manifest.Manifest) (string, error) {
 		if err := os.MkdirAll(targetDir, 0o755); err != nil {
 			return "", fmt.Errorf("mkdir %s: %w", targetDir, err)
 		}
-		if err := os.WriteFile(target, []byte(rendered), 0o644); err != nil {
+		if err := os.WriteFile(target, b, 0o644); err != nil {
 			return "", fmt.Errorf("write %s: %w", target, err)
 		}
 	}
 
 	return target, nil
+}
+
+// readSharedFragmentBody reads a shared fragment yaml (canonical kitex format:
+// path/update_behavior/body fields, body 2-space indented, {{.Module}}
+// placeholder) and returns the body with the module placeholder rendered.
+func readSharedFragmentBody(srcFS fs.FS, name, module string) ([]byte, error) {
+	b, err := fs.ReadFile(srcFS, name+".yaml")
+	if err != nil {
+		return nil, fmt.Errorf("read shared fragment %s: %w", name, err)
+	}
+	var frag struct {
+		Body string `yaml:"body"`
+	}
+	if err := yaml.Unmarshal(b, &frag); err != nil {
+		return nil, fmt.Errorf("parse shared fragment %s: %w", name, err)
+	}
+	return []byte(strings.ReplaceAll(frag.Body, "{{.Module}}", module)), nil
 }
 
 func updateConfForRuleCenter(path, addr string) error {
