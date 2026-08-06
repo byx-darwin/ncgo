@@ -177,6 +177,12 @@ func writeKitexTemplate(dir string, preset string, module string) error {
 		if preset != "rule-center" && strings.HasPrefix(name, "ratelimit_") {
 			continue
 		}
+		// Rule-center preset provides its own ratelimit_handler/usecase/repository
+		// templates under the rulecenter/ dirs; skip the default per-layer templates
+		// so they don't generate duplicate ruleservice/ scaffolding.
+		if preset == "rule-center" && (name == "handler.yaml" || name == "usecase.yaml" || name == "repository.yaml") {
+			continue
+		}
 		b, err := fs.ReadFile(srcFS, "kitex/kitex-template/"+name)
 		if err != nil {
 			return fmt.Errorf("scaffold: read embedded kitex/kitex-template/%s: %w", name, err)
