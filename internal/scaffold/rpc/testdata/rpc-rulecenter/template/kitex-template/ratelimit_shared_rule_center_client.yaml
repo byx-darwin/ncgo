@@ -37,7 +37,7 @@ body: |
   	"github.com/byx-darwin/go-tools/go-framework/config"
   	"{{.Module}}/internal/base/conf"
   	"{{.Module}}/internal/pkg/ratelimit"
-  	"{{.Module}}/kitex_gen/ratelimit/v1"
+  	"{{.Module}}/kitex_gen/api/ratelimit/v1"
   )
 
   // RuleCenterConfig mirrors the timeout pattern of Kitex's generated

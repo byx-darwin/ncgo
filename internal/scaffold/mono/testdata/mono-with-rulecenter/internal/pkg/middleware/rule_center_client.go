@@ -30,7 +30,7 @@ import (
 	"github.com/byx-darwin/go-tools/go-framework/config"
 	"github.com/x/demo/internal/base/conf"
 	"github.com/x/demo/internal/pkg/ratelimit"
-	"github.com/x/demo/kitex_gen/ratelimit/v1"
+	"github.com/x/demo/kitex_gen/api/ratelimit/v1"
 )
 
 // RuleCenterConfig mirrors the timeout pattern of Kitex's generated

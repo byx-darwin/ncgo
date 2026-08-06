@@ -47,7 +47,7 @@ body: |-
     int64 id = 1;
     optional bool enabled = 2;
     optional int32 priority = 3;
-    optional repeated string key_by = 4;
+    repeated string key_by = 4;
     optional string strategy = 5;
     optional int32 window_seconds = 6;
     optional int32 max_requests = 7;

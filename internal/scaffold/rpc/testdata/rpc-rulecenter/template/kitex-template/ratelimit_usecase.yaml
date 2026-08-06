@@ -13,7 +13,7 @@ body: |-
       "strings"
 
       goerror "github.com/byx-darwin/go-tools/go-common/error"
-      ratelimitv1 "{{.Module}}/api/ratelimit/v1"
+      ratelimitv1 "{{.Module}}/kitex_gen/api/ratelimit/v1"
       "{{.Module}}/internal/db/gen"
   )
 
