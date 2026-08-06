@@ -11,7 +11,7 @@ body: |-
       "context"
 
       "{{.Module}}/internal/pkg/rpcerror"
-      ratelimitv1 "{{.Module}}/api/ratelimit/v1"
+      ratelimitv1 "{{.Module}}/kitex_gen/api/ratelimit/v1"
       usecase "{{.Module}}/internal/usecase/rulecenter"
   )
 
