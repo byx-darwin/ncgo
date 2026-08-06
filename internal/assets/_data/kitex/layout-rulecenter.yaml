@@ -14,7 +14,7 @@ templates:
   - kitex-template/ratelimit_usecase.yaml
   - kitex-template/ratelimit_repository.yaml
   - kitex-template/conf.yaml
-  - kitex-template/server.yaml
+  - kitex-template/ratelimit_server.yaml
   - kitex-template/main.yaml
   - kitex-template/data.yaml
   - kitex-template/rpcerror.yaml
