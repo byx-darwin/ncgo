@@ -9,7 +9,10 @@ update_behavior:
 body: |
   APP_NAME = {{.ServiceInfo.ServiceName | ToLower}}-rpc
   MODULE   = {{.Module}}
-  IDL_FILE = idl/{{.ServiceInfo.ServiceName | ToLower}}.proto
+  # {{.IDLName}} is the basename of the IDL file kitex is processing, so the
+  # update target always re-runs against the same proto (e.g. the rule-center
+  # preset's idl/rule-center.proto, which has no ServiceName-derived name).
+  IDL_FILE = idl/{{.IDLName}}
   GOOSE_DRIVER ?= postgres
   MIGRATIONS_DIR ?= internal/db/migrations
   DATABASE_URL ?=

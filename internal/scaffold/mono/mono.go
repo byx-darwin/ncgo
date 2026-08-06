@@ -85,11 +85,12 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if idl == "" {
 		idl = defaultIDL(opts)
 	}
-	// Rule-center preset overrides default IDL to use rule-center.proto.
+	// Rule-center preset always uses its own preset IDL; the per-file
+	// ratelimit_proto.yaml template renders the same proto into idl/rule-center.proto,
+	// and writeIDLPlaceholder writes the full proto at scaffold time so kitex
+	// parses it on its first run.
 	if opts.Preset == "rule-center" {
-		if idl == "" || strings.HasSuffix(idl, "svc.proto") {
-			idl = filepath.ToSlash(filepath.Join("idl", "rule-center.proto"))
-		}
+		idl = filepath.ToSlash(filepath.Join("idl", "rule-center.proto"))
 	}
 	if err := writeTemplate(dir, opts); err != nil {
 		return nil, err

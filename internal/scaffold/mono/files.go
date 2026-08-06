@@ -451,6 +451,12 @@ func copyHertzTemplateYAML(dir string, srcFS fs.FS) error {
 // Hertz follows the official api.proto + openapi annotation proto + service
 // proto structure so `hz new` and Swagger generation can work out of the box;
 // Kitex keeps its single service-named proto consumed by the kitex tool.
+//
+// The rule-center preset is special: its real proto lives in the
+// ratelimit_proto.yaml kitex template, so instead of an empty placeholder we
+// write the full preset proto at scaffold time. That way kitex parses the real
+// IDL (kitex_gen/api/ratelimit/v1) on its first run instead of only after the
+// user runs `make update`. Any IDL that already exists on disk is left alone.
 func writeIDLPlaceholder(dir, idl string, opts Options) error {
 	if defaultKind(opts.Kind) == manifest.KindHertz {
 		if err := writeHertzProtoSupportFiles(dir); err != nil {
@@ -461,11 +467,44 @@ func writeIDLPlaceholder(dir, idl string, opts Options) error {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(full), err)
 	}
+	if opts.Preset == "rule-center" && filepath.ToSlash(idl) == "idl/rule-center.proto" {
+		body, err := ruleCenterIDLBody(assets.FS())
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(full, body, 0o644); err != nil {
+			return fmt.Errorf("scaffold: write %s: %w", idl, err)
+		}
+		return nil
+	}
+	// Never clobber an IDL that already exists on disk (e.g. one produced by a
+	// preset template or a previous generate step).
+	if _, err := os.Stat(full); err == nil {
+		return nil
+	}
 	body := renderIDLPlaceholder(opts)
 	if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
 		return fmt.Errorf("scaffold: write %s: %w", full, err)
 	}
 	return nil
+}
+
+// ruleCenterIDLBody extracts the preset proto body from the embedded
+// ratelimit_proto.yaml kitex template so the full IDL exists before kitex
+// renders templates. The template body is static proto (no placeholders), so
+// the rendered bytes match what kitex itself writes on the `update` target.
+func ruleCenterIDLBody(srcFS fs.FS) ([]byte, error) {
+	b, err := fs.ReadFile(srcFS, "kitex/kitex-template/ratelimit_proto.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("scaffold: read embedded ratelimit_proto.yaml: %w", err)
+	}
+	var tpl struct {
+		Body string `yaml:"body"`
+	}
+	if err := yaml.Unmarshal(b, &tpl); err != nil {
+		return nil, fmt.Errorf("scaffold: parse ratelimit_proto.yaml: %w", err)
+	}
+	return []byte(tpl.Body), nil
 }
 
 func writeHertzProtoSupportFiles(dir string) error {

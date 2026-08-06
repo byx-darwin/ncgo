@@ -7,5 +7,5 @@ service:
     name: user-rpc
     kind: kitex
     with_database: false
-    idl: idl/userrpc.proto
+    idl: idl/rule-center.proto
 generated_at: 2026-04-29T08:30:00Z

@@ -1,8 +1,0 @@
-syntax = "proto3";
-
-package userrpc;
-
-option go_package = "github.com/acme/commerce/services/user-rpc/kitex_gen/userrpc;userrpc";
-
-service UserRpc {
-}
