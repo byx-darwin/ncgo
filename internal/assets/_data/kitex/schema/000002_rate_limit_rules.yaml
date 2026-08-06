@@ -1,4 +1,3 @@
-# Kitex rule-center preset — rate_limit_rules table schema
 path: internal/db/schema/000002_rate_limit_rules.sql
 update_behavior:
   type: cover

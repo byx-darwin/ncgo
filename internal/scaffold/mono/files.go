@@ -90,7 +90,7 @@ extend google.protobuf.MessageOptions {
 // reads its variables inline so no extra file is needed.
 func writeTemplate(dir string, opts Options) error {
 	if defaultKind(opts.Kind) == manifest.KindKitex {
-		return writeKitexTemplate(dir, opts.Preset)
+		return writeKitexTemplate(dir, opts.Preset, opts.Module)
 	}
 	return writeHertzTemplate(dir, opts)
 }
@@ -158,7 +158,7 @@ func writeHertzTemplate(dir string, opts Options) error {
 // scaffold) and the generated Makefile's `update` target can consume
 // them at the same path. When a preset is specified, it also writes
 // preset-specific layout and extra files.
-func writeKitexTemplate(dir string, preset string) error {
+func writeKitexTemplate(dir string, preset string, module string) error {
 	tplDir := filepath.Join(dir, "template", "kitex-template")
 	if err := os.MkdirAll(tplDir, 0o755); err != nil {
 		return fmt.Errorf("scaffold: mkdir %s: %w", tplDir, err)
@@ -195,12 +195,19 @@ func writeKitexTemplate(dir string, preset string) error {
 	}
 	// Rule-center preset adds additional schema and query files.
 	if preset == "rule-center" {
-		extras = append(extras,
-			struct{ asset, path string }{
-				asset: "kitex/schema/000002_rate_limit_rules.sql",
-				path:  "internal/db/schema/000002_rate_limit_rules.sql",
-			},
-		)
+		// Write the rate_limit_rules schema as pure SQL, stripping the YAML
+		// frontmatter that would otherwise break sqlc parsing.
+		b, err := shared.ReadSharedFragmentBody(srcFS, "kitex/schema/000002_rate_limit_rules", module)
+		if err != nil {
+			return fmt.Errorf("scaffold: read rule-center schema: %w", err)
+		}
+		full := filepath.Join(dir, "internal", "db", "schema", "000002_rate_limit_rules.sql")
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return fmt.Errorf("scaffold: mkdir schema: %w", err)
+		}
+		if err := os.WriteFile(full, b, 0o644); err != nil {
+			return fmt.Errorf("scaffold: write schema: %w", err)
+		}
 		// Copy shared ratelimit fragments into the kitex-template dir as
 		// ratelimit_shared_*.yaml so the existing ratelimit_ prefix filter
 		// copies them only for the rule-center preset. The layout-rulecenter.yaml
