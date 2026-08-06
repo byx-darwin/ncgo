@@ -12,7 +12,6 @@ body: |-
       "regexp"
       "strings"
 
-      goerror "github.com/byx-darwin/go-tools/go-common/error"
       ratelimitv1 "{{.Module}}/kitex_gen/api/ratelimit/v1"
       "{{.Module}}/internal/db/gen"
   )
@@ -20,10 +19,10 @@ body: |-
   // RuleRepo defines the data-access port for rate-limit rules.
   // Implement it in internal/repository/rulecenter/.
   type RuleRepo interface {
-      GetRateLimitExactRuleByAppKey(ctx context.Context, service, phase, method, path, appKey string) (*gen.RateLimitRule, error)
-      GetRateLimitExactRuleFallback(ctx context.Context, service, phase, method, path string) (*gen.RateLimitRule, error)
-      GetRateLimitPatternRuleByAppKey(ctx context.Context, service, phase, method, appKey string) ([]gen.RateLimitRule, error)
-      GetRateLimitPatternRuleFallback(ctx context.Context, service, phase, method string) ([]gen.RateLimitRule, error)
+      GetRateLimitExactRuleByAppKey(ctx context.Context, service, phase, method, path, appKey string) (gen.RateLimitRule, error)
+      GetRateLimitExactRuleFallback(ctx context.Context, service, phase, method, path string) (gen.RateLimitRule, error)
+      GetRateLimitPatternRuleByAppKey(ctx context.Context, service, phase, method, path, appKey string) ([]gen.RateLimitRule, error)
+      GetRateLimitPatternRuleFallback(ctx context.Context, service, phase, method, path string) ([]gen.RateLimitRule, error)
       CreateRateLimitRule(ctx context.Context, arg gen.CreateRateLimitRuleParams) (int64, error)
       UpdateRateLimitRule(ctx context.Context, arg gen.UpdateRateLimitRuleParams) error
       DeleteRateLimitRule(ctx context.Context, id int64) error
@@ -50,24 +49,24 @@ body: |-
       }
       // Try exact match with app_key
       if ak != "" {
-          if rule, err := uc.repo.GetRateLimitExactRuleByAppKey(ctx, service, phase, method, path, ak); err == nil && rule != nil {
-              return toProto(rule), true, nil
+          if rule, err := uc.repo.GetRateLimitExactRuleByAppKey(ctx, service, phase, method, path, ak); err == nil {
+              return toProto(&rule), true, nil
           }
       }
       // Try exact match fallback (app_key IS NULL)
-      if rule, err := uc.repo.GetRateLimitExactRuleFallback(ctx, service, phase, method, path); err == nil && rule != nil {
-          return toProto(rule), true, nil
+      if rule, err := uc.repo.GetRateLimitExactRuleFallback(ctx, service, phase, method, path); err == nil {
+          return toProto(&rule), true, nil
       }
       // Try pattern match with app_key
       if ak != "" {
-          if rules, err := uc.repo.GetRateLimitPatternRuleByAppKey(ctx, service, phase, method, ak); err == nil && len(rules) > 0 {
+          if rules, err := uc.repo.GetRateLimitPatternRuleByAppKey(ctx, service, phase, method, path, ak); err == nil && len(rules) > 0 {
               if r := pickBestPattern(rules, path); r != nil {
                   return toProto(r), true, nil
               }
           }
       }
       // Try pattern match fallback
-      if rules, err := uc.repo.GetRateLimitPatternRuleFallback(ctx, service, phase, method); err == nil && len(rules) > 0 {
+      if rules, err := uc.repo.GetRateLimitPatternRuleFallback(ctx, service, phase, method, path); err == nil && len(rules) > 0 {
           if r := pickBestPattern(rules, path); r != nil {
               return toProto(r), true, nil
           }
@@ -95,9 +94,9 @@ body: |-
           Strategy:          req.Strategy,
           WindowSeconds:     int32(req.WindowSeconds),
           MaxRequests:       int32(req.MaxRequests),
-          RequestsPerSecond: req.RequestsPerSecond,
-          Burst:             int32(req.Burst),
-          ClientTtlSeconds:  int32(req.ClientTtlSeconds),
+          RequestsPerSecond: float64Ptr(req.RequestsPerSecond),
+          Burst:             int32Ptr(req.Burst),
+          ClientTtlSeconds:  int32Ptr(req.ClientTtlSeconds),
       })
   }
 
@@ -105,28 +104,28 @@ body: |-
   func (uc *UseCase) UpdateRule(ctx context.Context, req *ratelimitv1.UpdateRuleRequest) error {
       arg := gen.UpdateRateLimitRuleParams{ID: req.Id}
       if req.Enabled != nil {
-          arg.Enabled = *req.Enabled
+          arg.Enabled = req.Enabled
       }
       if req.Priority != nil {
-          arg.Priority = *req.Priority
+          arg.Priority = req.Priority
       }
       if req.Strategy != nil {
-          arg.Strategy = *req.Strategy
+          arg.Strategy = req.Strategy
       }
       if req.WindowSeconds != nil {
-          arg.WindowSeconds = *req.WindowSeconds
+          arg.WindowSeconds = req.WindowSeconds
       }
       if req.MaxRequests != nil {
-          arg.MaxRequests = *req.MaxRequests
+          arg.MaxRequests = req.MaxRequests
       }
       if req.RequestsPerSecond != nil {
-          arg.RequestsPerSecond = *req.RequestsPerSecond
+          arg.RequestsPerSecond = req.RequestsPerSecond
       }
       if req.Burst != nil {
-          arg.Burst = *req.Burst
+          arg.Burst = req.Burst
       }
       if req.ClientTtlSeconds != nil {
-          arg.ClientTtlSeconds = *req.ClientTtlSeconds
+          arg.ClientTtlSeconds = req.ClientTtlSeconds
       }
       if req.KeyBy != nil {
           arg.KeyBy = req.KeyBy
@@ -149,7 +148,10 @@ body: |-
       if phase != nil {
           ph = *phase
       }
-      rules, err := uc.repo.ListRateLimitRules(ctx, gen.ListRateLimitRulesParams{Service: svc, Phase: ph})
+      rules, err := uc.repo.ListRateLimitRules(ctx, gen.ListRateLimitRulesParams{
+          Service: appKeyPtr(svc),
+          Phase:   appKeyPtr(ph),
+      })
       if err != nil {
           return nil, err
       }
@@ -172,21 +174,49 @@ body: |-
           MatchKind:         r.MatchKind,
           Path:              r.Path,
           PathPattern:       r.PathPattern,
-          AppKey:            ptrString(r.AppKey),
+          AppKey:            r.AppKey,
           Priority:          int32(r.Priority),
           Enabled:           r.Enabled,
           KeyBy:             r.KeyBy,
           Strategy:          r.Strategy,
           WindowSeconds:     int32(r.WindowSeconds),
           MaxRequests:       int32(r.MaxRequests),
-          RequestsPerSecond: r.RequestsPerSecond,
-          Burst:             int32(r.Burst),
-          ClientTtlSeconds:  int32(r.ClientTtlSeconds),
+          RequestsPerSecond: derefFloat64(r.RequestsPerSecond),
+          Burst:             derefInt32(r.Burst),
+          ClientTtlSeconds:  derefInt32(r.ClientTtlSeconds),
       }
   }
 
-  func ptrString(s string) *string { return &s }
-  func appKeyPtr(s string) *string { if s == "" { return nil }; return &s }
+  func appKeyPtr(s string) *string {
+      if s == "" {
+          return nil
+      }
+      return &s
+  }
+
+  // float64Ptr converts a plain float64 to a pointer, matching sqlc's
+  // nullable *float64 CreateRateLimitRuleParams fields.
+  func float64Ptr(v float64) *float64 { return &v }
+
+  // int32Ptr converts a plain int32 to a pointer, matching sqlc's nullable
+  // *int32 CreateRateLimitRuleParams fields (burst, client_ttl_seconds).
+  func int32Ptr(v int32) *int32 { return &v }
+
+  // derefFloat64 returns the value of a nullable *float64, or 0 when nil.
+  func derefFloat64(v *float64) float64 {
+      if v == nil {
+          return 0
+      }
+      return *v
+  }
+
+  // derefInt32 returns the value of a nullable *int32, or 0 when nil.
+  func derefInt32(v *int32) int32 {
+      if v == nil {
+          return 0
+      }
+      return *v
+  }
 
   func pickBestPattern(rules []gen.RateLimitRule, path string) *gen.RateLimitRule {
       for i := range rules {

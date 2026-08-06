@@ -37,15 +37,15 @@ body: |-
       })
   }
 
-  func (r *Repo) GetRateLimitPatternRuleByAppKey(ctx context.Context, service, phase, method, appKey string) ([]gen.RateLimitRule, error) {
+  func (r *Repo) GetRateLimitPatternRuleByAppKey(ctx context.Context, service, phase, method, path, appKey string) ([]gen.RateLimitRule, error) {
       return r.q.GetRateLimitPatternRuleByAppKey(ctx, gen.GetRateLimitPatternRuleByAppKeyParams{
-          Service: service, Phase: phase, Method: method, AppKey: strPtrOrNil(appKey),
+          Service: service, Phase: phase, Method: method, Path: path, AppKey: strPtrOrNil(appKey),
       })
   }
 
-  func (r *Repo) GetRateLimitPatternRuleFallback(ctx context.Context, service, phase, method string) ([]gen.RateLimitRule, error) {
+  func (r *Repo) GetRateLimitPatternRuleFallback(ctx context.Context, service, phase, method, path string) ([]gen.RateLimitRule, error) {
       return r.q.GetRateLimitPatternRuleFallback(ctx, gen.GetRateLimitPatternRuleFallbackParams{
-          Service: service, Phase: phase, Method: method,
+          Service: service, Phase: phase, Method: method, Path: path,
       })
   }
 
