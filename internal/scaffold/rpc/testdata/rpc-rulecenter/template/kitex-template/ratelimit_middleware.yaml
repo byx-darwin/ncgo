@@ -23,6 +23,7 @@ body: |-
   	"github.com/redis/go-redis/v9"
 
   	"{{.Module}}/internal/base/conf"
+  	pkgmiddleware "{{.Module}}/internal/pkg/middleware"
   	"{{.Module}}/internal/pkg/ratelimit"
   	"{{.Module}}/internal/pkg/rpcerror"
   )
@@ -105,7 +106,7 @@ body: |-
   	// 	return nil
   	// }
   	// return kitexserver.WithLimit(&limit.Option{MaxQPS: s.MaxQPS, MaxConnections: s.MaxConnections})
-  	return nil
+  	return kitexserver.Option{}
   }
 
   func lookupFromRPCInfo(ctx context.Context) ratelimit.Lookup {
@@ -124,7 +125,7 @@ body: |-
   			}
   		}
   	}
-  	if v := metainfo.GetPersistentValue(ctx, "x-caller-service"); v != "" {
+  	if v, _ := metainfo.GetPersistentValue(ctx, "x-caller-service"); v != "" {
   		lookup.AppKey = v
   	}
   	lookup.Phase = "post_auth"
@@ -151,7 +152,7 @@ body: |-
   			if addr == "" {
   				return
   			}
-  			cli, err := NewRuleCenterClient(addr)
+  			cli, err := pkgmiddleware.NewRuleCenterClient(addr)
   			if err != nil {
   				klog.Warnf("ratelimit: rule-center client init failed: %v (falling back to local rules)", err)
   				return
