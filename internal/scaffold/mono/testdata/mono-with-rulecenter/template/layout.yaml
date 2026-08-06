@@ -2879,15 +2879,6 @@ layouts:
           candidate.MatchKind = strings.ToLower(strings.TrimSpace(candidate.MatchKind))
           candidate.Path = strings.TrimSpace(candidate.Path)
           candidate.PathPattern = strings.TrimSpace(candidate.PathPattern)
-          candidate.PathPrefix = strings.TrimSpace(candidate.PathPrefix)
-          if candidate.PathPrefix != "" {
-              if candidate.MatchKind == "" {
-                  candidate.MatchKind = "prefix"
-              }
-              if candidate.PathPattern == "" {
-                  candidate.PathPattern = candidate.PathPrefix
-              }
-          }
           if candidate.MatchKind == "" {
               switch {
               case candidate.Path != "":
