@@ -96,8 +96,9 @@ body: |-
   	}
   }
 
-  // StaticLimitOption returns kitexserver.WithLimit as a coarse global safety
-  // net, or nil when both limits are zero (default: not mounted).
+  // StaticLimitOption is a coarse global safety net for server-level QPS/connection
+  // limits. Currently returns nil — the kitex server/limit package is unavailable
+  // in Kitex v0.16.3 (see TODO above); re-enable when it becomes available.
   // TODO: Re-enable when kitex server/limit package is available
   func StaticLimitOption(s conf.StaticLimitConfig) kitexserver.Option {
   	// if s.MaxQPS <= 0 && s.MaxConnections <= 0 {
