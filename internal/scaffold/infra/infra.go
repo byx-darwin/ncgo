@@ -530,14 +530,6 @@ func assetPath(serviceKind, infraKind string) (string, error) {
 	}
 }
 
-func outputPath(root, kind string) (string, error) {
-	rel, ok := outputRelPaths[kind]
-	if !ok {
-		return "", fmt.Errorf("infra: kind %q has no output path", kind)
-	}
-	return filepath.Join(root, rel), nil
-}
-
 func plannedFileAction(path string, force bool) (string, error) {
 	if _, err := os.Stat(path); err == nil && !force {
 		return "", fmt.Errorf("infra: %s already exists; rerun with --force to overwrite", path)

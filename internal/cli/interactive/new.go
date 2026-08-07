@@ -28,7 +28,6 @@ type model struct {
 	step     int // 0=module, 1=kind, 2=database, 3=confirm
 	input    textinput.Model
 	quitting bool
-	err      error
 }
 
 // NewModel creates a new interactive flow model for the given service name.

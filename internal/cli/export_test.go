@@ -34,7 +34,8 @@ func seedExportProject(t *testing.T, kind string) string {
 	// Create files needed for export. The template rules match specific paths.
 	// For Hertz: main.go, conf/dev/conf.yaml, internal/base/conf/conf.go,
 	//   internal/base/server/server.go, internal/router/**/*.go, internal/pkg/**/*.go
-	if kind == manifest.KindHertz {
+	switch kind {
+	case manifest.KindHertz:
 		writeFile(t, root, "main.go", "package main\n")
 		writeFile(t, root, "conf/dev/conf.yaml", "server:\n  host: localhost\n")
 		writeFile(t, root, "internal/base/conf/conf.go", "package conf\n")
@@ -43,7 +44,7 @@ func seedExportProject(t *testing.T, kind string) string {
 		writeFile(t, root, "internal/router/demo/router.go", "package router\n")
 		writeFile(t, root, "internal/pkg/utils/helper.go", "package utils\n")
 		writeFile(t, root, "internal/base/logging/log.go", "package logging\n")
-	} else if kind == manifest.KindKitex {
+	case manifest.KindKitex:
 		writeFile(t, root, "main.go", "package main\n")
 		writeFile(t, root, "conf/dev/conf.yaml", "server:\n  host: localhost\n")
 		writeFile(t, root, "internal/base/conf/conf.go", "package conf\n")

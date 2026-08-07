@@ -141,7 +141,7 @@ func Run() {
 	if markerIdx < 0 || logCfgIdx < 0 || hIdx < 0 {
 		t.Fatal("could not find expected tokens in output")
 	}
-	if !(markerIdx < logCfgIdx && logCfgIdx < hIdx) {
+	if markerIdx >= logCfgIdx || logCfgIdx >= hIdx {
 		t.Error("inserted statements should be between marker and h := server.Default()")
 	}
 }
@@ -300,7 +300,7 @@ func Run() {
 	if reqIDIdx < 0 || trafficIdx < 0 || accessIdx < 0 {
 		t.Fatal("could not find expected tokens in output")
 	}
-	if !(reqIDIdx < trafficIdx && trafficIdx < accessIdx) {
+	if reqIDIdx >= trafficIdx || trafficIdx >= accessIdx {
 		t.Errorf("expected: RequestID < KitexTraffic < AccessLog\ngot idx: %d < %d < %d", reqIDIdx, trafficIdx, accessIdx)
 	}
 }
@@ -689,7 +689,7 @@ func Run() {
 	reqIDIdx := strings.Index(output, "interceptor.RequestID()")
 	trafficIdx := strings.Index(output, "release.KitexTraffic()")
 	accessIdx := strings.Index(output, "interceptor.AccessLog()")
-	if !(reqIDIdx < trafficIdx && trafficIdx < accessIdx) {
+	if reqIDIdx >= trafficIdx || trafficIdx >= accessIdx {
 		t.Errorf("expected: RequestID < KitexTraffic < AccessLog\ngot idx: %d < %d < %d", reqIDIdx, trafficIdx, accessIdx)
 	}
 }

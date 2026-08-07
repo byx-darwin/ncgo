@@ -1,0 +1,29 @@
+# golangci-lint configuration for ncgo (v2 schema).
+#
+# Scope note: this repository's formal validation pipeline is
+# `go build` + `go vet` + `go test` + `./scripts/smoke.sh` (see CLAUDE.md).
+# golangci-lint is an extra quality layer; keep it focused on real defects.
+
+version: "2"
+
+linters:
+  # Explicitly enable only the linters we rely on. Disabling the default set
+  # keeps runs fast and signal high. govet is excluded because the formal
+  # `go vet ./...` gate in CLAUDE.md already covers it.
+  default: none
+  enable:
+    - errcheck
+    - staticcheck
+    - unused
+  settings:
+    errcheck:
+      # Cobra CLI commands write to cmd.OutOrStdout() and intentionally ignore
+      # write errors — stdout/stderr writes in a CLI are not actionable at the
+      # call site. This is the documented golangci-lint guidance for CLI output.
+      exclude-functions:
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln
+        - fmt.Print
+        - fmt.Printf
+        - fmt.Println
