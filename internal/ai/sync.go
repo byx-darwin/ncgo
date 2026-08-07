@@ -469,9 +469,6 @@ type docSpec struct {
 // writeStandaloneDocs generates standalone design-doc files to docs/ncgo/
 // in the user project, with cross-link rewriting.
 func writeStandaloneDocs(opts Options, res *Result, profile string) error {
-	if opts.DryRun {
-		return nil
-	}
 	for _, spec := range listDocSpecs(profile, opts.Lang) {
 		full, skip, err := safeWritePath(opts.Root, spec.RelPath)
 		if err != nil {
@@ -479,6 +476,10 @@ func writeStandaloneDocs(opts Options, res *Result, profile string) error {
 		}
 		if skip != "" {
 			res.Skipped = append(res.Skipped, Skip{Path: spec.RelPath, Reason: skip})
+			continue
+		}
+		if opts.DryRun {
+			res.Skipped = append(res.Skipped, Skip{Path: spec.RelPath, Reason: "dry-run"})
 			continue
 		}
 		b, err := fs.ReadFile(assets.FS(), spec.AssetPath)

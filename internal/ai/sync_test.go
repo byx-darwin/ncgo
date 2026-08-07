@@ -424,8 +424,18 @@ func TestSyncDryRunWritesNothing(t *testing.T) {
 	if len(res.Written) != 0 {
 		t.Errorf("DryRun must not write; got %v", res.Written)
 	}
-	if len(res.Skipped) != len(targets()) {
-		t.Errorf("DryRun should skip all targets; got %v", res.Skipped)
+	skipped := map[string]bool{}
+	for _, s := range res.Skipped {
+		skipped[s.Path] = s.Reason == "dry-run"
+	}
+	for _, tgt := range targets() {
+		if skipped[tgt.RelPath] {
+			continue
+		}
+		t.Errorf("dry-run should report %s as skipped; got %+v", tgt.RelPath, res.Skipped)
+	}
+	if !skipped["docs/ncgo/hertz/design-doc.en.md"] {
+		t.Errorf("dry-run should also report standalone docs; got %+v", res.Skipped)
 	}
 	if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); !os.IsNotExist(err) {
 		t.Errorf("AGENTS.md should not exist after dry run")
@@ -538,8 +548,18 @@ func TestSyncWorkspaceDryRunWritesNothing(t *testing.T) {
 	if len(res.Written) != 0 {
 		t.Errorf("DryRun must not write; got %v", res.Written)
 	}
-	if len(res.Skipped) != len(targets()) {
-		t.Errorf("DryRun should skip all targets; got %v", res.Skipped)
+	skipped := map[string]bool{}
+	for _, s := range res.Skipped {
+		skipped[s.Path] = s.Reason == "dry-run"
+	}
+	for _, tgt := range targets() {
+		if skipped[tgt.RelPath] {
+			continue
+		}
+		t.Errorf("dry-run should report %s as skipped; got %+v", tgt.RelPath, res.Skipped)
+	}
+	if !skipped["docs/ncgo/micro/design-doc.en.md"] {
+		t.Errorf("dry-run should also report standalone docs; got %+v", res.Skipped)
 	}
 	if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); !os.IsNotExist(err) {
 		t.Errorf("AGENTS.md should not exist after dry run")
@@ -696,6 +716,15 @@ func TestSyncDryRunWritesNoStandaloneDocs(t *testing.T) {
 	}
 	if len(res.Written) != 0 {
 		t.Errorf("DryRun must not write; got %v", res.Written)
+	}
+	var reported bool
+	for _, s := range res.Skipped {
+		if s.Path == "docs/ncgo/hertz/design-doc.en.md" && s.Reason == "dry-run" {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Errorf("dry-run should report standalone docs as skipped; got %+v", res.Skipped)
 	}
 	p := filepath.Join(root, "docs", "ncgo", "hertz", "design-doc.en.md")
 	if _, err := os.Stat(p); !os.IsNotExist(err) {
