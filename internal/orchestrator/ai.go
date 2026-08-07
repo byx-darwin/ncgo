@@ -26,6 +26,7 @@ type AIInitClaudeResult struct {
 type AISyncOptions struct {
 	Root   string
 	Lang   string
+	Target string // target group to render; empty defaults to claude (all = every group)
 	Force  bool
 	DryRun bool
 }
@@ -36,6 +37,7 @@ type AISyncResult struct {
 	Skipped   []ai.Skip           `json:"skipped"`
 	Notes     []string            `json:"notes,omitempty"`
 	NextSteps []string            `json:"nextSteps,omitempty"`
+	Target    string              `json:"target,omitempty"` // target group rendered (all|agents|claude|cursor)
 	Scope     string              `json:"scope,omitempty"`
 	SourceRef string              `json:"sourceRef,omitempty"`
 	Workspace *ai.ResultWorkspace `json:"workspace,omitempty"`
@@ -65,6 +67,7 @@ func RunAISync(ctx context.Context, opts AISyncOptions) (*AISyncResult, error) {
 	res, err := ai.Sync(ai.Options{
 		Root:   opts.Root,
 		Lang:   opts.Lang,
+		Target: opts.Target,
 		Force:  opts.Force,
 		DryRun: opts.DryRun,
 	})
@@ -76,6 +79,7 @@ func RunAISync(ctx context.Context, opts AISyncOptions) (*AISyncResult, error) {
 		Skipped:   res.Skipped,
 		Notes:     res.Notes,
 		NextSteps: res.NextSteps,
+		Target:    res.Target,
 		Scope:     res.Scope,
 		SourceRef: res.SourceRef,
 		Workspace: res.Workspace,

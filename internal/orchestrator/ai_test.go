@@ -115,6 +115,7 @@ func TestRunAISyncText(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindHertz)
 
+	// Default target is claude: 3 claude targets + 3 standalone docs skipped in dry-run.
 	result, err := RunAISync(context.Background(), AISyncOptions{Root: root, DryRun: true})
 	if err != nil {
 		t.Fatalf("RunAISync: %v", err)
@@ -122,7 +123,22 @@ func TestRunAISyncText(t *testing.T) {
 	if result.Scope != "service" || result.SourceRef != ".ncgo/manifest.yaml" {
 		t.Fatalf("result = %+v, want scope=service sourceRef=.ncgo/manifest.yaml", result)
 	}
-	if len(result.Written) != 0 || len(result.Skipped) != 7 {
-		t.Fatalf("result = %+v, want 0 writes and 7 skips (4 targets + 3 standalone docs)", result)
+	if result.Target != "claude" {
+		t.Fatalf("Target = %q, want claude default", result.Target)
+	}
+	if len(result.Written) != 0 || len(result.Skipped) != 6 {
+		t.Fatalf("result = %+v, want 0 writes and 6 skips (3 claude targets + 3 standalone docs)", result)
+	}
+
+	// Explicit all: 5 targets + 3 standalone docs skipped in dry-run.
+	resultAll, err := RunAISync(context.Background(), AISyncOptions{Root: root, DryRun: true, Target: "all"})
+	if err != nil {
+		t.Fatalf("RunAISync all: %v", err)
+	}
+	if resultAll.Target != "all" {
+		t.Fatalf("Target = %q, want all", resultAll.Target)
+	}
+	if len(resultAll.Written) != 0 || len(resultAll.Skipped) != 8 {
+		t.Fatalf("result = %+v, want 0 writes and 8 skips (5 targets + 3 standalone docs)", resultAll)
 	}
 }
