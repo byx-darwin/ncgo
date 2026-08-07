@@ -1,8 +1,10 @@
 package ai
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -594,8 +596,8 @@ func TestSyncWritesStandaloneDocs(t *testing.T) {
 	if !strings.Contains(body, "Hertz Template Design Doc") {
 		t.Errorf("standalone design-doc missing title; got %d bytes", len(body))
 	}
-	if strings.Contains(body, "docs/hertz/") || strings.Contains(body, "../hertz/") {
-		t.Errorf("standalone design-doc still contains original doc links, not rewritten")
+	if strings.Contains(body, "docs/hertz/") {
+		t.Errorf("standalone design-doc still contains original absolute doc links")
 	}
 	kp := filepath.Join(root, "docs", "ncgo", "kitex", "design-doc.en.md")
 	if _, err := os.Stat(kp); os.IsNotExist(err) {
@@ -673,12 +675,15 @@ func TestSyncWritesStandaloneDocsZhCN(t *testing.T) {
 	if !strings.Contains(body, "Hertz 模板详细设计") {
 		t.Errorf("zh-CN standalone doc missing Chinese title")
 	}
-	// Check links are rewritten
-	if strings.Contains(body, "../kitex/") || strings.Contains(body, "docs/kitex/") {
-		t.Errorf("zh-CN standalone doc still contains original kitex links")
+	// Check links are rewritten to sibling profile paths. Note ../<profile>/
+	// contains ./.<profile>/ as a substring, so only exact source-style
+	// (docs/<profile>/) paths and the preserved sibling form are asserted;
+	// resolvability is covered by TestStandaloneDocHrefsResolve.
+	if strings.Contains(body, "docs/kitex/") {
+		t.Errorf("zh-CN standalone doc still contains original absolute kitex links")
 	}
-	if !strings.Contains(body, "./kitex/") {
-		t.Errorf("zh-CN standalone doc missing rewritten kitex link")
+	if !strings.Contains(body, "../kitex/") {
+		t.Errorf("zh-CN standalone doc missing preserved sibling kitex link")
 	}
 }
 
@@ -698,6 +703,60 @@ func TestSyncDryRunWritesNoStandaloneDocs(t *testing.T) {
 	}
 }
 
+// TestStandaloneDocHrefsResolve verifies that every relative markdown href in
+// the generated design docs resolves to a real file in the project, guarding
+// against link-rewrite regressions (e.g. ../<profile>/ turned into ./<profile>/).
+func TestStandaloneDocHrefsResolve(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	if _, err := Sync(Options{Root: root}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	var docPaths []string
+	err := filepath.WalkDir(filepath.Join(root, "docs", "ncgo"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		// Only design docs participate in cross-profile links; rate-limit docs
+		// legitimately reference language variants that a single sync does not
+		// materialize.
+		if !d.IsDir() && strings.HasPrefix(d.Name(), "design-doc.") {
+			docPaths = append(docPaths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk docs/ncgo: %v", err)
+	}
+	if len(docPaths) == 0 {
+		t.Fatalf("no design docs generated")
+	}
+	hrefRE := regexp.MustCompile(`\]\(([^)]+)\)`)
+	for _, doc := range docPaths {
+		b, err := os.ReadFile(doc)
+		if err != nil {
+			t.Fatalf("read %s: %v", doc, err)
+		}
+		for _, m := range hrefRE.FindAllStringSubmatch(string(b), -1) {
+			href := m[1]
+			// Skip external/anchor targets and Go call syntax like
+			// do.MustInvoke[*data.Data](inj, startupCtx) — real doc links
+			// are path-shaped (contain a "/").
+			if !strings.Contains(href, "/") {
+				continue
+			}
+			if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") ||
+				strings.HasPrefix(href, "#") || strings.HasPrefix(href, "mailto:") {
+				continue
+			}
+			target := filepath.Join(filepath.Dir(doc), filepath.FromSlash(href))
+			if _, err := os.Stat(target); err != nil {
+				t.Errorf("%s: href %q does not resolve to %s", doc, href, target)
+			}
+		}
+	}
+}
+
 func TestRewriteDocLinks(t *testing.T) {
 	tests := []struct {
 		name     string
@@ -707,17 +766,17 @@ func TestRewriteDocLinks(t *testing.T) {
 		{
 			name:     "absolute hertz link",
 			input:    "see `docs/hertz/rate-limit-dynamic-design.en.md`",
-			expected: "see `./hertz/rate-limit-dynamic-design.en.md`",
+			expected: "see `../hertz/rate-limit-dynamic-design.en.md`",
 		},
 		{
-			name:     "relative kitex link",
+			name:     "relative kitex link stays a sibling",
 			input:    "[kitex](../kitex/design-doc.en.md)",
-			expected: "[kitex](./kitex/design-doc.en.md)",
+			expected: "[kitex](../kitex/design-doc.en.md)",
 		},
 		{
 			name:     "absolute kitex link in hertz doc",
 			input:    "[kitex docs](docs/kitex/design-doc.en.md)",
-			expected: "[kitex docs](./kitex/design-doc.en.md)",
+			expected: "[kitex docs](../kitex/design-doc.en.md)",
 		},
 		{
 			name:     "no links unchanged",
@@ -727,12 +786,12 @@ func TestRewriteDocLinks(t *testing.T) {
 		{
 			name:     "absolute micro link",
 			input:    "see `docs/micro/design-doc.en.md`",
-			expected: "see `./micro/design-doc.en.md`",
+			expected: "see `../micro/design-doc.en.md`",
 		},
 		{
-			name:     "relative micro link",
+			name:     "relative micro link stays a sibling",
 			input:    "[micro docs](../micro/design-doc.en.md)",
-			expected: "[micro docs](./micro/design-doc.en.md)",
+			expected: "[micro docs](../micro/design-doc.en.md)",
 		},
 	}
 	for _, tt := range tests {

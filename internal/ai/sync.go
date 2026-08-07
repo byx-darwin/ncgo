@@ -549,17 +549,16 @@ func crossProfiles(profile string) []string {
 	}
 }
 
-// rewriteDocLinks rewrites absolute and relative doc cross-links so that they
-// point to the same-level sibling directories under docs/ncgo/.
+// rewriteDocLinks rewrites absolute doc cross-links so that they point to the
+// materialized docs/ncgo/<profile>/ layout. Because docs/ncgo/ mirrors the
+// source docs/<profile>/ hierarchy, existing ../<profile>/ sibling links stay
+// correct and are preserved verbatim; only the bare docs/<profile>/ display
+// paths are remapped to ../<profile>/.
 func rewriteDocLinks(content string) string {
 	for _, origProfile := range []string{"hertz", "kitex", "micro"} {
 		oldAbs := "docs/" + origProfile + "/"
-		newAbs := "./" + origProfile + "/"
-		content = strings.ReplaceAll(content, oldAbs, newAbs)
-
-		oldRel := "../" + origProfile + "/"
-		newRel := "./" + origProfile + "/"
-		content = strings.ReplaceAll(content, oldRel, newRel)
+		newRel := "../" + origProfile + "/"
+		content = strings.ReplaceAll(content, oldAbs, newRel)
 	}
 	return content
 }
