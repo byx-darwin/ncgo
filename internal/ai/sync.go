@@ -18,6 +18,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
@@ -486,7 +487,8 @@ func writeTarget(opts Options, t target, inputs renderInputs, res *Result) error
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return fmt.Errorf("ai sync: mkdir %s: %w", filepath.Dir(full), err)
 	}
-	if err := os.WriteFile(full, []byte(rendered), 0o644); err != nil {
+	stamped := stampGeneratedAt(rendered, time.Now())
+	if err := os.WriteFile(full, []byte(stamped), 0o644); err != nil {
 		return fmt.Errorf("ai sync: write %s: %w", full, err)
 	}
 	res.Written = append(res.Written, t.RelPath)
