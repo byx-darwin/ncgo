@@ -179,6 +179,7 @@ below.
 | `ncgo ai sync` | Render AI context files — `claude` target by default; `--target all\|agents\|claude\|cursor` selects a group |
 | `ncgo protolint` | Lint selected `.proto` files with Proto I/O rules |
 | `ncgo doctor` | Diagnose host tools, project metadata, and default proto contract issues |
+| `ncgo check` | Validate AI context integrity: method anchors, manifest↔usecase consistency, and stale context files. Exits 0 pass / 1 check failed / 2 command error (`--output text\|json`) |
 | `ncgo upgrade` | Update ncgo/assets metadata |
 | `ncgo extract domain` | Plan or apply mono-to-micro extraction |
 | `ncgo export templates` | Export code templates from an existing ncgo project |
@@ -358,6 +359,10 @@ Files contain `<!-- ncgo:managed -->`; existing files without the marker are
 skipped unless `--force` is passed. Add project-specific notes in
 `AGENTS.local.md`; they are appended to the long-form generated context files,
 while `.claude/generated/project-context.md` stays deterministic.
+
+Rendered files also carry a `<!-- ncgo:generated-at: ... -->` marker with the
+manifest timestamp that produced them; `ncgo check` reads it to detect context
+files that are older than the manifest.
 
 When `--root` is a micro workspace root, the generated files describe
 workspace-level facts from `ncgo.workspace` and list the registered services.
@@ -587,9 +592,11 @@ explicit `--kind` flag (e.g. `ncgo import --root . --kind kitex`).
 
 `ncgo mcp serve` starts a stdio MCP server. It currently exposes
 `ncgo_version`, `ncgo_doctor`, `ncgo_ai_init_claude`, `ncgo_ai_sync`,
-`ncgo_i18n_report`, `ncgo_i18n_check`, `ncgo_protolint`, `ncgo_add_infra`, and
-`ncgo_add_method` tools. The `ncgo_ai_sync` tool accepts the same `target`
-values as the CLI (`all|agents|claude|cursor`, default `claude`), and
+`ncgo_i18n_report`, `ncgo_i18n_check`, `ncgo_protolint`, `ncgo_add_infra`,
+`ncgo_add_method`, and `ncgo_ai_context` tools. `ncgo_ai_context` scans real
+code and returns structured domains/methods/anchors/consistency for agents.
+The `ncgo_ai_sync` tool accepts the same `target` values as the CLI
+(`all|agents|claude|cursor`, default `claude`), and
 `ncgo_add_method` supports `output: json`.
 The MCP interface is now documented in a contract-first layout in
 [`docs/examples.md#0-mcp-contract-first-reference`](docs/examples.md#0-mcp-contract-first-reference): see `0. MCP contract-first reference`

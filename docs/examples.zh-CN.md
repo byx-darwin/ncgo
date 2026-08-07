@@ -437,6 +437,22 @@ Agent 可以直接据此驱动后续步骤：
 `AGENTS.md`、`CLAUDE.md`、ncgo-dev skill、project context 与 Cursor 规则——
 都反映新增的领域与方法。
 
+### 校验 Agent 的改动
+
+在用 `ncgo add domain` / `ncgo add method` 实现功能之后，运行：
+
+```bash
+ncgo check --root .
+```
+
+如果某个 usecase 丢失了 `// ncgo:methods` anchor、manifest 与
+`internal/usecase/*/` 目录不一致，或 AI 上下文文件已过期，命令会以退出码 1
+结束并输出结构化报告（`--output json`）。刷新上下文：
+
+```bash
+ncgo ai sync --root .
+```
+
 ### 独立参考文档
 
 `ncgo ai sync` 同时生成独立文档到 `docs/ncgo/` 目录：

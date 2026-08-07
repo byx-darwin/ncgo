@@ -494,6 +494,22 @@ Replace the generated stub body with the feature's business logic. Run
 `CLAUDE.md`, the ncgo-dev skill, project context, and Cursor rules — reflects
 the new domain and methods.
 
+### Validating an agent's changes
+
+After implementing a feature with `ncgo add domain` / `ncgo add method`, run:
+
+```bash
+ncgo check --root .
+```
+
+If any usecase lost its `// ncgo:methods` anchors, the manifest drifted from
+`internal/usecase/*/`, or AI context files are stale, the command exits 1 with
+a structured report (`--output json`). Refresh context with:
+
+```bash
+ncgo ai sync --root .
+```
+
 ### Standalone reference docs
 
 `ncgo ai sync` also generates standalone documentation files under `docs/ncgo/`:
