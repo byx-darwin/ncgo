@@ -12,6 +12,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scaffold/domain"
 	"github.com/byx-darwin/ncgo/internal/scaffold/infra"
 )
 
@@ -218,6 +219,36 @@ func TestRunAddBFFPlanShorthand(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(root, "services", "web-bff")); !os.IsNotExist(err) {
 		t.Fatalf("bff --plan created service dir: stat err = %v", err)
 	}
+}
+
+func TestRunAddMethodJSONOutput(t *testing.T) {
+	root := seedAddMethodProject(t)
+	var out bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+
+	err := runAddMethod(cmd, "device.Get", &addMethodOptions{root: root, output: "json"})
+	if err != nil {
+		t.Fatalf("runAddMethod json: %v", err)
+	}
+	var got map[string]any
+	if err := json.Unmarshal(out.Bytes(), &got); err != nil {
+		t.Fatalf("json unmarshal: %v\n%s", err, out.String())
+	}
+	for _, k := range []string{"path", "domain", "method", "nextSteps"} {
+		if _, ok := got[k]; !ok {
+			t.Errorf("json output missing %q: %v", k, got)
+		}
+	}
+}
+
+func seedAddMethodProject(t *testing.T) string {
+	t.Helper()
+	root := seedAddInfraProject(t)
+	if _, err := domain.Add(domain.Options{Root: root, Name: "device"}); err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	return root
 }
 
 func seedAddInfraProject(t *testing.T) string {

@@ -31,9 +31,10 @@ type Options struct {
 }
 
 type Result struct {
-	Path   string
-	Domain string
-	Method string
+	Path      string
+	Domain    string
+	Method    string
+	NextSteps []string // follow-up commands for the agent
 }
 
 func Add(opts Options) (*Result, error) {
@@ -65,7 +66,16 @@ func Add(opts Options) (*Result, error) {
 	if err := insertUsecaseMethod(path, method); err != nil {
 		return nil, err
 	}
-	return &Result{Path: path, Domain: domain, Method: method}, nil
+	return &Result{
+		Path:   path,
+		Domain: domain,
+		Method: method,
+		NextSteps: []string{
+			"go build ./...",
+			"replace the generated stub body with domain logic",
+			"ncgo ai sync --root .",
+		},
+	}, nil
 }
 
 func parseSpec(spec string) (domain, method string, err error) {
