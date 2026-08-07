@@ -236,6 +236,18 @@ func writeKitexTemplate(dir string, preset string, module string) error {
 				return fmt.Errorf("scaffold: write %s: %w", targetName, err)
 			}
 		}
+		// Copy validate.proto for PGV validation support in rule-center preset.
+		validateBody, err := fs.ReadFile(srcFS, filepath.ToSlash(filepath.Join("hertz", "validate", "validate.proto")))
+		if err != nil {
+			return fmt.Errorf("scaffold: read embedded hertz/validate/validate.proto: %w", err)
+		}
+		validatePath := filepath.Join(dir, "idl", "validate", "validate.proto")
+		if err := os.MkdirAll(filepath.Dir(validatePath), 0o755); err != nil {
+			return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(validatePath), err)
+		}
+		if err := os.WriteFile(validatePath, validateBody, 0o644); err != nil {
+			return fmt.Errorf("scaffold: write %s: %w", validatePath, err)
+		}
 	}
 	for _, extra := range extras {
 		b, err := fs.ReadFile(srcFS, extra.asset)
