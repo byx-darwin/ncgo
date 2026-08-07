@@ -187,7 +187,7 @@ func nextSteps(name string, wired bool) []string {
 			fmt.Sprintf("wire %s into cmd/server/main.go: data.Register%s(injector)", name, export),
 		}, steps...)
 	}
-	return steps
+	return append(steps, "ncgo ai sync --root .")
 }
 
 func buildPlan(filePlans []planpkg.Item, manifestUpdated bool, next []string, wired bool, name string) []planpkg.Item {

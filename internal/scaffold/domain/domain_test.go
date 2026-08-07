@@ -183,6 +183,14 @@ func TestAddRequiresManifest(t *testing.T) {
 	}
 }
 
+func TestDomainNextStepsIncludeAISync(t *testing.T) {
+	steps := nextSteps("device", true) // wired=true
+	joined := strings.Join(steps, "\n")
+	if !strings.Contains(joined, "ncgo ai sync --root .") {
+		t.Fatalf("domain nextSteps missing ai sync:\n%s", joined)
+	}
+}
+
 func TestExportName(t *testing.T) {
 	cases := map[string]string{
 		"device":       "Device",

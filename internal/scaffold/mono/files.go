@@ -742,6 +742,7 @@ func postGenerateNextSteps(opts Options) []string {
 		steps = append(steps, "make migrate-up")
 	}
 	steps = append(steps, "make dev")
+	steps = append(steps, "ncgo ai sync --target all --root .")
 	return steps
 }
 
