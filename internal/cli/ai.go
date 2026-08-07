@@ -31,7 +31,7 @@ func newAISyncCmd() *cobra.Command {
 	opts := &aiSyncOptions{}
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Render AGENTS.md, CLAUDE.md, .claude/generated/project-context.md, and Cursor rules",
+		Short: "Render AI context files by target group (claude default; agents/cursor/all)",
 		Long: "Generate the AI collaboration artifacts described in docs/prd.md §6 from " +
 			"a service manifest (`.ncgo/manifest.yaml`) or micro workspace metadata (`ncgo.workspace`) and the embedded ncgo design doc. Existing files without " +
 			"the `<!-- ncgo:managed -->` marker are skipped unless --force is set.",
