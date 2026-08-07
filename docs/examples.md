@@ -43,6 +43,10 @@ ncgo mcp serve
   - stable top-level fields: `target`, `written`, `skipped`, optional `notes`,
     `scope`, `sourceRef`, and optional `workspace`
   - `content[0].text` is a human-readable summary for `output=text`, or JSON for `output=json`
+- `ncgo_ai_context`
+  - inputs: `root`, `output=text|json`
+  - stable top-level fields: `root`, `domains`, `methods`, `anchors`, `issues`
+  - `content[0].text` is a human-readable scan summary for `output=text`, or the JSON payload for `output=json`
 - `ncgo_i18n_report`
   - inputs: `root`, `output=text|json`
   - stable top-level fields: `root`, `sourceLocale`, `localesDir`,

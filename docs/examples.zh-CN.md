@@ -37,6 +37,10 @@ ncgo mcp serve
     `lang=en|zh-CN`、`force`、`dryRun`、`output=text|json`
   - 稳定顶层字段：`target`、`written`、`skipped`，以及可选的 `notes`、`scope`、`sourceRef`、`workspace`
   - `content[0].text` 在 `output=text` 时返回人类可读摘要，在 `output=json` 时返回 JSON
+- `ncgo_ai_context`
+  - 输入：`root`、`output=text|json`
+  - 稳定顶层字段：`root`、`domains`、`methods`、`anchors`、`issues`
+  - `content[0].text` 在 `output=text` 时返回人类可读的扫描摘要，在 `output=json` 时返回 JSON payload
 - `ncgo_i18n_report`
   - 输入：`root`、`output=text|json`
   - 稳定顶层字段：`root`、`sourceLocale`、`localesDir`、`statusPath`、`glossaryPath`、`reportPathJSON`、`reportPathMarkdown`、`schema`、`report`、`nextSteps`
