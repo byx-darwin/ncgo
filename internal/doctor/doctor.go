@@ -105,7 +105,7 @@ func Run(ctx context.Context, opts Options) *Report {
 		r.Scope = scope
 		r.Checks = append(r.Checks, checks...)
 	}
-	r.Summary = summarizeChecks(r.Checks)
+	r.Summary = Summarize(r.Checks)
 	return r
 }
 
@@ -129,7 +129,8 @@ func projectChecks(ctx context.Context, root string) ([]Check, Scope) {
 	return append(out, mc), ScopeUnknown
 }
 
-func summarizeChecks(checks []Check) ReportSummary {
+// Summarize aggregates a slice of Checks into a ReportSummary.
+func Summarize(checks []Check) ReportSummary {
 	var s ReportSummary
 	s.CheckCount = len(checks)
 	for _, c := range checks {
