@@ -52,12 +52,14 @@
       Message string `json:"message"`
       File    string `json:"file,omitempty"`
   }
-  type Scan struct {
+  type ScanResult struct {
       Root    string   `json:"root"`
       Domains []Domain `json:"domains"`
       Issues  []Issue  `json:"issues"`
   }
-  func Scan(root string) (*Scan, error)
+  // Scan is a package function (Go forbids a same-named type and function in
+  // one package), so the result struct is named ScanResult.
+  func Scan(root string) (*ScanResult, error)
   ```
 - Issue kind constants:
   ```go
@@ -310,8 +312,8 @@ type Issue struct {
 	File    string `json:"file,omitempty"`
 }
 
-// Scan is the structured result of inspecting one service root.
-type Scan struct {
+// ScanResult is the structured result of inspecting one service root.
+type ScanResult struct {
 	Root    string   `json:"root"`
 	Domains []Domain `json:"domains"`
 	Issues  []Issue  `json:"issues"`
@@ -320,12 +322,12 @@ type Scan struct {
 // Scan inspects the service at root. It returns an error only when the root
 // is not an ncgo service (no .ncgo/manifest.yaml). Code-level inconsistencies
 // are reported as Issues, not errors.
-func Scan(root string) (*Scan, error) {
+func Scan(root string) (*ScanResult, error) {
 	m, err := manifest.Load(root)
 	if err != nil {
 		return nil, err
 	}
-	s := &Scan{Root: root}
+	s := &ScanResult{Root: root}
 	seen := map[string]bool{}
 	usecaseDir := filepath.Join(root, "internal", "usecase")
 	if entries, err := os.ReadDir(usecaseDir); err == nil {
@@ -644,7 +646,7 @@ git commit -m "feat(ai): stamp ncgo:generated-at marker into ai sync output"
 - Modify: `internal/mcp/server_test.go`
 
 **Interfaces:**
-- Consumes: `scan.Scan`, `scan.Scan`/`Domain`/`Method`/`Issue` types (Task 1).
+- Consumes: `scan.Scan`, `scan.ScanResult`/`Domain`/`Method`/`Issue` types (Task 1).
 - Produces: `ncgo_ai_context` tool registered in `tools()`, dispatched in `callTool`.
 - Schema: `{root: string (required), output: text|json}`.
 
@@ -803,7 +805,7 @@ func callAIContext(raw json.RawMessage) (map[string]any, error) {
 	return buildMCPResult(text, false, mcpAIContextFields(s)), nil
 }
 
-func formatAIContext(s *scan.Scan, output string) (string, error) {
+func formatAIContext(sc *scan.ScanResult, output string) (string, error) {
 	switch output {
 	case mcpOutputJSON:
 		var buf strings.Builder
@@ -818,7 +820,7 @@ func formatAIContext(s *scan.Scan, output string) (string, error) {
 
 // mcpAIContextFields exposes stable top-level fields so agents can read the
 // scan without parsing content[0].text.
-func mcpAIContextFields(s *scan.Scan) map[string]any {
+func mcpAIContextFields(sc *scan.ScanResult) map[string]any {
 	return map[string]any{
 		"root":    s.Root,
 		"domains": s.Domains,
@@ -828,7 +830,7 @@ func mcpAIContextFields(s *scan.Scan) map[string]any {
 	}
 }
 
-func formatAIContextText(s *scan.Scan) string {
+func formatAIContextText(sc *scan.ScanResult) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "ncgo_ai_context for %s\n\n", s.Root)
 	for _, d := range s.Domains {
@@ -848,7 +850,7 @@ func formatAIContextText(s *scan.Scan) string {
 	return b.String()
 }
 
-func flattenMethods(s *scan.Scan) []map[string]any {
+func flattenMethods(sc *scan.ScanResult) []map[string]any {
 	var out []map[string]any
 	for _, d := range s.Domains {
 		for _, m := range d.Methods {
@@ -863,7 +865,7 @@ func flattenMethods(s *scan.Scan) []map[string]any {
 	return out
 }
 
-func anchorSummaries(s *scan.Scan) []map[string]any {
+func anchorSummaries(sc *scan.ScanResult) []map[string]any {
 	var out []map[string]any
 	for _, d := range s.Domains {
 		out = append(out, map[string]any{"domain": d.Name, "ok": d.AnchorsOK})
@@ -910,7 +912,7 @@ git commit -m "feat(mcp): add ncgo_ai_context tool with structured scan output"
 - Modify: `internal/doctor/doctor.go` (export `Summarize`)
 
 **Interfaces:**
-- Consumes: `scan.Scan`, `scan.GeneratedAtMarker` (Task 1), `ai.ReadGeneratedAt` (Task 2), `doctor.Report`/`Check`/`WriteJSON`/`WriteText`, `manifest.Load`.
+- Consumes: `scan.Scan`, `scan.ScanResult` (Task 1), `ai.ReadGeneratedAt` (Task 2), `doctor.Report`/`Check`/`WriteJSON`/`WriteText`, `manifest.Load`.
 - Produces: `ncgo check` cobra command; `exitCodeError` type honored by `Main()`.
 - doctor package gains:
   ```go
@@ -1194,7 +1196,7 @@ func buildCheckReport(root string) (*doctor.Report, error) {
 	return rep, nil
 }
 
-func anchorChecks(s *scan.Scan) []doctor.Check {
+func anchorChecks(sc *scan.ScanResult) []doctor.Check {
 	var out []doctor.Check
 	bad := 0
 	for _, d := range s.Domains {
@@ -1216,7 +1218,7 @@ func anchorChecks(s *scan.Scan) []doctor.Check {
 	return out
 }
 
-func consistencyChecks(s *scan.Scan) []doctor.Check {
+func consistencyChecks(sc *scan.ScanResult) []doctor.Check {
 	var out []doctor.Check
 	bad := 0
 	for _, i := range s.Issues {
@@ -1462,6 +1464,6 @@ If anything drifted, run `go test ./internal/scaffold/mono/... -update-golden -c
 
 **Placeholder scan:** All steps carry concrete code or commands; no TBD/TODO.
 
-**Type consistency:** `scan.Scan`, `scan.Domain`, `scan.Method`, `scan.Issue`, `scan.GeneratedAtMarker`, `ai.ReadGeneratedAt`, `doctor.Summarize`, `exitCodeError`, `checkOptions`, `runCheck`, `buildCheckReport` are defined once and reused consistently. `stampGeneratedAt` (Task 2) and `ReadGeneratedAt` (Task 2) share the `scan.GeneratedAtMarker` constant.
+**Type consistency:** `scan.ScanResult`, `scan.Domain`, `scan.Method`, `scan.Issue`, `scan.GeneratedAtMarker`, `ai.ReadGeneratedAt`, `doctor.Summarize`, `exitCodeError`, `checkOptions`, `runCheck`, `buildCheckReport` are defined once and reused consistently. `stampGeneratedAt` (Task 2) and `ReadGeneratedAt` (Task 2) share the `scan.GeneratedAtMarker` constant.
 
 **Open verification point:** `check.context.stale` skips context files that do not exist (treats absence as "not stale"). This matches the design intent that `ncgo check` validates an agent's changes rather than demanding `ai sync` has run. Flag for reviewer confirmation.
