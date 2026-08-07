@@ -13,6 +13,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/doctor"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scaffold/domain"
 )
 
 func TestServeInitializeAndToolsList(t *testing.T) {
@@ -1476,5 +1477,34 @@ func TestServeToolCallAddDomainDryRun(t *testing.T) {
 	content := resultText(result)
 	if !strings.Contains(content, "would write") {
 		t.Fatalf("content missing 'would write': %s", content)
+	}
+}
+
+func TestServeToolCallAddMethodJSON(t *testing.T) {
+	root := seedMCPProject(t, manifest.KindHertz)
+	if _, err := domain.Add(domain.Options{Root: root, Name: "device"}); err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_add_method", "arguments": map[string]any{"root": root, "spec": "device.Get", "output": "json"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("add method returned error: %s", resultText(result))
+	}
+	obj := resultJSONObject(t, result)
+	for _, k := range []string{"path", "domain", "method", "nextSteps"} {
+		if _, ok := obj[k]; !ok {
+			t.Errorf("add method json missing %q: %v", k, obj)
+		}
 	}
 }
