@@ -33,8 +33,9 @@ ncgo mcp serve
   - 稳定顶层字段：`written`、`skipped`，以及可选的 `notes`、`nextSteps`
   - `content[0].text` 在 `output=text` 时返回人类可读摘要，在 `output=json` 时返回 JSON
 - `ncgo_ai_sync`
-  - 输入：`root`、`lang=en|zh-CN`、`force`、`dryRun`、`output=text|json`
-  - 稳定顶层字段：`written`、`skipped`，以及可选的 `notes`、`scope`、`sourceRef`、`workspace`
+  - 输入：`root`、`target=all|agents|claude|cursor`（默认 `claude`）、
+    `lang=en|zh-CN`、`force`、`dryRun`、`output=text|json`
+  - 稳定顶层字段：`target`、`written`、`skipped`，以及可选的 `notes`、`scope`、`sourceRef`、`workspace`
   - `content[0].text` 在 `output=text` 时返回人类可读摘要，在 `output=json` 时返回 JSON
 - `ncgo_i18n_report`
   - 输入：`root`、`output=text|json`
@@ -49,9 +50,9 @@ ncgo mcp serve
   - 输入：`root`、`kind`，以及可选的 `force`、`wire`、`dryRun`、`output=text|json`
   - 稳定顶层字段：`dryRun`、`updated`、`writtenPath`、`writtenPaths`、`wiredPaths`、`nextSteps`、`plan`
 - `ncgo_add_method`
-  - 输入：`root`、`spec=<domain>.<Method>`、`in=usecase`
-  - output：text
-  - 稳定结果形态：`content[0].text` 中返回插入摘要
+  - 输入：`root`、`spec=<domain>.<Method>`、`in=usecase`、`output=text|json`
+  - 稳定顶层字段：`path`、`domain`、`method`、`nextSteps`
+  - `content[0].text` 在 `output=text` 时返回插入摘要，在 `output=json` 时返回 JSON
 - `ncgo_add_rule_center`
   - 输入：`root`、`addr`，以及可选的 `force`、`dryRun`、`output=text|json`
   - 稳定顶层字段：`dryRun`、`writtenPaths`、`nextSteps`
@@ -176,6 +177,7 @@ ncgo mcp serve
     "name": "ncgo_ai_sync",
     "arguments": {
       "root": ".",
+      "target": "all",
       "lang": "en",
       "dryRun": true,
       "output": "json"
@@ -184,7 +186,8 @@ ncgo mcp serve
 }
 ```
 
-推荐优先读取的顶层字段：`scope`、`sourceRef`、`workspace`、`written`、`skipped`，然后再看 `notes`。
+推荐优先读取的顶层字段：`target`、`scope`、`sourceRef`、`workspace`、
+`written`、`skipped`，然后再看 `notes`。
 
 当 `output=text` 时，`content[0].text` 与 CLI 风格同步摘要一致（`info:` / `wrote` / `skipped`）。
 当 `output=json` 时，`content[0].text` 返回完整 sync 结果的 JSON。是否阻断则看 `isError`。
@@ -227,13 +230,15 @@ ncgo mcp serve
     "arguments": {
       "root": ".",
       "spec": "device.ListThemes",
-      "in": "usecase"
+      "in": "usecase",
+      "output": "json"
     }
   }
 }
 ```
 
-text-only 返回形态：主要读取 `content[0].text` 中的插入结果摘要；是否失败则看 `isError`。
+当 `output=json` 时，工具会把 `path`、`domain`、`method`、`nextSteps` 作为同级
+顶层字段返回（同一份载荷也会出现在 `content[0].text`）；是否失败则看 `isError`。
 
 `ncgo_version`
 
@@ -364,7 +369,7 @@ ncgo protolint --root . --output json
 ncgo add domain device --root .
 ncgo add method device.ListThemes --root . --in usecase
 ncgo add infra logging --root . --wire --dry-run
-ncgo ai sync --root .
+ncgo ai sync --target all --root .
 ncgo doctor --root .
 ncgo doctor --root . --output json
 ncgo doctor --root . --output sarif > doctor.sarif.json
@@ -374,12 +379,12 @@ ncgo doctor --root . --output sarif > doctor.sarif.json
 
 ```bash
 ncgo ai init claude --root . --output json
-ncgo ai sync --root . --output json
+ncgo ai sync --target all --root . --output json
 ```
 
 `ai init claude --output json` 会返回 starter files 的结构化结果以及 `nextSteps`。
 `ai sync --output json` 会返回与 MCP 对齐的结构化 sync payload，其中包含
-`scope`、`sourceRef` 以及可选的 `workspace` 元数据。
+`target`、`scope`、`sourceRef` 以及可选的 `workspace` 元数据。
 
 现在 `ncgo doctor --root .` 会默认检查：
 
@@ -397,6 +402,40 @@ ncgo ai sync --root . --output json
 如果你通过 MCP 调用这里的检查流程，直接调用 `ncgo_doctor` 即可；通用返回约定与 `root` / `scope` / `summary` / `checks` / `ok` 字段可直接参考上面的 §0。
 
 适合：已经有 ncgo 项目，只想按需逐步增强，而不是重新生成整个服务。
+
+### 用 ncgo 实现一个功能
+
+一个聚焦的端到端流程——新增领域与用例方法，然后刷新 AI 上下文——如下：
+
+```bash
+ncgo add domain device --root .
+ncgo add method device.ListThemes --root . --in usecase --output json
+make sqlc
+go build ./...
+ncgo ai sync --target all --root .
+```
+
+`add method --output json` 会返回 `path`、`domain`、`method` 和 `nextSteps`，
+Agent 可以直接据此驱动后续步骤：
+
+```json
+{
+  "path": "internal/usecase/device/device.go",
+  "domain": "device",
+  "method": "ListThemes",
+  "nextSteps": [
+    "go build ./...",
+    "replace the generated stub body with domain logic",
+    "ncgo ai sync --root ."
+  ]
+}
+```
+
+用功能的业务逻辑替换生成的桩代码。当服务使用数据库时执行 `make sqlc`
+（Kitex 在 `go mod tidy` 之前始终需要；Hertz 仅在启用数据库脚手架时需要）。
+最后执行 `ncgo ai sync --target all --root .`，让所有 AI 上下文文件——
+`AGENTS.md`、`CLAUDE.md`、ncgo-dev skill、project context 与 Cursor 规则——
+都反映新增的领域与方法。
 
 ### 独立参考文档
 

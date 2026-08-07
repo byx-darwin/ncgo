@@ -38,9 +38,10 @@ ncgo mcp serve
     optional `nextSteps`
   - `content[0].text` is a human-readable summary for `output=text`, or JSON for `output=json`
 - `ncgo_ai_sync`
-  - inputs: `root`, `lang=en|zh-CN`, `force`, `dryRun`, `output=text|json`
-  - stable top-level fields: `written`, `skipped`, optional `notes`, `scope`,
-    `sourceRef`, and optional `workspace`
+  - inputs: `root`, `target=all|agents|claude|cursor` (default `claude`),
+    `lang=en|zh-CN`, `force`, `dryRun`, `output=text|json`
+  - stable top-level fields: `target`, `written`, `skipped`, optional `notes`,
+    `scope`, `sourceRef`, and optional `workspace`
   - `content[0].text` is a human-readable summary for `output=text`, or JSON for `output=json`
 - `ncgo_i18n_report`
   - inputs: `root`, `output=text|json`
@@ -62,9 +63,10 @@ ncgo mcp serve
   - stable top-level fields: `dryRun`, `updated`, `writtenPath`,
     `writtenPaths`, `wiredPaths`, `nextSteps`, `plan`
 - `ncgo_add_method`
-  - inputs: `root`, `spec=<domain>.<Method>`, `in=usecase`
-  - output: text
-  - stable result shape: insertion summary in `content[0].text`
+  - inputs: `root`, `spec=<domain>.<Method>`, `in=usecase`, `output=text|json`
+  - stable top-level fields: `path`, `domain`, `method`, `nextSteps`
+  - `content[0].text` is an insertion summary for `output=text`, or the JSON
+    payload for `output=json`
 - `ncgo_add_rule_center`
   - inputs: `root`, `addr`, optional `force`, `dryRun`, `output=text|json`
   - stable top-level fields: `dryRun`, `writtenPaths`, `nextSteps`
@@ -198,6 +200,7 @@ change.
     "name": "ncgo_ai_sync",
     "arguments": {
       "root": ".",
+      "target": "all",
       "lang": "en",
       "dryRun": true,
       "output": "json"
@@ -206,8 +209,8 @@ change.
 }
 ```
 
-Recommended top-level fields to read first: `scope`, `sourceRef`, `workspace`,
-`written`, `skipped`, then `notes`.
+Recommended top-level fields to read first: `target`, `scope`, `sourceRef`,
+`workspace`, `written`, `skipped`, then `notes`.
 
 For `output=text`, `content[0].text` matches the CLI-style sync summary (`info:` /
 `wrote` / `skipped`). For `output=json`, it renders the full sync result as JSON.
@@ -252,14 +255,16 @@ summary; in `output=json`, it returns the same structured result as JSON.
     "arguments": {
       "root": ".",
       "spec": "device.ListThemes",
-      "in": "usecase"
+      "in": "usecase",
+      "output": "json"
     }
   }
 }
 ```
 
-Text-only result shape: read `content[0].text` for the insertion summary; use
-`isError` to detect failures.
+With `output=json`, the tool returns `path`, `domain`, `method`, and
+`nextSteps` as sibling top-level fields (the same payload also appears in
+`content[0].text`); use `isError` to detect failures.
 
 `ncgo_version`
 
@@ -412,7 +417,7 @@ Best for: teams that want a single workspace root and add services gradually.
 ncgo add domain device --root .
 ncgo add method device.ListThemes --root . --in usecase
 ncgo add infra logging --root . --wire --dry-run
-ncgo ai sync --root .
+ncgo ai sync --target all --root .
 ncgo doctor --root .
 ncgo doctor --root . --output json
 ncgo doctor --root . --output sarif > doctor.sarif.json
@@ -422,12 +427,12 @@ If you want machine-readable AI helper output in the CLI, use:
 
 ```bash
 ncgo ai init claude --root . --output json
-ncgo ai sync --root . --output json
+ncgo ai sync --target all --root . --output json
 ```
 
 `ai init claude --output json` returns the starter-file result plus `nextSteps`.
 `ai sync --output json` returns the same structured sync payload exposed through
-MCP, including `scope`, `sourceRef`, and optional `workspace` metadata.
+MCP, including `target`, `scope`, `sourceRef`, and optional `workspace` metadata.
 
 `ncgo doctor --root .` now checks:
 
@@ -452,6 +457,42 @@ stable `root` / `scope` / `summary` / `checks` / `ok` fields.
 
 Best for: incrementally growing an existing project without regenerating the
 whole service.
+
+### Implementing a Feature with ncgo
+
+A focused end-to-end flow for adding a new domain and usecase method, then
+refreshing AI context, looks like this:
+
+```bash
+ncgo add domain device --root .
+ncgo add method device.ListThemes --root . --in usecase --output json
+make sqlc
+go build ./...
+ncgo ai sync --target all --root .
+```
+
+`add method --output json` returns `path`, `domain`, `method`, and
+`nextSteps`, so an agent can drive the follow-up steps directly:
+
+```json
+{
+  "path": "internal/usecase/device/device.go",
+  "domain": "device",
+  "method": "ListThemes",
+  "nextSteps": [
+    "go build ./...",
+    "replace the generated stub body with domain logic",
+    "ncgo ai sync --root ."
+  ]
+}
+```
+
+Replace the generated stub body with the feature's business logic. Run
+`make sqlc` when the service uses a database (Kitex always needs it before
+`go mod tidy`; Hertz only when the database scaffold is enabled). Finish with
+`ncgo ai sync --target all --root .` so every AI context file — `AGENTS.md`,
+`CLAUDE.md`, the ncgo-dev skill, project context, and Cursor rules — reflects
+the new domain and methods.
 
 ### Standalone reference docs
 
