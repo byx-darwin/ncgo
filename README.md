@@ -74,7 +74,7 @@ Deferred optionals remain documented but intentionally not implemented yet:
 | Containerization | Service-level `Dockerfile` / `.dockerignore`; `compose.yaml` for mono and micro roots |
 | Domain | `internal/usecase/<name>`, `internal/repository/<name>`, DI register file |
 | Infra | Optional drop-in Go files under `internal/base/...` |
-| AI context | `AGENTS.md`, `CLAUDE.md`, `.claude/generated/project-context.md`, `.cursor/rules/ncgo.mdc` |
+| AI context | `AGENTS.md`, `CLAUDE.md`, `.claude/skills/ncgo-dev/SKILL.md`, `.claude/generated/project-context.md`, `.cursor/rules/ncgo.mdc` |
 
 ### What generated projects build on (go-tools v0.1.0)
 
@@ -176,7 +176,7 @@ below.
 | `ncgo add infra` | Add optional infra helpers such as Redis / logging / canary / polaris_adapter |
 | `ncgo add rpc` / `ncgo add bff` | Add services inside a micro workspace |
 | `ncgo ai init claude` | Bootstrap hand-authored `.claude` starter files (`--preset minimal` or `--preset team`) |
-| `ncgo ai sync` | Render `AGENTS.md`, `CLAUDE.md`, `.claude/generated/project-context.md`, and Cursor rules |
+| `ncgo ai sync` | Render AI context files — `claude` target by default; `--target all\|agents\|claude\|cursor` selects a group |
 | `ncgo protolint` | Lint selected `.proto` files with Proto I/O rules |
 | `ncgo doctor` | Diagnose host tools, project metadata, and default proto contract issues |
 | `ncgo upgrade` | Update ncgo/assets metadata |
@@ -334,12 +334,25 @@ For a micro workspace root, run the same command at the workspace root:
 ncgo ai sync --root commerce --lang en
 ```
 
-This writes managed files:
+By default `ncgo ai sync` renders the `claude` target group, which writes:
 
-- `AGENTS.md`
 - `CLAUDE.md`
+- `.claude/skills/ncgo-dev/SKILL.md`
 - `.claude/generated/project-context.md`
-- `.cursor/rules/ncgo.mdc`
+
+Select a different group with `--target`:
+
+- `agents` — `AGENTS.md`
+- `cursor` — `.cursor/rules/ncgo.mdc`
+- `all` — all five files above
+
+```bash
+ncgo ai sync --root user-api --target all
+```
+
+> **Migration note:** earlier versions of `ncgo ai sync` wrote every context
+> file by default. The default is now `claude`; pass `--target all` to keep
+> the previous full behavior.
 
 Files contain `<!-- ncgo:managed -->`; existing files without the marker are
 skipped unless `--force` is passed. Add project-specific notes in
@@ -370,8 +383,30 @@ ncgo add domain <name> --root .
 ncgo add method device.ListThemes --root . --in usecase
 ```
 
-`ncgo add method` currently inserts a no-argument `UseCase` method stub between
-`// ncgo:methods:start` and `// ncgo:methods:end` markers.
+`ncgo add method` inserts a no-argument `UseCase` method stub between
+`// ncgo:methods:start` and `// ncgo:methods:end` markers. Its text output then
+lists the next steps: `go build ./...`, replace the generated stub body with
+domain logic, and `ncgo ai sync --root .`.
+
+For machine-readable output, add `--output json`; the result carries `path`,
+`domain`, `method`, and `nextSteps`:
+
+```bash
+ncgo add method device.ListThemes --root . --in usecase --output json
+```
+
+```json
+{
+  "path": "internal/usecase/device/device.go",
+  "domain": "device",
+  "method": "ListThemes",
+  "nextSteps": [
+    "go build ./...",
+    "replace the generated stub body with domain logic",
+    "ncgo ai sync --root ."
+  ]
+}
+```
 
 ### Optional infra
 
@@ -553,7 +588,9 @@ explicit `--kind` flag (e.g. `ncgo import --root . --kind kitex`).
 `ncgo mcp serve` starts a stdio MCP server. It currently exposes
 `ncgo_version`, `ncgo_doctor`, `ncgo_ai_init_claude`, `ncgo_ai_sync`,
 `ncgo_i18n_report`, `ncgo_i18n_check`, `ncgo_protolint`, `ncgo_add_infra`, and
-`ncgo_add_method` tools.
+`ncgo_add_method` tools. The `ncgo_ai_sync` tool accepts the same `target`
+values as the CLI (`all|agents|claude|cursor`, default `claude`), and
+`ncgo_add_method` supports `output: json`.
 The MCP interface is now documented in a contract-first layout in
 [`docs/examples.md#0-mcp-contract-first-reference`](docs/examples.md#0-mcp-contract-first-reference): see `0. MCP contract-first reference`
 for each tool's inputs, supported `output` values, and stable top-level result

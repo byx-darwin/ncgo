@@ -85,7 +85,7 @@ func writeWorkspace(t *testing.T, root string) {
 func TestSyncWritesAllTargets(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindHertz)
-	res, err := Sync(Options{Root: root})
+	res, err := Sync(Options{Root: root, Target: TargetAll})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -95,7 +95,7 @@ func TestSyncWritesAllTargets(t *testing.T) {
 	if res.Workspace != nil {
 		t.Fatalf("workspace metadata = %+v, want nil for standalone service", res.Workspace)
 	}
-	wantPaths := []string{"AGENTS.md", "CLAUDE.md", ".cursor/rules/ncgo.mdc", ".claude/generated/project-context.md"}
+	wantPaths := []string{"AGENTS.md", "CLAUDE.md", ".cursor/rules/ncgo.mdc", ".claude/generated/project-context.md", ".claude/skills/ncgo-dev/SKILL.md"}
 	standalonePaths := []string{
 		"docs/ncgo/hertz/design-doc.en.md",
 		"docs/ncgo/hertz/rate-limit-dynamic-design.en.md",
@@ -114,6 +114,18 @@ func TestSyncWritesAllTargets(t *testing.T) {
 		body := string(b)
 		if !strings.Contains(body, ManagedMarker) {
 			t.Errorf("%s missing managed marker", p)
+		}
+		if p == ".claude/skills/ncgo-dev/SKILL.md" {
+			if !strings.Contains(body, "name: ncgo-dev") || !strings.Contains(body, "Implementing a Feature with ncgo") {
+				t.Errorf("%s missing skill frontmatter or workflow body", p)
+			}
+			continue
+		}
+		if p == ".cursor/rules/ncgo.mdc" {
+			if !strings.Contains(body, "ncgo Project Rules") && !strings.Contains(body, "Do not hand-edit generated files") {
+				t.Errorf("%s missing rules body", p)
+			}
+			continue
 		}
 		if !strings.Contains(body, "module: `github.com/acme/user-api`") {
 			t.Errorf("%s missing manifest module summary", p)
@@ -150,7 +162,7 @@ func TestSyncWritesAllTargets(t *testing.T) {
 func TestSyncPicksKitexDoc(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindKitex)
-	if _, err := Sync(Options{Root: root}); err != nil {
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	body, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
@@ -166,7 +178,7 @@ func TestSyncServiceUnderWorkspaceAddsMembershipFacts(t *testing.T) {
 	root := t.TempDir()
 	writeWorkspace(t, root)
 	serviceRoot := filepath.Join(root, "services", "user-rpc")
-	res, err := Sync(Options{Root: serviceRoot})
+	res, err := Sync(Options{Root: serviceRoot, Target: TargetAll})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -253,7 +265,7 @@ func TestSyncRefusesUnmanagedFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(pre), 0o644); err != nil {
 		t.Fatalf("seed AGENTS.md: %v", err)
 	}
-	res, err := Sync(Options{Root: root})
+	res, err := Sync(Options{Root: root, Target: TargetAll})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -277,7 +289,7 @@ func TestSyncForceOverwritesUnmanagedFile(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte("hand-written\n"), 0o644); err != nil {
 		t.Fatalf("seed AGENTS.md: %v", err)
 	}
-	if _, err := Sync(Options{Root: root, Force: true}); err != nil {
+	if _, err := Sync(Options{Root: root, Force: true, Target: TargetAll}); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	body, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
@@ -296,7 +308,7 @@ func TestSyncRefusesSymlinkEscape(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "AGENTS.md")); err != nil {
 		t.Fatalf("symlink AGENTS.md: %v", err)
 	}
-	res, err := Sync(Options{Root: root})
+	res, err := Sync(Options{Root: root, Target: TargetAll})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -325,7 +337,7 @@ func TestSyncForceStillRefusesSymlinkEscape(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "AGENTS.md")); err != nil {
 		t.Fatalf("symlink AGENTS.md: %v", err)
 	}
-	res, err := Sync(Options{Root: root, Force: true})
+	res, err := Sync(Options{Root: root, Force: true, Target: TargetAll})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -351,7 +363,7 @@ func TestSyncRefusesDanglingSymlink(t *testing.T) {
 	if err := os.Symlink(outside, filepath.Join(root, "AGENTS.md")); err != nil {
 		t.Fatalf("symlink AGENTS.md: %v", err)
 	}
-	res, err := Sync(Options{Root: root})
+	res, err := Sync(Options{Root: root, Target: TargetAll})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -379,7 +391,7 @@ func TestSyncAllowsSymlinkWithinRoot(t *testing.T) {
 	if err := os.Symlink(target, filepath.Join(root, "AGENTS.md")); err != nil {
 		t.Fatalf("symlink AGENTS.md: %v", err)
 	}
-	res, err := Sync(Options{Root: root})
+	res, err := Sync(Options{Root: root, Target: TargetAll})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -401,7 +413,7 @@ func TestSyncAppendsLocalNotes(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, LocalNotesFile), []byte(notes), 0o644); err != nil {
 		t.Fatalf("seed local notes: %v", err)
 	}
-	if _, err := Sync(Options{Root: root}); err != nil {
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	body, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
@@ -417,7 +429,7 @@ func TestSyncAppendsLocalNotes(t *testing.T) {
 func TestSyncDryRunWritesNothing(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindHertz)
-	res, err := Sync(Options{Root: root, DryRun: true})
+	res, err := Sync(Options{Root: root, DryRun: true, Target: TargetAll})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -453,7 +465,7 @@ func TestSyncRejectsBadLang(t *testing.T) {
 func TestSyncZhLangPicksZhDoc(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindHertz)
-	if _, err := Sync(Options{Root: root, Lang: LangZhCN}); err != nil {
+	if _, err := Sync(Options{Root: root, Lang: LangZhCN, Target: TargetAll}); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	body, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
@@ -469,7 +481,7 @@ func TestSyncZhLangPicksZhDoc(t *testing.T) {
 func TestSyncWorkspaceWritesAllTargets(t *testing.T) {
 	root := t.TempDir()
 	writeWorkspace(t, root)
-	res, err := Sync(Options{Root: root})
+	res, err := Sync(Options{Root: root, Target: TargetAll})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -479,7 +491,7 @@ func TestSyncWorkspaceWritesAllTargets(t *testing.T) {
 	if res.Workspace == nil || res.Workspace.Role != "root" || res.Workspace.ServiceCount != 2 {
 		t.Fatalf("workspace metadata = %+v, want root metadata with serviceCount=2", res.Workspace)
 	}
-	wantPaths := []string{"AGENTS.md", "CLAUDE.md", ".cursor/rules/ncgo.mdc", ".claude/generated/project-context.md"}
+	wantPaths := []string{"AGENTS.md", "CLAUDE.md", ".cursor/rules/ncgo.mdc", ".claude/generated/project-context.md", ".claude/skills/ncgo-dev/SKILL.md"}
 	standalonePaths := []string{
 		"docs/ncgo/micro/design-doc.en.md",
 		"docs/ncgo/hertz/design-doc.en.md",
@@ -525,7 +537,7 @@ func TestSyncWorkspaceAppendsLocalNotesOnlyToLongFormFiles(t *testing.T) {
 	if err := os.WriteFile(filepath.Join(root, LocalNotesFile), []byte(notes), 0o644); err != nil {
 		t.Fatalf("seed workspace local notes: %v", err)
 	}
-	if _, err := Sync(Options{Root: root}); err != nil {
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
 	agents, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
@@ -541,7 +553,7 @@ func TestSyncWorkspaceAppendsLocalNotesOnlyToLongFormFiles(t *testing.T) {
 func TestSyncWorkspaceDryRunWritesNothing(t *testing.T) {
 	root := t.TempDir()
 	writeWorkspace(t, root)
-	res, err := Sync(Options{Root: root, DryRun: true})
+	res, err := Sync(Options{Root: root, DryRun: true, Target: TargetAll})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
@@ -830,5 +842,63 @@ func TestRewriteDocLinks(t *testing.T) {
 				t.Errorf("rewriteDocLinks() = %q, want %q", got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestSyncDefaultTargetIsClaude(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	res, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if res.Target != TargetClaude {
+		t.Fatalf("Target = %q, want claude default", res.Target)
+	}
+	want := []string{"CLAUDE.md", ".claude/skills/ncgo-dev/SKILL.md", ".claude/generated/project-context.md"}
+	for _, p := range want {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Errorf("default sync should write %s: %v", p, err)
+		}
+	}
+	for _, p := range []string{"AGENTS.md", ".cursor/rules/ncgo.mdc"} {
+		if _, err := os.Stat(filepath.Join(root, p)); !os.IsNotExist(err) {
+			t.Errorf("default sync must NOT write %s", p)
+		}
+	}
+}
+
+func TestSyncTargetAllWritesAll(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	for _, p := range []string{"AGENTS.md", "CLAUDE.md", ".cursor/rules/ncgo.mdc", ".claude/skills/ncgo-dev/SKILL.md", ".claude/generated/project-context.md"} {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Errorf("Target all should write %s: %v", p, err)
+		}
+	}
+}
+
+func TestSyncTargetAgentsOnly(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	if _, err := Sync(Options{Root: root, Target: TargetAgents}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); err != nil {
+		t.Errorf("target agents should write AGENTS.md: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(root, "CLAUDE.md")); !os.IsNotExist(err) {
+		t.Errorf("target agents must not write CLAUDE.md")
+	}
+}
+
+func TestSyncRejectsBadTarget(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	if _, err := Sync(Options{Root: root, Target: "bogus"}); err == nil {
+		t.Fatalf("expected error for invalid target")
 	}
 }

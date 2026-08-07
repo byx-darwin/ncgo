@@ -24,13 +24,14 @@ type aiSyncOptions struct {
 	force  bool
 	dryRun bool
 	output string
+	target string
 }
 
 func newAISyncCmd() *cobra.Command {
 	opts := &aiSyncOptions{}
 	cmd := &cobra.Command{
 		Use:   "sync",
-		Short: "Render AGENTS.md, CLAUDE.md, .claude/generated/project-context.md, and Cursor rules",
+		Short: "Render AI context files by target group (claude default; agents/cursor/all)",
 		Long: "Generate the AI collaboration artifacts described in docs/prd.md §6 from " +
 			"a service manifest (`.ncgo/manifest.yaml`) or micro workspace metadata (`ncgo.workspace`) and the embedded ncgo design doc. Existing files without " +
 			"the `<!-- ncgo:managed -->` marker are skipped unless --force is set.",
@@ -45,6 +46,7 @@ func newAISyncCmd() *cobra.Command {
 	f.BoolVar(&opts.force, "force", false, "Overwrite files that lack the ncgo:managed marker")
 	f.BoolVar(&opts.dryRun, "dry-run", false, "Report intended actions without writing files")
 	f.StringVar(&opts.output, "output", "text", "Output format: text or json")
+	f.StringVar(&opts.target, "target", "", "Target group to render: all, agents, claude, cursor (default claude)")
 	return cmd
 }
 
@@ -99,6 +101,7 @@ func runAISync(cmd *cobra.Command, opts *aiSyncOptions) error {
 		Lang:   opts.lang,
 		Force:  opts.force,
 		DryRun: opts.dryRun,
+		Target: opts.target,
 	})
 	if err != nil {
 		return err

@@ -401,8 +401,9 @@ func writeAddServiceJSON(out io.Writer, serviceDir, serviceRel, module string, d
 }
 
 type addMethodOptions struct {
-	root  string
-	layer string
+	root   string
+	layer  string
+	output string
 }
 
 func newAddMethodCmd() *cobra.Command {
@@ -421,17 +422,33 @@ func newAddMethodCmd() *cobra.Command {
 	f := cmd.Flags()
 	f.StringVar(&opts.root, "root", ".", "Project root containing .ncgo/manifest.yaml")
 	f.StringVar(&opts.layer, "in", method.LayerUsecase, "Target layer: usecase")
+	f.StringVar(&opts.output, "output", "text", "Output format: text or json")
 	return cmd
 }
 
 func runAddMethod(cmd *cobra.Command, spec string, opts *addMethodOptions) error {
+	if err := validateAddOutput("add method", opts.output); err != nil {
+		return err
+	}
 	res, err := method.Add(method.Options{Root: opts.root, Spec: spec, Layer: opts.layer})
 	if err != nil {
 		return err
 	}
 	out := cmd.OutOrStdout()
+	if opts.output == "json" {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(struct {
+			Path      string   `json:"path"`
+			Domain    string   `json:"domain"`
+			Method    string   `json:"method"`
+			NextSteps []string `json:"nextSteps"`
+		}{Path: res.Path, Domain: res.Domain, Method: res.Method, NextSteps: res.NextSteps})
+	}
 	fmt.Fprintf(out, "inserted %s.%s into %s\n", res.Domain, res.Method, res.Path)
 	fmt.Fprintln(out, "\nnext steps:")
-	fmt.Fprintln(out, "  - replace the generated stub body with domain logic")
+	for _, s := range res.NextSteps {
+		fmt.Fprintf(out, "  - %s\n", s)
+	}
 	return nil
 }

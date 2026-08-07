@@ -155,7 +155,7 @@ func TestRunAISyncTextOutput(t *testing.T) {
 	var out bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&out)
-	if err := runAISync(cmd, &aiSyncOptions{root: root, output: "text", dryRun: true}); err != nil {
+	if err := runAISync(cmd, &aiSyncOptions{root: root, output: "text", dryRun: true, target: ai.TargetAll}); err != nil {
 		t.Fatalf("runAISync text: %v", err)
 	}
 	got := out.String()
@@ -173,7 +173,7 @@ func TestRunAISyncJSONOutput(t *testing.T) {
 	var out bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&out)
-	if err := runAISync(cmd, &aiSyncOptions{root: root, output: "json", dryRun: true}); err != nil {
+	if err := runAISync(cmd, &aiSyncOptions{root: root, output: "json", dryRun: true, target: ai.TargetAll}); err != nil {
 		t.Fatalf("runAISync json: %v", err)
 	}
 	var res ai.Result
@@ -183,8 +183,8 @@ func TestRunAISyncJSONOutput(t *testing.T) {
 	if res.Scope != "service" || res.SourceRef != ".ncgo/manifest.yaml" {
 		t.Fatalf("result = %+v, want service/.ncgo/manifest.yaml", res)
 	}
-	if len(res.Written) != 0 || len(res.Skipped) != 7 {
-		t.Fatalf("result = %+v, want 0 writes and 7 skips (4 targets + 3 standalone docs)", res)
+	if len(res.Written) != 0 || len(res.Skipped) != 8 {
+		t.Fatalf("result = %+v, want 0 writes and 8 skips (5 targets + 3 standalone docs)", res)
 	}
 }
 
@@ -194,5 +194,52 @@ func TestRunAISyncRejectsInvalidOutput(t *testing.T) {
 	cmd := &cobra.Command{}
 	if err := runAISync(cmd, &aiSyncOptions{root: root, output: "xml"}); err == nil || err.Error() != `ai sync: unsupported --output "xml"; want text or json` {
 		t.Fatalf("err = %v", err)
+	}
+}
+
+func TestRunAISyncTargetFlag(t *testing.T) {
+	root := t.TempDir()
+	writeCLIServiceManifest(t, root)
+	var out bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+	if err := runAISync(cmd, &aiSyncOptions{root: root, target: ai.TargetAgents, output: "text"}); err != nil {
+		t.Fatalf("runAISync: %v", err)
+	}
+	got := out.String()
+	if !strings.Contains(got, "wrote AGENTS.md") {
+		t.Fatalf("--target agents should write AGENTS.md: %s", got)
+	}
+	if strings.Contains(got, "wrote CLAUDE.md") {
+		t.Fatalf("--target agents must not write CLAUDE.md: %s", got)
+	}
+}
+
+func TestRunAISyncDefaultTargetTextShowsClaudeFiles(t *testing.T) {
+	root := t.TempDir()
+	writeCLIServiceManifest(t, root)
+	var out bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+	if err := runAISync(cmd, &aiSyncOptions{root: root, output: "text"}); err != nil {
+		t.Fatalf("runAISync: %v", err)
+	}
+	got := out.String()
+	for _, want := range []string{"wrote CLAUDE.md", "wrote .claude/skills/ncgo-dev/SKILL.md", "wrote .claude/generated/project-context.md"} {
+		if !strings.Contains(got, want) {
+			t.Fatalf("default sync missing %q:\n%s", want, got)
+		}
+	}
+	if strings.Contains(got, "wrote AGENTS.md") {
+		t.Fatalf("default sync must not write AGENTS.md:\n%s", got)
+	}
+}
+
+func TestRunAISyncRejectsInvalidTarget(t *testing.T) {
+	root := t.TempDir()
+	writeCLIServiceManifest(t, root)
+	cmd := &cobra.Command{}
+	if err := runAISync(cmd, &aiSyncOptions{root: root, target: "bogus"}); err == nil || !strings.Contains(err.Error(), "--target") {
+		t.Fatalf("err = %v, want --target validation", err)
 	}
 }

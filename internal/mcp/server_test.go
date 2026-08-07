@@ -13,6 +13,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/doctor"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scaffold/domain"
 )
 
 func TestServeInitializeAndToolsList(t *testing.T) {
@@ -335,7 +336,7 @@ func TestServeToolCallAISyncIncludesStructuredFields(t *testing.T) {
 	serviceRoot := filepath.Join(root, "services", "user-rpc")
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "ncgo_ai_sync", "arguments": map[string]any{"root": serviceRoot, "dryRun": true}},
+		"params": map[string]any{"name": "ncgo_ai_sync", "arguments": map[string]any{"root": serviceRoot, "target": "all", "dryRun": true}},
 	})
 	var out bytes.Buffer
 	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
@@ -359,8 +360,8 @@ func TestServeToolCallAISyncIncludesStructuredFields(t *testing.T) {
 	if len(result["written"].([]any)) != 0 {
 		t.Fatalf("dry-run should not write files: %+v", result["written"])
 	}
-	if len(result["skipped"].([]any)) != 6 {
-		t.Fatalf("dry-run skipped = %+v, want 4 targets + 2 standalone docs", result["skipped"])
+	if len(result["skipped"].([]any)) != 7 {
+		t.Fatalf("dry-run skipped = %+v, want 5 targets + 2 standalone docs", result["skipped"])
 	}
 	text := resultText(result)
 	if !strings.Contains(text, "info: detected parent micro workspace `../..` for this service root") {
@@ -397,6 +398,30 @@ func TestServeToolCallAISyncJSON(t *testing.T) {
 	workspace := textJSON["workspace"].(map[string]any)
 	if workspace["role"] != "member" || workspace["name"] != "commerce" {
 		t.Fatalf("json workspace = %+v", workspace)
+	}
+}
+
+func TestServeToolCallAISyncTargetParam(t *testing.T) {
+	root := seedMCPProject(t, manifest.KindHertz)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_ai_sync", "arguments": map[string]any{"root": root, "target": "agents"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	text := resultText(result)
+	if !strings.Contains(text, "wrote AGENTS.md") {
+		t.Fatalf("target agents should write AGENTS.md: %s", text)
+	}
+	if strings.Contains(text, "wrote CLAUDE.md") {
+		t.Fatalf("target agents must not write CLAUDE.md: %s", text)
 	}
 }
 
@@ -1452,5 +1477,34 @@ func TestServeToolCallAddDomainDryRun(t *testing.T) {
 	content := resultText(result)
 	if !strings.Contains(content, "would write") {
 		t.Fatalf("content missing 'would write': %s", content)
+	}
+}
+
+func TestServeToolCallAddMethodJSON(t *testing.T) {
+	root := seedMCPProject(t, manifest.KindHertz)
+	if _, err := domain.Add(domain.Options{Root: root, Name: "device"}); err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_add_method", "arguments": map[string]any{"root": root, "spec": "device.Get", "output": "json"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("add method returned error: %s", resultText(result))
+	}
+	obj := resultJSONObject(t, result)
+	for _, k := range []string{"path", "domain", "method", "nextSteps"} {
+		if _, ok := obj[k]; !ok {
+			t.Errorf("add method json missing %q: %v", k, obj)
+		}
 	}
 }

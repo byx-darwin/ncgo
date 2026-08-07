@@ -413,6 +413,7 @@ func TestShouldSkipNextStep(t *testing.T) {
 		{step: "make migrate-up", want: true},
 		{step: "make dev", want: true},
 		{step: "ncgo add infra redis --root .", want: true},
+		{step: "ncgo ai sync --target all --root .", want: true},
 		{step: "go mod tidy", want: false},
 		{step: "make sqlc", want: false},
 	} {
@@ -482,9 +483,9 @@ func TestNextStepsSequenceShapes(t *testing.T) {
 		{name: "prepare-hertz-default", kind: manifest.KindHertz, want: []string{"cd", "go mod init", "<generate>", "go mod tidy", "make dev"}},
 		{name: "prepare-hertz-with-db", kind: manifest.KindHertz, withDB: true, want: []string{"cd", "go mod init", "<generate>", "make sqlc", "go mod tidy", "make migrate-up", "make dev"}},
 		{name: "prepare-kitex-default", kind: manifest.KindKitex, want: []string{"cd", "go mod init", "<generate>", "make sqlc", "go mod tidy", "make dev"}},
-		{name: "post-hertz-default", kind: manifest.KindHertz, postGenerate: true, want: []string{"cd", "go mod tidy", "make dev"}},
-		{name: "post-hertz-with-db", kind: manifest.KindHertz, withDB: true, postGenerate: true, want: []string{"cd", "make sqlc", "go mod tidy", "make migrate-up", "make dev"}},
-		{name: "post-kitex-default", kind: manifest.KindKitex, postGenerate: true, want: []string{"cd", "make sqlc", "go mod tidy", "make dev"}},
+		{name: "post-hertz-default", kind: manifest.KindHertz, postGenerate: true, want: []string{"cd", "go mod tidy", "make dev", "ncgo ai sync --target all --root ."}},
+		{name: "post-hertz-with-db", kind: manifest.KindHertz, withDB: true, postGenerate: true, want: []string{"cd", "make sqlc", "go mod tidy", "make migrate-up", "make dev", "ncgo ai sync --target all --root ."}},
+		{name: "post-kitex-default", kind: manifest.KindKitex, postGenerate: true, want: []string{"cd", "make sqlc", "go mod tidy", "make dev", "ncgo ai sync --target all --root ."}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			opts := baseOpts(t)
@@ -1565,9 +1566,10 @@ func assertStepMakeTargetsExist(t *testing.T, steps []string, makefileBody strin
 }
 
 var skippedNextStepReasons = map[string]string{
-	"make migrate-up":               "requires external database configuration/state",
-	"make dev":                      "starts a long-running development process",
-	"ncgo add infra redis --root .": "requires the ncgo CLI binary in PATH; scaffold tests cover this path separately",
+	"make migrate-up":                    "requires external database configuration/state",
+	"make dev":                           "starts a long-running development process",
+	"ncgo add infra redis --root .":      "requires the ncgo CLI binary in PATH; scaffold tests cover this path separately",
+	"ncgo ai sync --target all --root .": "requires the ncgo CLI binary in PATH; scaffold tests cover this path separately",
 }
 
 type nextStepsSmokeCase struct {
