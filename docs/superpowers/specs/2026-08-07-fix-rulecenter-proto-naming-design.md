@@ -128,6 +128,8 @@ Add validation constraints to key fields:
 
 **Rationale**: Prevent invalid data at the API boundary without being overly restrictive.
 
+> **⚠️ Implementation finding (2026-08-07):** PGV validation was **removed** from the final implementation. The Kitex generator (`kitex`) cannot parse `validate.proto` because it is declared as `proto2` and uses `required` as a field name, which conflicts with the Kitex parser grammar. Validating the proto with `validate.rules` annotations therefore breaks `ncgo new --preset rule-center` code generation. Validation must instead be performed in the application layer (usecase/handler).
+
 ### 5. UpdateRuleReq Adjustments
 
 `UpdateRuleReq` also uses validation for `key_by`:

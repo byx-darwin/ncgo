@@ -683,7 +683,10 @@ func writeManifest(dir string, opts Options, idl string) (*manifest.Manifest, er
 // missing local package as an external module path and resolution fails.
 func nextSteps(opts Options, idl string) []string {
 	rel, _ := filepath.Rel(mustCwd(), opts.Dir)
-	if rel == "" {
+	// When the user runs ncgo new inside the target directory itself,
+	// filepath.Rel returns "."; show the directory basename instead so
+	// the "cd" hint is meaningful.
+	if rel == "." || rel == "" {
 		rel = filepath.Base(opts.Dir)
 	}
 	steps := []string{
@@ -722,7 +725,10 @@ func generatorCommand(opts Options, idl string) string {
 // generation may have written code that already imports internal/db/gen.
 func postGenerateNextSteps(opts Options) []string {
 	rel, _ := filepath.Rel(mustCwd(), opts.Dir)
-	if rel == "" {
+	// When the user runs ncgo new inside the target directory itself,
+	// filepath.Rel returns "."; show the directory basename instead so
+	// the "cd" hint is meaningful.
+	if rel == "." || rel == "" {
 		rel = filepath.Base(opts.Dir)
 	}
 	steps := []string{

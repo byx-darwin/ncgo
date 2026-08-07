@@ -119,6 +119,9 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if err := shared.WriteRepositoryHooks(dir); err != nil {
 		return nil, err
 	}
+	// Update opts.Dir to absolute path so nextSteps computes relative
+	// paths correctly when the user runs ncgo new inside the target dir.
+	opts.Dir = dir
 	res := &Result{Dir: dir, NextSteps: nextSteps(opts, idl)}
 	if opts.NoGenerate {
 		return res, nil
