@@ -2,7 +2,9 @@ package protolint
 
 import (
 	"context"
+	"os"
 	"path/filepath"
+	"reflect"
 	"testing"
 )
 
@@ -154,5 +156,52 @@ func TestLoadHertzGoldenProtoFromProjectRoot(t *testing.T) {
 	}
 	if got := model.Files[0].Path; got != "idl/app/demo.proto" {
 		t.Fatalf("path = %q, want idl/app/demo.proto", got)
+	}
+}
+
+// TestImportRoots locks the three branches of importRoots: root is always
+// first, and <root>/idl is appended only when idl/ exists as a directory.
+func TestImportRoots(t *testing.T) {
+	tests := []struct {
+		name    string
+		setup   func(root string) error // optional, nil means leave root empty
+		wantIDL bool
+	}{
+		{
+			name: "idl directory present",
+			setup: func(root string) error {
+				return os.Mkdir(filepath.Join(root, "idl"), 0o755)
+			},
+			wantIDL: true,
+		},
+		{
+			name: "idl absent",
+		},
+		{
+			name: "idl is a regular file",
+			setup: func(root string) error {
+				return os.WriteFile(filepath.Join(root, "idl"), []byte("not a dir"), 0o644)
+			},
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			root := t.TempDir()
+			if tt.setup != nil {
+				if err := tt.setup(root); err != nil {
+					t.Fatalf("setup: %v", err)
+				}
+			}
+
+			want := []string{root}
+			if tt.wantIDL {
+				want = append(want, filepath.Join(root, "idl"))
+			}
+
+			if got := importRoots(root); !reflect.DeepEqual(got, want) {
+				t.Fatalf("importRoots(%q) = %v, want %v", root, got, want)
+			}
+		})
 	}
 }
