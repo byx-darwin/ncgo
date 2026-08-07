@@ -122,7 +122,7 @@ func TestRunAISyncText(t *testing.T) {
 	if result.Scope != "service" || result.SourceRef != ".ncgo/manifest.yaml" {
 		t.Fatalf("result = %+v, want scope=service sourceRef=.ncgo/manifest.yaml", result)
 	}
-	if len(result.Written) != 0 || len(result.Skipped) != 4 {
-		t.Fatalf("result = %+v, want 0 writes and 4 skips", result)
+	if len(result.Written) != 0 || len(result.Skipped) != 7 {
+		t.Fatalf("result = %+v, want 0 writes and 7 skips (4 targets + 3 standalone docs)", result)
 	}
 }
