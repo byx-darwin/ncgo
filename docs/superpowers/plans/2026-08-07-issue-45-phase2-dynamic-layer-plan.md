@@ -83,7 +83,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/byx-darwin/ncgo/internal/manifest"
 )
@@ -199,9 +198,6 @@ func hasIssue(issues []Issue, kind string) bool {
 	}
 	return false
 }
-
-// used by Task 4 via buildCheckReport; kept here to lock the format.
-var _ = time.RFC3339
 ```
 
 - [ ] **Step 2: Run tests to verify they fail**
@@ -562,7 +558,6 @@ package ai
 
 import (
 	"os"
-	"strconv"
 	"strings"
 	"time"
 
@@ -600,11 +595,6 @@ func ReadGeneratedAt(path string) (time.Time, bool) {
 		rest := strings.TrimPrefix(line, scan.GeneratedAtMarker)
 		rest = strings.TrimSuffix(rest, " -->")
 		rest = strings.TrimSuffix(rest, "-->")
-		if n, err := strconv.ParseInt(rest, 10, 64); err == nil {
-			// not RFC3339; treat as malformed
-			_ = n
-			return time.Time{}, false
-		}
 		ts, err := time.Parse(time.RFC3339, strings.TrimSpace(rest))
 		if err != nil {
 			return time.Time{}, false
@@ -614,8 +604,6 @@ func ReadGeneratedAt(path string) (time.Time, bool) {
 	return time.Time{}, false
 }
 ```
-
-> **Note on `ReadGeneratedAt`:** the odd `strconv.ParseInt` branch is defensive — a bare timestamp without a colon is never valid RFC3339 and should not parse as a date. Keep it; it guards against a marker format drift. If `go vet`/linters flag `_ = n`, replace with `return time.Time{}, false`.
 
 - [ ] **Step 4: Modify `internal/ai/sync.go` — `writeTarget`** to stamp the marker on write
 
@@ -787,7 +775,6 @@ package mcp
 import (
 	"encoding/json"
 	"fmt"
-	"io"
 	"strings"
 
 	"github.com/byx-darwin/ncgo/internal/scan"
@@ -883,11 +870,7 @@ func anchorSummaries(s *scan.Scan) []map[string]any {
 	}
 	return out
 }
-
-var _ io.Writer // keep io import if unused after edits
 ```
-
-> **Note:** if the `io` import is unused after writing, remove it. The `var _ io.Writer` line is only a placeholder guard; delete it when the file compiles without it.
 
 - [ ] **Step 4: Register in `internal/mcp/tools.go`**
 
@@ -977,7 +960,6 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/spf13/cobra"
 
@@ -1106,10 +1088,6 @@ func TestRunCheckJSONOutput(t *testing.T) {
 	}
 }
 
-// time import kept for ReadGeneratedAt-style comparisons if needed.
-var _ = time.RFC3339
-```
-
 - [ ] **Step 3: Run tests to verify they fail**
 
 Run: `go test ./internal/cli/ -run 'TestRunCheck' -count=1`
@@ -1121,11 +1099,9 @@ Expected: FAIL (`runCheck`, `checkOptions`, `exitCodeError` undefined).
 package cli
 
 import (
-	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -1308,12 +1284,7 @@ func pathExists(path string) bool {
 	_, err := os.Stat(path)
 	return err == nil
 }
-
-var _ = errors.Is // kept for exitCodeError tests; remove if unused
-var _ = strings.Contains
 ```
-
-> **Note:** remove the trailing `var _ =` placeholder lines if the imports they guard (`errors`, `strings`) become unused after writing. `errors` and `strings` may not be needed in check.go itself — only in check_test.go.
 
 - [ ] **Step 5: Register in `internal/cli/root.go`**
 
