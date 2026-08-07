@@ -335,7 +335,7 @@ func TestServeToolCallAISyncIncludesStructuredFields(t *testing.T) {
 	serviceRoot := filepath.Join(root, "services", "user-rpc")
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "ncgo_ai_sync", "arguments": map[string]any{"root": serviceRoot, "dryRun": true}},
+		"params": map[string]any{"name": "ncgo_ai_sync", "arguments": map[string]any{"root": serviceRoot, "target": "all", "dryRun": true}},
 	})
 	var out bytes.Buffer
 	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
@@ -359,8 +359,8 @@ func TestServeToolCallAISyncIncludesStructuredFields(t *testing.T) {
 	if len(result["written"].([]any)) != 0 {
 		t.Fatalf("dry-run should not write files: %+v", result["written"])
 	}
-	if len(result["skipped"].([]any)) != 6 {
-		t.Fatalf("dry-run skipped = %+v, want 4 targets + 2 standalone docs", result["skipped"])
+	if len(result["skipped"].([]any)) != 7 {
+		t.Fatalf("dry-run skipped = %+v, want 5 targets + 2 standalone docs", result["skipped"])
 	}
 	text := resultText(result)
 	if !strings.Contains(text, "info: detected parent micro workspace `../..` for this service root") {
@@ -397,6 +397,30 @@ func TestServeToolCallAISyncJSON(t *testing.T) {
 	workspace := textJSON["workspace"].(map[string]any)
 	if workspace["role"] != "member" || workspace["name"] != "commerce" {
 		t.Fatalf("json workspace = %+v", workspace)
+	}
+}
+
+func TestServeToolCallAISyncTargetParam(t *testing.T) {
+	root := seedMCPProject(t, manifest.KindHertz)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_ai_sync", "arguments": map[string]any{"root": root, "target": "agents"}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	text := resultText(result)
+	if !strings.Contains(text, "wrote AGENTS.md") {
+		t.Fatalf("target agents should write AGENTS.md: %s", text)
+	}
+	if strings.Contains(text, "wrote CLAUDE.md") {
+		t.Fatalf("target agents must not write CLAUDE.md: %s", text)
 	}
 }
 

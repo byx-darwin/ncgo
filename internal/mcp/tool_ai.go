@@ -31,6 +31,7 @@ var aiInitClaudeMCPTool = structuredMCPTool[*ai.Result]{
 func callAISync(raw json.RawMessage) (map[string]any, error) {
 	var args struct {
 		Root   string `json:"root"`
+		Target string `json:"target"`
 		Lang   string `json:"lang"`
 		Force  bool   `json:"force"`
 		DryRun bool   `json:"dryRun"`
@@ -43,7 +44,7 @@ func callAISync(raw json.RawMessage) (map[string]any, error) {
 	if err != nil {
 		return textResult(err.Error(), true), nil
 	}
-	res, err := ai.Sync(ai.Options{Root: args.Root, Lang: args.Lang, Force: args.Force, DryRun: args.DryRun})
+	res, err := ai.Sync(ai.Options{Root: args.Root, Target: args.Target, Lang: args.Lang, Force: args.Force, DryRun: args.DryRun})
 	if err != nil {
 		return textResult(err.Error(), true), nil
 	}

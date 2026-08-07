@@ -269,6 +269,9 @@ func ResultFields(res *Result) map[string]any {
 	if len(res.NextSteps) > 0 {
 		fields["nextSteps"] = res.NextSteps
 	}
+	if res.Target != "" {
+		fields["target"] = res.Target
+	}
 	if res.Scope != "" {
 		fields["scope"] = res.Scope
 	}
