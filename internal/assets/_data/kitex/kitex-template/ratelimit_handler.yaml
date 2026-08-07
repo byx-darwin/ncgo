@@ -57,9 +57,25 @@ body: |-
   }
 
   func (s *RuleServiceImpl) ListRules(ctx context.Context, req *ratelimitv1.ListRulesReq) (resp *ratelimitv1.ListRulesResp, err error) {
-      rules, err := s.uc.ListRules(ctx, req.Service, req.Phase)
+      page := req.Page
+      if page < 1 {
+          page = 1
+      }
+      pageSize := req.PageSize
+      if pageSize < 1 {
+          pageSize = 20
+      }
+      if pageSize > 100 {
+          pageSize = 100
+      }
+      rules, total, err := s.uc.ListRules(ctx, req.Service, req.Phase, page, pageSize)
       if err != nil {
           return nil, rpcerror.ToBizError(err)
       }
-      return &ratelimitv1.ListRulesResp{Rules: rules}, nil
+      return &ratelimitv1.ListRulesResp{
+          Rules:    rules,
+          Total:    int32(total),
+          Page:     page,
+          PageSize: pageSize,
+      }, nil
   }
