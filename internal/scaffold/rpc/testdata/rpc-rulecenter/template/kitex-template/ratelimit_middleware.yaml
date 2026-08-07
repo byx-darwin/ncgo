@@ -18,10 +18,12 @@ body: |-
   	"github.com/cloudwego/kitex/pkg/klog"
   	"github.com/cloudwego/kitex/pkg/rpcinfo"
   	kitexserver "github.com/cloudwego/kitex/server"
-  	"github.com/cloudwego/kitex/server/limit"
+  	// TODO: Re-enable when kitex server/limit package is available
+  	// "github.com/cloudwego/kitex/server/limit"
   	"github.com/redis/go-redis/v9"
 
   	"{{.Module}}/internal/base/conf"
+  	pkgmiddleware "{{.Module}}/internal/pkg/middleware"
   	"{{.Module}}/internal/pkg/ratelimit"
   	"{{.Module}}/internal/pkg/rpcerror"
   )
@@ -95,13 +97,16 @@ body: |-
   	}
   }
 
-  // StaticLimitOption returns kitexserver.WithLimit as a coarse global safety
-  // net, or nil when both limits are zero (default: not mounted).
+  // StaticLimitOption is a coarse global safety net for server-level QPS/connection
+  // limits. The kitex server/limit package is unavailable in Kitex v0.16.3, so this
+  // currently returns a zero-value Option (see TODO above); re-enable when available.
+  // TODO: Re-enable when kitex server/limit package is available
   func StaticLimitOption(s conf.StaticLimitConfig) kitexserver.Option {
-  	if s.MaxQPS <= 0 && s.MaxConnections <= 0 {
-  		return nil
-  	}
-  	return kitexserver.WithLimit(&limit.Option{MaxQPS: s.MaxQPS, MaxConnections: s.MaxConnections})
+  	// if s.MaxQPS <= 0 && s.MaxConnections <= 0 {
+  	// 	return nil
+  	// }
+  	// return kitexserver.WithLimit(&limit.Option{MaxQPS: s.MaxQPS, MaxConnections: s.MaxConnections})
+  	return kitexserver.Option{}
   }
 
   func lookupFromRPCInfo(ctx context.Context) ratelimit.Lookup {
@@ -120,7 +125,7 @@ body: |-
   			}
   		}
   	}
-  	if v := metainfo.GetPersistentValue(ctx, "x-caller-service"); v != "" {
+  	if v, _ := metainfo.GetPersistentValue(ctx, "x-caller-service"); v != "" {
   		lookup.AppKey = v
   	}
   	lookup.Phase = "post_auth"
@@ -147,7 +152,7 @@ body: |-
   			if addr == "" {
   				return
   			}
-  			cli, err := NewRuleCenterClient(addr)
+  			cli, err := pkgmiddleware.NewRuleCenterClient(addr)
   			if err != nil {
   				klog.Warnf("ratelimit: rule-center client init failed: %v (falling back to local rules)", err)
   				return

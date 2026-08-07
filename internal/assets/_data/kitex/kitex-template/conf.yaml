@@ -129,6 +129,7 @@ body: |-
       MatchKind   string              `json:"match_kind" yaml:"match_kind"`
       Path        string              `json:"path" yaml:"path"`
       PathPattern string              `json:"path_pattern" yaml:"path_pattern"`
+      PathPrefix  string              `json:"path_prefix" yaml:"path_prefix"`
       Priority    int                 `json:"priority" yaml:"priority"`
       Rule        RateLimitRuleConfig `json:"rule" yaml:"rule"`
   }

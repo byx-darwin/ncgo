@@ -90,7 +90,7 @@ extend google.protobuf.MessageOptions {
 // reads its variables inline so no extra file is needed.
 func writeTemplate(dir string, opts Options) error {
 	if defaultKind(opts.Kind) == manifest.KindKitex {
-		return writeKitexTemplate(dir, opts.Preset)
+		return writeKitexTemplate(dir, opts.Preset, opts.Module)
 	}
 	return writeHertzTemplate(dir, opts)
 }
@@ -158,7 +158,7 @@ func writeHertzTemplate(dir string, opts Options) error {
 // scaffold) and the generated Makefile's `update` target can consume
 // them at the same path. When a preset is specified, it also writes
 // preset-specific layout and extra files.
-func writeKitexTemplate(dir string, preset string) error {
+func writeKitexTemplate(dir string, preset string, module string) error {
 	tplDir := filepath.Join(dir, "template", "kitex-template")
 	if err := os.MkdirAll(tplDir, 0o755); err != nil {
 		return fmt.Errorf("scaffold: mkdir %s: %w", tplDir, err)
@@ -175,6 +175,12 @@ func writeKitexTemplate(dir string, preset string) error {
 		name := e.Name()
 		// Rule-center template files are only copied when preset is "rule-center".
 		if preset != "rule-center" && strings.HasPrefix(name, "ratelimit_") {
+			continue
+		}
+		// Rule-center preset provides its own ratelimit_handler/server/usecase/repository
+		// templates under the rulecenter/ dirs; skip the default per-layer templates
+		// so they don't generate duplicate ruleservice/ scaffolding.
+		if preset == "rule-center" && (name == "handler.yaml" || name == "server.yaml" || name == "usecase.yaml" || name == "repository.yaml") {
 			continue
 		}
 		b, err := fs.ReadFile(srcFS, "kitex/kitex-template/"+name)
@@ -195,12 +201,19 @@ func writeKitexTemplate(dir string, preset string) error {
 	}
 	// Rule-center preset adds additional schema and query files.
 	if preset == "rule-center" {
-		extras = append(extras,
-			struct{ asset, path string }{
-				asset: "kitex/schema/000002_rate_limit_rules.sql",
-				path:  "internal/db/schema/000002_rate_limit_rules.sql",
-			},
-		)
+		// Write the rate_limit_rules schema as pure SQL, stripping the YAML
+		// frontmatter that would otherwise break sqlc parsing.
+		b, err := shared.ReadSharedFragmentBody(srcFS, "kitex/schema/000002_rate_limit_rules", module)
+		if err != nil {
+			return fmt.Errorf("scaffold: read rule-center schema: %w", err)
+		}
+		full := filepath.Join(dir, "internal", "db", "schema", "000002_rate_limit_rules.sql")
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return fmt.Errorf("scaffold: mkdir schema: %w", err)
+		}
+		if err := os.WriteFile(full, b, 0o644); err != nil {
+			return fmt.Errorf("scaffold: write schema: %w", err)
+		}
 		// Copy shared ratelimit fragments into the kitex-template dir as
 		// ratelimit_shared_*.yaml so the existing ratelimit_ prefix filter
 		// copies them only for the rule-center preset. The layout-rulecenter.yaml
@@ -444,6 +457,12 @@ func copyHertzTemplateYAML(dir string, srcFS fs.FS) error {
 // Hertz follows the official api.proto + openapi annotation proto + service
 // proto structure so `hz new` and Swagger generation can work out of the box;
 // Kitex keeps its single service-named proto consumed by the kitex tool.
+//
+// The rule-center preset is special: its real proto lives in the
+// ratelimit_proto.yaml kitex template, so instead of an empty placeholder we
+// write the full preset proto at scaffold time. That way kitex parses the real
+// IDL (kitex_gen/api/ratelimit/v1) on its first run instead of only after the
+// user runs `make update`. Any IDL that already exists on disk is left alone.
 func writeIDLPlaceholder(dir, idl string, opts Options) error {
 	if defaultKind(opts.Kind) == manifest.KindHertz {
 		if err := writeHertzProtoSupportFiles(dir); err != nil {
@@ -454,11 +473,44 @@ func writeIDLPlaceholder(dir, idl string, opts Options) error {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(full), err)
 	}
+	if opts.Preset == "rule-center" && filepath.ToSlash(idl) == "idl/rule-center.proto" {
+		body, err := ruleCenterIDLBody(assets.FS())
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(full, body, 0o644); err != nil {
+			return fmt.Errorf("scaffold: write %s: %w", idl, err)
+		}
+		return nil
+	}
+	// Never clobber an IDL that already exists on disk (e.g. one produced by a
+	// preset template or a previous generate step).
+	if _, err := os.Stat(full); err == nil {
+		return nil
+	}
 	body := renderIDLPlaceholder(opts)
 	if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
 		return fmt.Errorf("scaffold: write %s: %w", full, err)
 	}
 	return nil
+}
+
+// ruleCenterIDLBody extracts the preset proto body from the embedded
+// ratelimit_proto.yaml kitex template so the full IDL exists before kitex
+// renders templates. The template body is static proto (no placeholders), so
+// the rendered bytes match what kitex itself writes on the `update` target.
+func ruleCenterIDLBody(srcFS fs.FS) ([]byte, error) {
+	b, err := fs.ReadFile(srcFS, "kitex/kitex-template/ratelimit_proto.yaml")
+	if err != nil {
+		return nil, fmt.Errorf("scaffold: read embedded ratelimit_proto.yaml: %w", err)
+	}
+	var tpl struct {
+		Body string `yaml:"body"`
+	}
+	if err := yaml.Unmarshal(b, &tpl); err != nil {
+		return nil, fmt.Errorf("scaffold: parse ratelimit_proto.yaml: %w", err)
+	}
+	return []byte(tpl.Body), nil
 }
 
 func writeHertzProtoSupportFiles(dir string) error {

@@ -25,27 +25,27 @@ body: |-
       return &Repo{q: q, pool: pool}
   }
 
-  func (r *Repo) GetRateLimitExactRuleByAppKey(ctx context.Context, service, phase, method, path, appKey string) (*gen.RateLimitRule, error) {
+  func (r *Repo) GetRateLimitExactRuleByAppKey(ctx context.Context, service, phase, method, path, appKey string) (gen.RateLimitRule, error) {
       return r.q.GetRateLimitExactRuleByAppKey(ctx, gen.GetRateLimitExactRuleByAppKeyParams{
-          Service: service, Phase: phase, Method: method, Path: path, AppKey: appKey,
+          Service: service, Phase: phase, Method: method, Path: path, AppKey: strPtrOrNil(appKey),
       })
   }
 
-  func (r *Repo) GetRateLimitExactRuleFallback(ctx context.Context, service, phase, method, path string) (*gen.RateLimitRule, error) {
+  func (r *Repo) GetRateLimitExactRuleFallback(ctx context.Context, service, phase, method, path string) (gen.RateLimitRule, error) {
       return r.q.GetRateLimitExactRuleFallback(ctx, gen.GetRateLimitExactRuleFallbackParams{
           Service: service, Phase: phase, Method: method, Path: path,
       })
   }
 
-  func (r *Repo) GetRateLimitPatternRuleByAppKey(ctx context.Context, service, phase, method, appKey string) ([]gen.RateLimitRule, error) {
+  func (r *Repo) GetRateLimitPatternRuleByAppKey(ctx context.Context, service, phase, method, path, appKey string) ([]gen.RateLimitRule, error) {
       return r.q.GetRateLimitPatternRuleByAppKey(ctx, gen.GetRateLimitPatternRuleByAppKeyParams{
-          Service: service, Phase: phase, Method: method, AppKey: appKey,
+          Service: service, Phase: phase, Method: method, Path: path, AppKey: strPtrOrNil(appKey),
       })
   }
 
-  func (r *Repo) GetRateLimitPatternRuleFallback(ctx context.Context, service, phase, method string) ([]gen.RateLimitRule, error) {
+  func (r *Repo) GetRateLimitPatternRuleFallback(ctx context.Context, service, phase, method, path string) ([]gen.RateLimitRule, error) {
       return r.q.GetRateLimitPatternRuleFallback(ctx, gen.GetRateLimitPatternRuleFallbackParams{
-          Service: service, Phase: phase, Method: method,
+          Service: service, Phase: phase, Method: method, Path: path,
       })
   }
 
@@ -63,4 +63,13 @@ body: |-
 
   func (r *Repo) ListRateLimitRules(ctx context.Context, arg gen.ListRateLimitRulesParams) ([]gen.RateLimitRule, error) {
       return r.q.ListRateLimitRules(ctx, arg)
+  }
+
+  // strPtrOrNil converts an empty string to nil, matching sqlc's *string AppKey
+  // params where a NULL app_key means "fallback rule" (no app_key match).
+  func strPtrOrNil(s string) *string {
+      if s == "" {
+          return nil
+      }
+      return &s
   }
