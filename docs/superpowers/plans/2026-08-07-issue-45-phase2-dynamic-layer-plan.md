@@ -805,7 +805,7 @@ func callAIContext(raw json.RawMessage) (map[string]any, error) {
 	return buildMCPResult(text, false, mcpAIContextFields(s)), nil
 }
 
-func formatAIContext(sc *scan.ScanResult, output string) (string, error) {
+func formatAIContext(s *scan.ScanResult, output string) (string, error) {
 	switch output {
 	case mcpOutputJSON:
 		var buf strings.Builder
@@ -820,7 +820,7 @@ func formatAIContext(sc *scan.ScanResult, output string) (string, error) {
 
 // mcpAIContextFields exposes stable top-level fields so agents can read the
 // scan without parsing content[0].text.
-func mcpAIContextFields(sc *scan.ScanResult) map[string]any {
+func mcpAIContextFields(s *scan.ScanResult) map[string]any {
 	return map[string]any{
 		"root":    s.Root,
 		"domains": s.Domains,
@@ -830,7 +830,7 @@ func mcpAIContextFields(sc *scan.ScanResult) map[string]any {
 	}
 }
 
-func formatAIContextText(sc *scan.ScanResult) string {
+func formatAIContextText(s *scan.ScanResult) string {
 	var b strings.Builder
 	fmt.Fprintf(&b, "ncgo_ai_context for %s\n\n", s.Root)
 	for _, d := range s.Domains {
@@ -850,7 +850,7 @@ func formatAIContextText(sc *scan.ScanResult) string {
 	return b.String()
 }
 
-func flattenMethods(sc *scan.ScanResult) []map[string]any {
+func flattenMethods(s *scan.ScanResult) []map[string]any {
 	var out []map[string]any
 	for _, d := range s.Domains {
 		for _, m := range d.Methods {
@@ -865,7 +865,7 @@ func flattenMethods(sc *scan.ScanResult) []map[string]any {
 	return out
 }
 
-func anchorSummaries(sc *scan.ScanResult) []map[string]any {
+func anchorSummaries(s *scan.ScanResult) []map[string]any {
 	var out []map[string]any
 	for _, d := range s.Domains {
 		out = append(out, map[string]any{"domain": d.Name, "ok": d.AnchorsOK})
@@ -1196,7 +1196,7 @@ func buildCheckReport(root string) (*doctor.Report, error) {
 	return rep, nil
 }
 
-func anchorChecks(sc *scan.ScanResult) []doctor.Check {
+func anchorChecks(s *scan.ScanResult) []doctor.Check {
 	var out []doctor.Check
 	bad := 0
 	for _, d := range s.Domains {
@@ -1218,7 +1218,7 @@ func anchorChecks(sc *scan.ScanResult) []doctor.Check {
 	return out
 }
 
-func consistencyChecks(sc *scan.ScanResult) []doctor.Check {
+func consistencyChecks(s *scan.ScanResult) []doctor.Check {
 	var out []doctor.Check
 	bad := 0
 	for _, i := range s.Issues {
