@@ -75,7 +75,7 @@ body: |-
   }
 
   // CreateRule inserts a new rate-limit rule.
-  func (uc *UseCase) CreateRule(ctx context.Context, req *ratelimitv1.CreateRuleRequest) (int64, error) {
+  func (uc *UseCase) CreateRule(ctx context.Context, req *ratelimitv1.CreateRuleReq) (int64, error) {
       ak := ""
       if req.AppKey != nil {
           ak = *req.AppKey
@@ -101,7 +101,7 @@ body: |-
   }
 
   // UpdateRule partially updates an existing rule by id.
-  func (uc *UseCase) UpdateRule(ctx context.Context, req *ratelimitv1.UpdateRuleRequest) error {
+  func (uc *UseCase) UpdateRule(ctx context.Context, req *ratelimitv1.UpdateRuleReq) error {
       arg := gen.UpdateRateLimitRuleParams{ID: req.Id}
       if req.Enabled != nil {
           arg.Enabled = req.Enabled
