@@ -485,7 +485,9 @@ func writeStandaloneDocs(opts Options, res *Result, profile string) error {
 		if err != nil {
 			return fmt.Errorf("ai sync: read embedded %s: %w", spec.AssetPath, err)
 		}
-		content := rewriteDocLinks(string(b))
+		// Mark the materialized doc as managed so a later sync refreshes it
+		// instead of treating it as a user-owned file without the marker.
+		content := ManagedMarker + "\n" + rewriteDocLinks(string(b))
 		if existing, err := os.ReadFile(full); err == nil {
 			if !isManaged(existing) && !opts.Force {
 				res.Skipped = append(res.Skipped, Skip{

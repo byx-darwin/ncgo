@@ -603,6 +603,36 @@ func TestSyncWritesStandaloneDocs(t *testing.T) {
 	}
 }
 
+func TestSyncRefreshesStandaloneDocsOnSecondPass(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	if _, err := Sync(Options{Root: root}); err != nil {
+		t.Fatalf("first Sync: %v", err)
+	}
+	res, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("second Sync: %v", err)
+	}
+	p := filepath.Join(root, "docs", "ncgo", "hertz", "design-doc.en.md")
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("standalone doc missing after second sync: %v", err)
+	}
+	const docRel = "docs/ncgo/hertz/design-doc.en.md"
+	var written bool
+	for _, w := range res.Written {
+		if w == docRel {
+			written = true
+		}
+	}
+	if !written {
+		t.Fatalf("standalone doc should be rewritten on second sync; Written=%v Skipped=%v", res.Written, res.Skipped)
+	}
+	b, _ := os.ReadFile(p)
+	if !strings.Contains(string(b), ManagedMarker) {
+		t.Errorf("standalone doc missing managed marker")
+	}
+}
+
 func TestSyncWritesStandaloneDocsForKitex(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindKitex)
