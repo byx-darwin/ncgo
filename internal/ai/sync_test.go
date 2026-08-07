@@ -1,8 +1,10 @@
 package ai
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 
@@ -284,6 +286,114 @@ func TestSyncForceOverwritesUnmanagedFile(t *testing.T) {
 	}
 }
 
+func TestSyncRefusesSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("sensitive\n"), 0o644); err != nil {
+		t.Fatalf("seed outside file: %v", err)
+	}
+	writeManifest(t, root, manifest.KindHertz)
+	if err := os.Symlink(outside, filepath.Join(root, "AGENTS.md")); err != nil {
+		t.Fatalf("symlink AGENTS.md: %v", err)
+	}
+	res, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	var skipped bool
+	for _, s := range res.Skipped {
+		if s.Path == "AGENTS.md" && strings.Contains(s.Reason, "symlink") {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Fatalf("expected AGENTS.md skip due to symlink escape; got %+v", res.Skipped)
+	}
+	b, _ := os.ReadFile(outside)
+	if string(b) != "sensitive\n" {
+		t.Errorf("outside file must not be overwritten through symlink; got %q", string(b))
+	}
+}
+
+func TestSyncForceStillRefusesSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("sensitive\n"), 0o644); err != nil {
+		t.Fatalf("seed outside file: %v", err)
+	}
+	writeManifest(t, root, manifest.KindHertz)
+	if err := os.Symlink(outside, filepath.Join(root, "AGENTS.md")); err != nil {
+		t.Fatalf("symlink AGENTS.md: %v", err)
+	}
+	res, err := Sync(Options{Root: root, Force: true})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	var skipped bool
+	for _, s := range res.Skipped {
+		if s.Path == "AGENTS.md" && strings.Contains(s.Reason, "symlink") {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Fatalf("expected AGENTS.md skip even with --force; got %+v", res.Skipped)
+	}
+	b, _ := os.ReadFile(outside)
+	if string(b) != "sensitive\n" {
+		t.Errorf("outside file must not be overwritten even with --force; got %q", string(b))
+	}
+}
+
+func TestSyncRefusesDanglingSymlink(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "not-created.txt")
+	writeManifest(t, root, manifest.KindHertz)
+	if err := os.Symlink(outside, filepath.Join(root, "AGENTS.md")); err != nil {
+		t.Fatalf("symlink AGENTS.md: %v", err)
+	}
+	res, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	var skipped bool
+	for _, s := range res.Skipped {
+		if s.Path == "AGENTS.md" && strings.Contains(s.Reason, "symlink") {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Fatalf("expected AGENTS.md skip due to dangling symlink; got %+v", res.Skipped)
+	}
+	if _, err := os.Stat(outside); !os.IsNotExist(err) {
+		t.Errorf("outside target must not be created through dangling symlink")
+	}
+}
+
+func TestSyncAllowsSymlinkWithinRoot(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	target := filepath.Join(root, "target-agents.md")
+	if err := os.WriteFile(target, []byte(ManagedMarker+"\n\n# old\n"), 0o644); err != nil {
+		t.Fatalf("seed target: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, "AGENTS.md")); err != nil {
+		t.Fatalf("symlink AGENTS.md: %v", err)
+	}
+	res, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	for _, s := range res.Skipped {
+		if s.Path == "AGENTS.md" {
+			t.Fatalf("AGENTS.md should not be skipped for within-root symlink; got %+v", res.Skipped)
+		}
+	}
+	b, _ := os.ReadFile(target)
+	if !strings.Contains(string(b), ManagedMarker) {
+		t.Errorf("within-root symlink target should receive managed content")
+	}
+}
+
 func TestSyncAppendsLocalNotes(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindHertz)
@@ -314,8 +424,18 @@ func TestSyncDryRunWritesNothing(t *testing.T) {
 	if len(res.Written) != 0 {
 		t.Errorf("DryRun must not write; got %v", res.Written)
 	}
-	if len(res.Skipped) != len(targets()) {
-		t.Errorf("DryRun should skip all targets; got %v", res.Skipped)
+	skipped := map[string]bool{}
+	for _, s := range res.Skipped {
+		skipped[s.Path] = s.Reason == "dry-run"
+	}
+	for _, tgt := range targets() {
+		if skipped[tgt.RelPath] {
+			continue
+		}
+		t.Errorf("dry-run should report %s as skipped; got %+v", tgt.RelPath, res.Skipped)
+	}
+	if !skipped["docs/ncgo/hertz/design-doc.en.md"] {
+		t.Errorf("dry-run should also report standalone docs; got %+v", res.Skipped)
 	}
 	if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); !os.IsNotExist(err) {
 		t.Errorf("AGENTS.md should not exist after dry run")
@@ -428,8 +548,18 @@ func TestSyncWorkspaceDryRunWritesNothing(t *testing.T) {
 	if len(res.Written) != 0 {
 		t.Errorf("DryRun must not write; got %v", res.Written)
 	}
-	if len(res.Skipped) != len(targets()) {
-		t.Errorf("DryRun should skip all targets; got %v", res.Skipped)
+	skipped := map[string]bool{}
+	for _, s := range res.Skipped {
+		skipped[s.Path] = s.Reason == "dry-run"
+	}
+	for _, tgt := range targets() {
+		if skipped[tgt.RelPath] {
+			continue
+		}
+		t.Errorf("dry-run should report %s as skipped; got %+v", tgt.RelPath, res.Skipped)
+	}
+	if !skipped["docs/ncgo/micro/design-doc.en.md"] {
+		t.Errorf("dry-run should also report standalone docs; got %+v", res.Skipped)
 	}
 	if _, err := os.Stat(filepath.Join(root, "AGENTS.md")); !os.IsNotExist(err) {
 		t.Errorf("AGENTS.md should not exist after dry run")
@@ -486,12 +616,42 @@ func TestSyncWritesStandaloneDocs(t *testing.T) {
 	if !strings.Contains(body, "Hertz Template Design Doc") {
 		t.Errorf("standalone design-doc missing title; got %d bytes", len(body))
 	}
-	if strings.Contains(body, "docs/hertz/") || strings.Contains(body, "../hertz/") {
-		t.Errorf("standalone design-doc still contains original doc links, not rewritten")
+	if strings.Contains(body, "docs/hertz/") {
+		t.Errorf("standalone design-doc still contains original absolute doc links")
 	}
 	kp := filepath.Join(root, "docs", "ncgo", "kitex", "design-doc.en.md")
 	if _, err := os.Stat(kp); os.IsNotExist(err) {
 		t.Errorf("cross-profile kitex/design-doc.en.md not generated for hertz project")
+	}
+}
+
+func TestSyncRefreshesStandaloneDocsOnSecondPass(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	if _, err := Sync(Options{Root: root}); err != nil {
+		t.Fatalf("first Sync: %v", err)
+	}
+	res, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("second Sync: %v", err)
+	}
+	p := filepath.Join(root, "docs", "ncgo", "hertz", "design-doc.en.md")
+	if _, err := os.Stat(p); err != nil {
+		t.Fatalf("standalone doc missing after second sync: %v", err)
+	}
+	const docRel = "docs/ncgo/hertz/design-doc.en.md"
+	var written bool
+	for _, w := range res.Written {
+		if w == docRel {
+			written = true
+		}
+	}
+	if !written {
+		t.Fatalf("standalone doc should be rewritten on second sync; Written=%v Skipped=%v", res.Written, res.Skipped)
+	}
+	b, _ := os.ReadFile(p)
+	if !strings.Contains(string(b), ManagedMarker) {
+		t.Errorf("standalone doc missing managed marker")
 	}
 }
 
@@ -535,12 +695,15 @@ func TestSyncWritesStandaloneDocsZhCN(t *testing.T) {
 	if !strings.Contains(body, "Hertz 模板详细设计") {
 		t.Errorf("zh-CN standalone doc missing Chinese title")
 	}
-	// Check links are rewritten
-	if strings.Contains(body, "../kitex/") || strings.Contains(body, "docs/kitex/") {
-		t.Errorf("zh-CN standalone doc still contains original kitex links")
+	// Check links are rewritten to sibling profile paths. Note ../<profile>/
+	// contains ./.<profile>/ as a substring, so only exact source-style
+	// (docs/<profile>/) paths and the preserved sibling form are asserted;
+	// resolvability is covered by TestStandaloneDocHrefsResolve.
+	if strings.Contains(body, "docs/kitex/") {
+		t.Errorf("zh-CN standalone doc still contains original absolute kitex links")
 	}
-	if !strings.Contains(body, "./kitex/") {
-		t.Errorf("zh-CN standalone doc missing rewritten kitex link")
+	if !strings.Contains(body, "../kitex/") {
+		t.Errorf("zh-CN standalone doc missing preserved sibling kitex link")
 	}
 }
 
@@ -554,9 +717,72 @@ func TestSyncDryRunWritesNoStandaloneDocs(t *testing.T) {
 	if len(res.Written) != 0 {
 		t.Errorf("DryRun must not write; got %v", res.Written)
 	}
+	var reported bool
+	for _, s := range res.Skipped {
+		if s.Path == "docs/ncgo/hertz/design-doc.en.md" && s.Reason == "dry-run" {
+			reported = true
+		}
+	}
+	if !reported {
+		t.Errorf("dry-run should report standalone docs as skipped; got %+v", res.Skipped)
+	}
 	p := filepath.Join(root, "docs", "ncgo", "hertz", "design-doc.en.md")
 	if _, err := os.Stat(p); !os.IsNotExist(err) {
 		t.Errorf("standalone doc should not exist after dry run")
+	}
+}
+
+// TestStandaloneDocHrefsResolve verifies that every relative markdown href in
+// the generated design docs resolves to a real file in the project, guarding
+// against link-rewrite regressions (e.g. ../<profile>/ turned into ./<profile>/).
+func TestStandaloneDocHrefsResolve(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	if _, err := Sync(Options{Root: root}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	var docPaths []string
+	err := filepath.WalkDir(filepath.Join(root, "docs", "ncgo"), func(path string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		// Only design docs participate in cross-profile links; rate-limit docs
+		// legitimately reference language variants that a single sync does not
+		// materialize.
+		if !d.IsDir() && strings.HasPrefix(d.Name(), "design-doc.") {
+			docPaths = append(docPaths, path)
+		}
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("walk docs/ncgo: %v", err)
+	}
+	if len(docPaths) == 0 {
+		t.Fatalf("no design docs generated")
+	}
+	hrefRE := regexp.MustCompile(`\]\(([^)]+)\)`)
+	for _, doc := range docPaths {
+		b, err := os.ReadFile(doc)
+		if err != nil {
+			t.Fatalf("read %s: %v", doc, err)
+		}
+		for _, m := range hrefRE.FindAllStringSubmatch(string(b), -1) {
+			href := m[1]
+			// Skip external/anchor targets and Go call syntax like
+			// do.MustInvoke[*data.Data](inj, startupCtx) — real doc links
+			// are path-shaped (contain a "/").
+			if !strings.Contains(href, "/") {
+				continue
+			}
+			if strings.HasPrefix(href, "http://") || strings.HasPrefix(href, "https://") ||
+				strings.HasPrefix(href, "#") || strings.HasPrefix(href, "mailto:") {
+				continue
+			}
+			target := filepath.Join(filepath.Dir(doc), filepath.FromSlash(href))
+			if _, err := os.Stat(target); err != nil {
+				t.Errorf("%s: href %q does not resolve to %s", doc, href, target)
+			}
+		}
 	}
 }
 
@@ -569,17 +795,17 @@ func TestRewriteDocLinks(t *testing.T) {
 		{
 			name:     "absolute hertz link",
 			input:    "see `docs/hertz/rate-limit-dynamic-design.en.md`",
-			expected: "see `./hertz/rate-limit-dynamic-design.en.md`",
+			expected: "see `../hertz/rate-limit-dynamic-design.en.md`",
 		},
 		{
-			name:     "relative kitex link",
+			name:     "relative kitex link stays a sibling",
 			input:    "[kitex](../kitex/design-doc.en.md)",
-			expected: "[kitex](./kitex/design-doc.en.md)",
+			expected: "[kitex](../kitex/design-doc.en.md)",
 		},
 		{
 			name:     "absolute kitex link in hertz doc",
 			input:    "[kitex docs](docs/kitex/design-doc.en.md)",
-			expected: "[kitex docs](./kitex/design-doc.en.md)",
+			expected: "[kitex docs](../kitex/design-doc.en.md)",
 		},
 		{
 			name:     "no links unchanged",
@@ -589,12 +815,12 @@ func TestRewriteDocLinks(t *testing.T) {
 		{
 			name:     "absolute micro link",
 			input:    "see `docs/micro/design-doc.en.md`",
-			expected: "see `./micro/design-doc.en.md`",
+			expected: "see `../micro/design-doc.en.md`",
 		},
 		{
-			name:     "relative micro link",
+			name:     "relative micro link stays a sibling",
 			input:    "[micro docs](../micro/design-doc.en.md)",
-			expected: "[micro docs](./micro/design-doc.en.md)",
+			expected: "[micro docs](../micro/design-doc.en.md)",
 		},
 	}
 	for _, tt := range tests {

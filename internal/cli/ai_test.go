@@ -183,8 +183,8 @@ func TestRunAISyncJSONOutput(t *testing.T) {
 	if res.Scope != "service" || res.SourceRef != ".ncgo/manifest.yaml" {
 		t.Fatalf("result = %+v, want service/.ncgo/manifest.yaml", res)
 	}
-	if len(res.Written) != 0 || len(res.Skipped) != 4 {
-		t.Fatalf("result = %+v, want 0 writes and 4 skips", res)
+	if len(res.Written) != 0 || len(res.Skipped) != 7 {
+		t.Fatalf("result = %+v, want 0 writes and 7 skips (4 targets + 3 standalone docs)", res)
 	}
 }
 

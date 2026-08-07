@@ -359,8 +359,8 @@ func TestServeToolCallAISyncIncludesStructuredFields(t *testing.T) {
 	if len(result["written"].([]any)) != 0 {
 		t.Fatalf("dry-run should not write files: %+v", result["written"])
 	}
-	if len(result["skipped"].([]any)) != 4 {
-		t.Fatalf("dry-run skipped = %+v, want 4 targets", result["skipped"])
+	if len(result["skipped"].([]any)) != 6 {
+		t.Fatalf("dry-run skipped = %+v, want 4 targets + 2 standalone docs", result["skipped"])
 	}
 	text := resultText(result)
 	if !strings.Contains(text, "info: detected parent micro workspace `../..` for this service root") {

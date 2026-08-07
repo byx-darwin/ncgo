@@ -363,11 +363,77 @@ func readLocalNotes(root string) (string, error) {
 	return string(b), nil
 }
 
+// safeWritePath validates that writing relPath under root cannot escape root
+// through symlinks. It returns the canonical absolute write path and, when the
+// path is unsafe, a skip reason instead. Force must not bypass this boundary,
+// because a symlink escape can overwrite files outside the user's project.
+func safeWritePath(root, relPath string) (full string, skip string, err error) {
+	absRoot, err := filepath.Abs(root)
+	if err != nil {
+		return "", "", err
+	}
+	resolvedRoot, rerr := filepath.EvalSymlinks(absRoot)
+	if rerr != nil {
+		resolvedRoot = filepath.Clean(absRoot)
+	}
+	full = filepath.Join(resolvedRoot, filepath.Clean(relPath))
+	rel, err := filepath.Rel(resolvedRoot, full)
+	if err != nil {
+		return "", "", err
+	}
+	if rel == "." {
+		return full, "", nil
+	}
+	// Walk each path component under the resolved root. A component that is a
+	// symlink must resolve back inside root; a dangling symlink at any level
+	// must not be written through. Missing components are safe to create once
+	// every existing ancestor has been verified.
+	cur := resolvedRoot
+	for part := range strings.SplitSeq(rel, string(filepath.Separator)) {
+		cur = filepath.Join(cur, part)
+		li, lerr := os.Lstat(cur)
+		if errors.Is(lerr, fs.ErrNotExist) {
+			continue
+		}
+		if lerr != nil {
+			return "", "", fmt.Errorf("ai sync: lstat %s: %w", cur, lerr)
+		}
+		if li.Mode()&os.ModeSymlink == 0 {
+			continue
+		}
+		target, terr := filepath.EvalSymlinks(cur)
+		if terr != nil {
+			return "", fmt.Sprintf("refusing to write through dangling symlink %s", part), nil
+		}
+		if !pathWithin(resolvedRoot, target) {
+			return "", fmt.Sprintf("refusing to write through symlink outside project root: %s", part), nil
+		}
+		cur = target
+	}
+	return full, "", nil
+}
+
+// pathWithin reports whether p is inside root (or equals root).
+func pathWithin(root, p string) bool {
+	rel, err := filepath.Rel(root, p)
+	if err != nil {
+		return false
+	}
+	return rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+}
+
 // writeTarget renders one target file relative to opts.Root, honouring
 // the managed-marker / Force / DryRun rules. The inputs argument contains
 // the pre-rendered shared bodies produced by buildInputs.
 func writeTarget(opts Options, t target, inputs renderInputs, res *Result) error {
-	full := filepath.Join(opts.Root, t.RelPath)
+	full, skip, err := safeWritePath(opts.Root, t.RelPath)
+	if err != nil {
+		return fmt.Errorf("ai sync: %w", err)
+	}
+	if skip != "" {
+		res.Skipped = append(res.Skipped, Skip{Path: t.RelPath, Reason: skip})
+		return nil
+	}
 	rendered := t.Render(inputs)
 	if existing, err := os.ReadFile(full); err == nil {
 		if !isManaged(existing) && !opts.Force {
@@ -403,16 +469,26 @@ type docSpec struct {
 // writeStandaloneDocs generates standalone design-doc files to docs/ncgo/
 // in the user project, with cross-link rewriting.
 func writeStandaloneDocs(opts Options, res *Result, profile string) error {
-	if opts.DryRun {
-		return nil
-	}
 	for _, spec := range listDocSpecs(profile, opts.Lang) {
+		full, skip, err := safeWritePath(opts.Root, spec.RelPath)
+		if err != nil {
+			return fmt.Errorf("ai sync: %w", err)
+		}
+		if skip != "" {
+			res.Skipped = append(res.Skipped, Skip{Path: spec.RelPath, Reason: skip})
+			continue
+		}
+		if opts.DryRun {
+			res.Skipped = append(res.Skipped, Skip{Path: spec.RelPath, Reason: "dry-run"})
+			continue
+		}
 		b, err := fs.ReadFile(assets.FS(), spec.AssetPath)
 		if err != nil {
 			return fmt.Errorf("ai sync: read embedded %s: %w", spec.AssetPath, err)
 		}
-		content := rewriteDocLinks(string(b))
-		full := filepath.Join(opts.Root, spec.RelPath)
+		// Mark the materialized doc as managed so a later sync refreshes it
+		// instead of treating it as a user-owned file without the marker.
+		content := ManagedMarker + "\n" + rewriteDocLinks(string(b))
 		if existing, err := os.ReadFile(full); err == nil {
 			if !isManaged(existing) && !opts.Force {
 				res.Skipped = append(res.Skipped, Skip{
@@ -474,17 +550,16 @@ func crossProfiles(profile string) []string {
 	}
 }
 
-// rewriteDocLinks rewrites absolute and relative doc cross-links so that they
-// point to the same-level sibling directories under docs/ncgo/.
+// rewriteDocLinks rewrites absolute doc cross-links so that they point to the
+// materialized docs/ncgo/<profile>/ layout. Because docs/ncgo/ mirrors the
+// source docs/<profile>/ hierarchy, existing ../<profile>/ sibling links stay
+// correct and are preserved verbatim; only the bare docs/<profile>/ display
+// paths are remapped to ../<profile>/.
 func rewriteDocLinks(content string) string {
 	for _, origProfile := range []string{"hertz", "kitex", "micro"} {
 		oldAbs := "docs/" + origProfile + "/"
-		newAbs := "./" + origProfile + "/"
-		content = strings.ReplaceAll(content, oldAbs, newAbs)
-
-		oldRel := "../" + origProfile + "/"
-		newRel := "./" + origProfile + "/"
-		content = strings.ReplaceAll(content, oldRel, newRel)
+		newRel := "../" + origProfile + "/"
+		content = strings.ReplaceAll(content, oldAbs, newRel)
 	}
 	return content
 }
