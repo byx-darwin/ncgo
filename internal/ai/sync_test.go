@@ -284,6 +284,114 @@ func TestSyncForceOverwritesUnmanagedFile(t *testing.T) {
 	}
 }
 
+func TestSyncRefusesSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("sensitive\n"), 0o644); err != nil {
+		t.Fatalf("seed outside file: %v", err)
+	}
+	writeManifest(t, root, manifest.KindHertz)
+	if err := os.Symlink(outside, filepath.Join(root, "AGENTS.md")); err != nil {
+		t.Fatalf("symlink AGENTS.md: %v", err)
+	}
+	res, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	var skipped bool
+	for _, s := range res.Skipped {
+		if s.Path == "AGENTS.md" && strings.Contains(s.Reason, "symlink") {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Fatalf("expected AGENTS.md skip due to symlink escape; got %+v", res.Skipped)
+	}
+	b, _ := os.ReadFile(outside)
+	if string(b) != "sensitive\n" {
+		t.Errorf("outside file must not be overwritten through symlink; got %q", string(b))
+	}
+}
+
+func TestSyncForceStillRefusesSymlinkEscape(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "outside.txt")
+	if err := os.WriteFile(outside, []byte("sensitive\n"), 0o644); err != nil {
+		t.Fatalf("seed outside file: %v", err)
+	}
+	writeManifest(t, root, manifest.KindHertz)
+	if err := os.Symlink(outside, filepath.Join(root, "AGENTS.md")); err != nil {
+		t.Fatalf("symlink AGENTS.md: %v", err)
+	}
+	res, err := Sync(Options{Root: root, Force: true})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	var skipped bool
+	for _, s := range res.Skipped {
+		if s.Path == "AGENTS.md" && strings.Contains(s.Reason, "symlink") {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Fatalf("expected AGENTS.md skip even with --force; got %+v", res.Skipped)
+	}
+	b, _ := os.ReadFile(outside)
+	if string(b) != "sensitive\n" {
+		t.Errorf("outside file must not be overwritten even with --force; got %q", string(b))
+	}
+}
+
+func TestSyncRefusesDanglingSymlink(t *testing.T) {
+	root := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "not-created.txt")
+	writeManifest(t, root, manifest.KindHertz)
+	if err := os.Symlink(outside, filepath.Join(root, "AGENTS.md")); err != nil {
+		t.Fatalf("symlink AGENTS.md: %v", err)
+	}
+	res, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	var skipped bool
+	for _, s := range res.Skipped {
+		if s.Path == "AGENTS.md" && strings.Contains(s.Reason, "symlink") {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Fatalf("expected AGENTS.md skip due to dangling symlink; got %+v", res.Skipped)
+	}
+	if _, err := os.Stat(outside); !os.IsNotExist(err) {
+		t.Errorf("outside target must not be created through dangling symlink")
+	}
+}
+
+func TestSyncAllowsSymlinkWithinRoot(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	target := filepath.Join(root, "target-agents.md")
+	if err := os.WriteFile(target, []byte(ManagedMarker+"\n\n# old\n"), 0o644); err != nil {
+		t.Fatalf("seed target: %v", err)
+	}
+	if err := os.Symlink(target, filepath.Join(root, "AGENTS.md")); err != nil {
+		t.Fatalf("symlink AGENTS.md: %v", err)
+	}
+	res, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	for _, s := range res.Skipped {
+		if s.Path == "AGENTS.md" {
+			t.Fatalf("AGENTS.md should not be skipped for within-root symlink; got %+v", res.Skipped)
+		}
+	}
+	b, _ := os.ReadFile(target)
+	if !strings.Contains(string(b), ManagedMarker) {
+		t.Errorf("within-root symlink target should receive managed content")
+	}
+}
+
 func TestSyncAppendsLocalNotes(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindHertz)
