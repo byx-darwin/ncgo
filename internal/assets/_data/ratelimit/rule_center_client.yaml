@@ -131,7 +131,7 @@ body: |
   //   - (nil, false, nil): remote answered "not found"
   //   - (nil, false, error): remote query failed
   func (c *RuleCenterClient) ResolveRateLimitRule(ctx context.Context, lookup ratelimit.Lookup) (*conf.RateLimitRuleConfig, bool, error) {
-  	resp, err := c.cli.GetRule(ctx, &ratelimitv1.GetRuleRequest{
+  	resp, err := c.cli.GetRule(ctx, &ratelimitv1.GetRuleReq{
   		Service: lookup.Service,
   		Phase:   lookup.Phase,
   		Method:  lookup.Method,

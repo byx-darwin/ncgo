@@ -27,6 +27,7 @@ body: |-
       UpdateRateLimitRule(ctx context.Context, arg gen.UpdateRateLimitRuleParams) error
       DeleteRateLimitRule(ctx context.Context, id int64) error
       ListRateLimitRules(ctx context.Context, arg gen.ListRateLimitRulesParams) ([]gen.RateLimitRule, error)
+      CountRateLimitRules(ctx context.Context, arg gen.CountRateLimitRulesParams) (int64, error)
   }
 
   // UseCase orchestrates business logic for the rule-center.
@@ -75,10 +76,14 @@ body: |-
   }
 
   // CreateRule inserts a new rate-limit rule.
-  func (uc *UseCase) CreateRule(ctx context.Context, req *ratelimitv1.CreateRuleRequest) (int64, error) {
+  func (uc *UseCase) CreateRule(ctx context.Context, req *ratelimitv1.CreateRuleReq) (int64, error) {
       ak := ""
       if req.AppKey != nil {
           ak = *req.AppKey
+      }
+      cfg := req.Config
+      if cfg == nil {
+          cfg = &ratelimitv1.RateLimitConfig{}
       }
       return uc.repo.CreateRateLimitRule(ctx, gen.CreateRateLimitRuleParams{
           Service:           req.Service,
@@ -88,20 +93,20 @@ body: |-
           Path:              req.Path,
           PathPattern:       req.PathPattern,
           AppKey:            appKeyPtr(ak),
-          Priority:          req.Priority,
-          Enabled:           req.Enabled,
-          KeyBy:             req.KeyBy,
-          Strategy:          req.Strategy,
-          WindowSeconds:     int32(req.WindowSeconds),
-          MaxRequests:       int32(req.MaxRequests),
-          RequestsPerSecond: float64Ptr(req.RequestsPerSecond),
-          Burst:             int32Ptr(req.Burst),
-          ClientTtlSeconds:  int32Ptr(req.ClientTtlSeconds),
+          Priority:          cfg.Priority,
+          Enabled:           cfg.Enabled,
+          KeyBy:             cfg.KeyBy,
+          Strategy:          cfg.Strategy,
+          WindowSeconds:     int32(cfg.WindowSeconds),
+          MaxRequests:       int32(cfg.MaxRequests),
+          RequestsPerSecond: float64Ptr(cfg.RequestsPerSecond),
+          Burst:             int32Ptr(cfg.Burst),
+          ClientTtlSeconds:  int32Ptr(cfg.ClientTtlSeconds),
       })
   }
 
   // UpdateRule partially updates an existing rule by id.
-  func (uc *UseCase) UpdateRule(ctx context.Context, req *ratelimitv1.UpdateRuleRequest) error {
+  func (uc *UseCase) UpdateRule(ctx context.Context, req *ratelimitv1.UpdateRuleReq) error {
       arg := gen.UpdateRateLimitRuleParams{ID: req.Id}
       if req.Enabled != nil {
           arg.Enabled = req.Enabled
@@ -138,8 +143,9 @@ body: |-
       return uc.repo.DeleteRateLimitRule(ctx, id)
   }
 
-  // ListRules returns rules filtered by optional service and phase.
-  func (uc *UseCase) ListRules(ctx context.Context, service *string, phase *string) ([]*ratelimitv1.RateLimitRule, error) {
+  // ListRules returns rules filtered by optional service and phase,
+  // with offset-based pagination (page starts at 1, page_size caps at 100).
+  func (uc *UseCase) ListRules(ctx context.Context, service *string, phase *string, page, pageSize int32) ([]*ratelimitv1.RateLimitRule, int64, error) {
       svc := ""
       if service != nil {
           svc = *service
@@ -148,18 +154,37 @@ body: |-
       if phase != nil {
           ph = *phase
       }
-      rules, err := uc.repo.ListRateLimitRules(ctx, gen.ListRateLimitRulesParams{
+      if page < 1 {
+          page = 1
+      }
+      if pageSize < 1 {
+          pageSize = 20
+      }
+      if pageSize > 100 {
+          pageSize = 100
+      }
+      filter := gen.ListRateLimitRulesParams{
+          Service: appKeyPtr(svc),
+          Phase:   appKeyPtr(ph),
+          Limit:   pageSize,
+          Offset:  (page - 1) * pageSize,
+      }
+      rules, err := uc.repo.ListRateLimitRules(ctx, filter)
+      if err != nil {
+          return nil, 0, err
+      }
+      total, err := uc.repo.CountRateLimitRules(ctx, gen.CountRateLimitRulesParams{
           Service: appKeyPtr(svc),
           Phase:   appKeyPtr(ph),
       })
       if err != nil {
-          return nil, err
+          return nil, 0, err
       }
       result := make([]*ratelimitv1.RateLimitRule, len(rules))
       for i := range rules {
           result[i] = toProto(&rules[i])
       }
-      return result, nil
+      return result, total, nil
   }
 
   func toProto(r *gen.RateLimitRule) *ratelimitv1.RateLimitRule {

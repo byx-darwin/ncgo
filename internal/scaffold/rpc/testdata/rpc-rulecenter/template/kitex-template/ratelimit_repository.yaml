@@ -65,6 +65,10 @@ body: |-
       return r.q.ListRateLimitRules(ctx, arg)
   }
 
+  func (r *Repo) CountRateLimitRules(ctx context.Context, arg gen.CountRateLimitRulesParams) (int64, error) {
+      return r.q.CountRateLimitRules(ctx, arg)
+  }
+
   // strPtrOrNil converts an empty string to nil, matching sqlc's *string AppKey
   // params where a NULL app_key means "fallback rule" (no app_key match).
   func strPtrOrNil(s string) *string {

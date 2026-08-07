@@ -55,4 +55,10 @@ body: |-
   SELECT * FROM rate_limit_rules
   WHERE (sqlc.narg('service')::text IS NULL OR service = sqlc.narg('service')::text)
     AND (sqlc.narg('phase')::text IS NULL OR phase = sqlc.narg('phase')::text)
-  ORDER BY priority DESC, id DESC;
+  ORDER BY priority DESC, id DESC
+  LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+  -- name: CountRateLimitRules :one
+  SELECT count(*) FROM rate_limit_rules
+  WHERE (sqlc.narg('service')::text IS NULL OR service = sqlc.narg('service')::text)
+    AND (sqlc.narg('phase')::text IS NULL OR phase = sqlc.narg('phase')::text);
