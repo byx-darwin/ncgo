@@ -3,8 +3,11 @@ package ai
 import (
 	"bytes"
 	"fmt"
+	"io/fs"
+	"path/filepath"
 	"strings"
 
+	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 )
 
@@ -37,8 +40,9 @@ func targets() []target {
 }
 
 // buildInputs assembles the pre-rendered markdown bodies consumed by the
-// various ai sync targets.
-func buildInputs(source syncSource, local string) renderInputs {
+// various ai sync targets. lang selects the embedded workflow/rules asset
+// language ("en" or "zh-CN").
+func buildInputs(source syncSource, local, lang string) renderInputs {
 	inputs := renderInputs{SourceRef: source.SourceRef}
 	switch source.Scope {
 	case syncScopeWorkspace:
@@ -48,7 +52,20 @@ func buildInputs(source syncSource, local string) renderInputs {
 		inputs.LongBody = buildServiceLongBody(source.Service, source.ServiceWorkspace, source.DesignDoc, local)
 		inputs.ProjectContextBody = buildServiceProjectContextBody(source.Service, source.ServiceWorkspace, source.DesignDoc)
 	}
+	inputs.WorkflowBody = readAIDoc("ncgo-dev-workflow." + lang + ".md")
+	inputs.RulesBody = readAIDoc("ncgo-dev-rules." + lang + ".md")
 	return inputs
+}
+
+// readAIDoc reads one docs/ai/ asset; a missing asset falls back to "" so
+// older embedded assets versions still render without a hard failure.
+func readAIDoc(name string) string {
+	rel := filepath.ToSlash(filepath.Join("docs", "ai", name))
+	b, err := fs.ReadFile(assets.FS(), rel)
+	if err != nil {
+		return ""
+	}
+	return string(b)
 }
 
 func buildServiceLongBody(m *manifest.Manifest, membership *serviceWorkspaceMembership, doc, local string) string {
@@ -314,8 +331,8 @@ func renderProjectContext(inputs renderInputs) string {
 }
 
 // isManaged reports whether the given file body carries the managed
-// marker on (or near) its first content line. We search the first 4
-// non-blank lines so MDC frontmatter does not hide the marker.
+// marker on (or near) its first content line. We search the first 6
+// non-blank lines so MDC and skill frontmatter does not hide the marker.
 func isManaged(content []byte) bool {
 	scanned := 0
 	for line := range bytes.SplitSeq(content, []byte("\n")) {

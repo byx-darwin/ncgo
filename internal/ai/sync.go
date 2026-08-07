@@ -38,10 +38,19 @@ const (
 	LangZhCN = "zh-CN"
 )
 
+// Target groups for `ncgo ai sync --target`.
+const (
+	TargetAll    = "all"
+	TargetAgents = "agents"
+	TargetClaude = "claude"
+	TargetCursor = "cursor"
+)
+
 // Options controls a Sync invocation.
 type Options struct {
 	Root   string // service root with .ncgo/manifest.yaml or micro workspace root with ncgo.workspace
 	Lang   string // "en" (default) or "zh-CN"
+	Target string // target group to render; empty defaults to claude (all = every group)
 	Force  bool   // overwrite non-managed files
 	DryRun bool   // do not write; only report intended actions
 }
@@ -97,6 +106,7 @@ type Result struct {
 	Skipped   []Skip           `json:"skipped"`             // relative paths intentionally not written
 	Notes     []string         `json:"notes,omitempty"`     // optional informational lines for CLI summaries
 	NextSteps []string         `json:"nextSteps,omitempty"` // optional follow-up commands or actions
+	Target    string           `json:"target,omitempty"`    // target group rendered (all|agents|claude|cursor)
 	Scope     string           `json:"scope,omitempty"`     // service | workspace
 	SourceRef string           `json:"sourceRef,omitempty"` // .ncgo/manifest.yaml | ncgo.workspace
 	Workspace *ResultWorkspace `json:"workspace,omitempty"`
@@ -116,6 +126,12 @@ func Sync(opts Options) (*Result, error) {
 	if opts.Lang == "" {
 		opts.Lang = LangEN
 	}
+	if opts.Target == "" {
+		opts.Target = TargetClaude
+	}
+	if err := validateTarget(opts.Target); err != nil {
+		return nil, err
+	}
 	if opts.Lang != LangEN && opts.Lang != LangZhCN {
 		return nil, fmt.Errorf("ai sync: --lang %q is invalid (en|zh-CN)", opts.Lang)
 	}
@@ -127,9 +143,13 @@ func Sync(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	inputs := buildInputs(source, local)
+	inputs := buildInputs(source, local, opts.Lang)
 	res := newSyncResult(source)
+	res.Target = opts.Target
 	for _, t := range targets() {
+		if opts.Target != TargetAll && t.Group != opts.Target {
+			continue
+		}
 		if err := writeTarget(opts, t, inputs, res); err != nil {
 			return res, err
 		}
@@ -139,6 +159,16 @@ func Sync(opts Options) (*Result, error) {
 		return res, err
 	}
 	return res, nil
+}
+
+// validateTarget reports whether the requested --target group is known.
+func validateTarget(target string) error {
+	switch target {
+	case TargetAll, TargetAgents, TargetClaude, TargetCursor:
+		return nil
+	default:
+		return fmt.Errorf("ai sync: --target %q is invalid (all|agents|claude|cursor)", target)
+	}
 }
 
 // readDesignDoc fetches the embedded design doc that matches the requested
