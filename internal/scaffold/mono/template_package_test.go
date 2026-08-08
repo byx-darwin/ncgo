@@ -112,3 +112,61 @@ func TestGenerateTemplatePackageParseError(t *testing.T) {
 		t.Errorf("want parse error, got %v", err)
 	}
 }
+
+// seedHertzTemplatePackage builds a minimal hertz template package with a
+// root-level Makefile (containing template variables) and a non-root conf
+// template, so the overlay can be checked to write root templates and leave
+// non-root ones to the later template.Apply() pass.
+func seedHertzTemplatePackage(t *testing.T) string {
+	t.Helper()
+	pkg := t.TempDir()
+	os.MkdirAll(filepath.Join(pkg, "hertz-template"), 0o755)
+	os.WriteFile(filepath.Join(pkg, "hertz-template", "makefile_yaml.yaml"), []byte(
+		"path: Makefile\nupdate_behavior:\n  type: cover\nbody: |\n"+
+			"  APP_NAME = {{.ServiceName | ToLower}}-http\n"+
+			"  MODULE   = {{.Module}}\n"+
+			"  CUSTOM_MAKEFILE = from-package\n"), 0o644)
+	os.WriteFile(filepath.Join(pkg, "hertz-template", "conf_go.yaml"), []byte(
+		"path: internal/base/conf/conf.go\nupdate_behavior:\n  type: cover\nbody: |\n"+
+			"  package conf\n"), 0o644)
+	return pkg
+}
+
+func TestGenerateTemplatePackageHertzRootOverlay(t *testing.T) {
+	opts := Options{
+		Name:          "demo",
+		Module:        "github.com/acme/demo",
+		Kind:          manifest.KindHertz,
+		Dir:           filepath.Join(t.TempDir(), "svc"),
+		TemplateDir:   seedHertzTemplatePackage(t),
+		AssetsVersion: "test-assets",
+		NCGOVersion:   "0.0.0-test",
+		Now:           time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC),
+		NoGenerate:    true,
+		Runner:        &fakeRunner{},
+	}
+	if _, err := Generate(context.Background(), opts); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	// The package's root-level Makefile must win over the embedded one and be
+	// rendered with the target module/service-name variables.
+	mk, err := os.ReadFile(filepath.Join(opts.Dir, "Makefile"))
+	if err != nil {
+		t.Fatalf("project Makefile missing: %v", err)
+	}
+	s := string(mk)
+	if !strings.Contains(s, "APP_NAME = demo-http") {
+		t.Errorf("service name not rendered:\n%s", s)
+	}
+	if !strings.Contains(s, "MODULE   = github.com/acme/demo") {
+		t.Errorf("module not rendered:\n%s", s)
+	}
+	if !strings.Contains(s, "CUSTOM_MAKEFILE = from-package") {
+		t.Errorf("expected package root Makefile to overwrite embedded one:\n%s", s)
+	}
+	// Non-root package templates are applied later by template.Apply(); they
+	// must not be written to the project root at scaffold time.
+	if _, err := os.Stat(filepath.Join(opts.Dir, "internal", "base", "conf", "conf.go")); err == nil {
+		t.Error("non-root template should not be written at scaffold time")
+	}
+}

@@ -68,7 +68,7 @@ func TestCallTemplateListFixture(t *testing.T) {
 	})
 	isolateCache(t)
 
-	result, err := callTemplateList([]byte(`{"registry":"` + repo + `"}`))
+	result, err := callTemplateList(context.Background(), []byte(`{"registry":"`+repo+`"}`))
 	if err != nil {
 		t.Fatalf("callTemplateList: %v", err)
 	}
@@ -97,7 +97,7 @@ func TestCallTemplateListRegistryUnavailable(t *testing.T) {
 	}
 	isolateCache(t)
 
-	result, err := callTemplateList([]byte(`{"registry":"/definitely/not/a/real/registry"}`))
+	result, err := callTemplateList(context.Background(), []byte(`{"registry":"/definitely/not/a/real/registry"}`))
 	if err != nil {
 		t.Fatalf("callTemplateList: %v", err)
 	}
@@ -115,7 +115,7 @@ func TestCallTemplatePullMissing(t *testing.T) {
 	})
 	isolateCache(t)
 
-	result, err := callTemplatePull([]byte(`{"name":"nope","registry":"` + repo + `"}`))
+	result, err := callTemplatePull(context.Background(), []byte(`{"name":"nope","registry":"`+repo+`"}`))
 	if err != nil {
 		t.Fatalf("callTemplatePull: %v", err)
 	}
@@ -133,7 +133,7 @@ func TestCallTemplatePullFixture(t *testing.T) {
 	})
 	isolateCache(t)
 
-	result, err := callTemplatePull([]byte(`{"name":"base-kitex","registry":"` + repo + `"}`))
+	result, err := callTemplatePull(context.Background(), []byte(`{"name":"base-kitex","registry":"`+repo+`"}`))
 	if err != nil {
 		t.Fatalf("callTemplatePull: %v", err)
 	}

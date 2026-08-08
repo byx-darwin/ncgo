@@ -3,6 +3,7 @@ package template
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -183,18 +184,20 @@ func exportIDLs(root string, opts ExportOptions) ([]string, error) {
 
 // idlTemplatePath parameterizes the service name inside IDL file names so
 // consumers render them onto their own default IDL paths (hertz
-// idl/app/<name>.proto, kitex idl/<name>.proto).
+// idl/app/<name>.proto, kitex idl/<name>.proto). Substitution is scoped to the
+// file base only: parent directories (e.g. the fixed "app" dir for hertz) are
+// left literal even when they happen to equal the lowercase service name.
 func idlTemplatePath(rel string, opts ExportOptions) string {
 	dashed := strings.ToLower(opts.ServiceName) // "user-rpc"
 	lower := serviceNameLower(opts.ServiceName) // "userrpc"
-	out := rel
+	dir, base := path.Split(rel)
 	if dashed != "" {
-		out = strings.ReplaceAll(out, dashed, "{{ToLower .ServiceName}}")
+		base = strings.ReplaceAll(base, dashed, "{{ToLower .ServiceName}}")
 	}
 	if lower != "" && lower != dashed {
-		out = strings.ReplaceAll(out, lower, "{{ToLower .ServiceName}}")
+		base = strings.ReplaceAll(base, lower, "{{ToLower .ServiceName}}")
 	}
-	return out
+	return dir + base
 }
 
 func matchFiles(root, pattern string) ([]string, error) {

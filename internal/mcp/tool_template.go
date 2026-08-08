@@ -12,7 +12,7 @@ import (
 // callTemplateList lists template packages available in the template registry.
 // Errors (unreachable registry, missing git) are surfaced as isError=true tool
 // results rather than JSON-RPC protocol errors, matching the other ncgo tools.
-func callTemplateList(raw json.RawMessage) (map[string]any, error) {
+func callTemplateList(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
 	var args struct {
 		Registry string `json:"registry"`
 		Output   string `json:"output"`
@@ -22,7 +22,7 @@ func callTemplateList(raw json.RawMessage) (map[string]any, error) {
 	}
 
 	client := registry.NewClient(registry.ResolveURL(args.Registry), nil)
-	entries, err := client.List(context.Background())
+	entries, err := client.List(ctx)
 	if err != nil {
 		return textResult(err.Error(), true), nil
 	}
@@ -67,7 +67,7 @@ func callTemplateList(raw json.RawMessage) (map[string]any, error) {
 // callTemplatePull fetches the named template package into the local registry
 // cache and reports where it landed. Missing templates and registry failures
 // are returned as isError=true tool results.
-func callTemplatePull(raw json.RawMessage) (map[string]any, error) {
+func callTemplatePull(ctx context.Context, raw json.RawMessage) (map[string]any, error) {
 	var args struct {
 		Name     string `json:"name"`
 		Registry string `json:"registry"`
@@ -78,7 +78,7 @@ func callTemplatePull(raw json.RawMessage) (map[string]any, error) {
 	}
 
 	client := registry.NewClient(registry.ResolveURL(args.Registry), nil)
-	dir, err := client.Pull(context.Background(), args.Name)
+	dir, err := client.Pull(ctx, args.Name)
 	if err != nil {
 		return textResult(err.Error(), true), nil
 	}

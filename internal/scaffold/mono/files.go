@@ -482,6 +482,37 @@ func overlayTemplatePackage(dir string, opts Options) (bool, error) {
 			return false, fmt.Errorf("scaffold: write %s: %w", filepath.Base(src), err)
 		}
 	}
+	// Hertz root-level templates (path with no "/", e.g. Makefile, main.go)
+	// are written by writeHertzRootTemplates before this overlay runs. A
+	// package's custom root templates must win over the embedded ones, so
+	// render them (module/service-name variables) onto the project root here,
+	// overwriting the embedded copy.
+	if kind == manifest.KindHertz {
+		for _, src := range pkg.Templates {
+			b, err := os.ReadFile(src)
+			if err != nil {
+				return false, fmt.Errorf("scaffold: read template package %s: %w", src, err)
+			}
+			var tpl scaffoldtemplate.TemplateFile
+			if err := yaml.Unmarshal(b, &tpl); err != nil {
+				return false, fmt.Errorf("scaffold: parse template package %s: %w", src, err)
+			}
+			if tpl.Path == "" || strings.Contains(tpl.Path, "/") {
+				continue
+			}
+			rendered, err := scaffoldtemplate.Render(tpl.Body, scaffoldtemplate.RenderData{
+				Module:      opts.Module,
+				ServiceName: opts.Name,
+			})
+			if err != nil {
+				return false, fmt.Errorf("scaffold: render package root template %s: %w", tpl.Path, err)
+			}
+			full := filepath.Join(dir, filepath.FromSlash(tpl.Path))
+			if err := os.WriteFile(full, []byte(rendered), 0o644); err != nil {
+				return false, fmt.Errorf("scaffold: write %s: %w", tpl.Path, err)
+			}
+		}
+	}
 	// Render the package IDLs onto the kind's default IDL path. A package with
 	// no idl/ directory falls back to the built-in placeholder.
 	if len(pkg.IDLs) == 0 {

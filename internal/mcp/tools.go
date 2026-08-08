@@ -80,9 +80,9 @@ func (s *Server) callTool(ctx context.Context, raw json.RawMessage) (map[string]
 	case "ncgo_export_templates":
 		return callExportTemplates(p.Arguments)
 	case "ncgo_template_list":
-		return callTemplateList(p.Arguments)
+		return callTemplateList(ctx, p.Arguments)
 	case "ncgo_template_pull":
-		return callTemplatePull(p.Arguments)
+		return callTemplatePull(ctx, p.Arguments)
 	case "ncgo_add_rpc":
 		return callAddRPC(ctx, p.Arguments, s.NCGOVersion, s.AssetsVersion)
 	case "ncgo_add_bff":

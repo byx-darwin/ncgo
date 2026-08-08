@@ -79,11 +79,55 @@ func (u *UserApiImpl) Ping() {}`
 func TestReplaceServiceName_ImportPath(t *testing.T) {
 	body := `import "github.com/acme/test/internal/handler/userapi"`
 	got := replaceServiceName(body, "UserApi")
-	// The import path substitution for userapi in path segments is handled
-	// by templatePath, not replaceServiceName (which focuses on PascalCase types).
-	// This test just verifies no crash on mixed content.
-	if got == "" {
-		t.Error("expected non-empty output")
+	// replaceServiceName substitutes bounded lowercase tokens in path segments
+	// and package qualifiers, so the userapi import path is variabilized here;
+	// templatePath separately handles parameterizing the OUTPUT file path.
+	if strings.Contains(got, "userapi") {
+		t.Errorf("import path should be variabilized, got:\n%s", got)
+	}
+	if !strings.Contains(got, "{{ToLower .ServiceName}}") {
+		t.Errorf("expected lowercase substitution in import path, got:\n%s", got)
+	}
+}
+
+func TestIDLTemplatePath_SubstitutesBaseOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		rel  string
+		svc  string
+		want string
+	}{
+		{
+			name: "hertz default app dir stays literal even when it equals service name",
+			rel:  "idl/app/app.proto",
+			svc:  "app",
+			want: "idl/app/{{ToLower .ServiceName}}.proto",
+		},
+		{
+			name: "hertz standard userapi",
+			rel:  "idl/app/userapi.proto",
+			svc:  "UserApi",
+			want: "idl/app/{{ToLower .ServiceName}}.proto",
+		},
+		{
+			name: "kitex root idl",
+			rel:  "idl/userapi.proto",
+			svc:  "UserApi",
+			want: "idl/{{ToLower .ServiceName}}.proto",
+		},
+		{
+			name: "parent dir not rewritten",
+			rel:  "idl/userapi/userapi.proto",
+			svc:  "UserApi",
+			want: "idl/userapi/{{ToLower .ServiceName}}.proto",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := idlTemplatePath(tt.rel, ExportOptions{ServiceName: tt.svc}); got != tt.want {
+				t.Errorf("idlTemplatePath(%q, %q) = %q, want %q", tt.rel, tt.svc, got, tt.want)
+			}
+		})
 	}
 }
 
