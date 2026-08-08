@@ -37,6 +37,10 @@ ncgo mcp serve
     `lang=en|zh-CN`、`force`、`dryRun`、`output=text|json`
   - 稳定顶层字段：`target`、`written`、`skipped`，以及可选的 `notes`、`scope`、`sourceRef`、`workspace`
   - `content[0].text` 在 `output=text` 时返回人类可读摘要，在 `output=json` 时返回 JSON
+- `ncgo_ai_context`
+  - 输入：`root`、`output=text|json`
+  - 稳定顶层字段：`root`、`domains`、`methods`、`anchors`、`issues`
+  - `content[0].text` 在 `output=text` 时返回人类可读的扫描摘要，在 `output=json` 时返回 JSON payload
 - `ncgo_i18n_report`
   - 输入：`root`、`output=text|json`
   - 稳定顶层字段：`root`、`sourceLocale`、`localesDir`、`statusPath`、`glossaryPath`、`reportPathJSON`、`reportPathMarkdown`、`schema`、`report`、`nextSteps`
@@ -436,6 +440,22 @@ Agent 可以直接据此驱动后续步骤：
 最后执行 `ncgo ai sync --target all --root .`，让所有 AI 上下文文件——
 `AGENTS.md`、`CLAUDE.md`、ncgo-dev skill、project context 与 Cursor 规则——
 都反映新增的领域与方法。
+
+### 校验 Agent 的改动
+
+在用 `ncgo add domain` / `ncgo add method` 实现功能之后，运行：
+
+```bash
+ncgo check --root .
+```
+
+如果某个 usecase 丢失了 `// ncgo:methods` anchor、manifest 与
+`internal/usecase/*/` 目录不一致，或 AI 上下文文件已过期，命令会以退出码 1
+结束并输出结构化报告（`--output json`）。刷新上下文：
+
+```bash
+ncgo ai sync --root .
+```
 
 ### 独立参考文档
 

@@ -30,6 +30,13 @@ var (
 func Main() {
 	root := newRootCmd()
 	if err := root.Execute(); err != nil {
+		var ec *exitCodeError
+		if errors.As(err, &ec) {
+			if ec.msg != "" {
+				fmt.Fprintln(os.Stderr, ec.msg)
+			}
+			os.Exit(ec.code)
+		}
 		if _, silent := err.(silentErr); !silent {
 			fmt.Fprintln(os.Stderr, err)
 		}
@@ -52,6 +59,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newI18NCmd())
 	cmd.AddCommand(newProtolintCmd())
 	cmd.AddCommand(newDoctorCmd())
+	cmd.AddCommand(newCheckCmd())
 	cmd.AddCommand(newMCPCmd())
 	cmd.AddCommand(newUpgradeCmd())
 	cmd.AddCommand(newExtractCmd())

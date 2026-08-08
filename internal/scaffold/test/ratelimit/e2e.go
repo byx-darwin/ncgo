@@ -405,11 +405,11 @@ func waitForReady(ctx context.Context, url string, interval, timeout time.Durati
 				continue
 			}
 			if resp.StatusCode == http.StatusOK {
-				resp.Body.Close()
+				_ = resp.Body.Close()
 				fmt.Printf("[check] Service ready at %s\n", url)
 				return nil
 			}
-			resp.Body.Close()
+			_ = resp.Body.Close()
 		}
 	}
 }
@@ -436,16 +436,16 @@ func runAttackCapture(ctx context.Context, root, host string, port, rate int, du
 	if err := os.WriteFile(tmpTargets, []byte(targetBody), 0o644); err != nil {
 		return nil, fmt.Errorf("write targets: %w", err)
 	}
-	defer os.Remove(tmpTargets)
+	defer func() { _ = os.Remove(tmpTargets) }()
 
 	// Run vegeta attack, save binary output
 	tmpBin := filepath.Join(os.TempDir(), "ncgo-e2e-results.bin")
-	defer os.Remove(tmpBin)
+	defer func() { _ = os.Remove(tmpBin) }()
 
 	vegeta, err := exec.LookPath("vegeta")
 	if err != nil {
 		// Try docker
-		return runAttackViaDocker(ctx, root, tmpTargets, tmpBin, strconv.Itoa(rate), duration)
+		return runAttackViaDocker(ctx, root, tmpTargets, strconv.Itoa(rate), duration)
 	}
 
 	// Run vegeta attack locally
@@ -465,7 +465,7 @@ func runAttackCapture(ctx context.Context, root, host string, port, rate int, du
 	return parseVegetaReport(ctx, vegeta, tmpBin)
 }
 
-func runAttackViaDocker(ctx context.Context, root, targetsPath, binPath, rate, duration string) (*attackResult, error) {
+func runAttackViaDocker(ctx context.Context, root, targetsPath, rate, duration string) (*attackResult, error) {
 	// Mount targets file, run attack, write results to mounted output
 	tmpOutDir := os.TempDir()
 	dockerArgs := []string{"compose", "run", "--rm",
@@ -487,8 +487,8 @@ func runAttackViaDocker(ctx context.Context, root, targetsPath, binPath, rate, d
 		return nil, fmt.Errorf("docker vegeta attack: %w", err)
 	}
 
-	binPath = filepath.Join(tmpOutDir, "ncgo-e2e-results.bin")
-	defer os.Remove(binPath)
+	binPath := filepath.Join(tmpOutDir, "ncgo-e2e-results.bin")
+	defer func() { _ = os.Remove(binPath) }()
 
 	// Run vegeta report via docker
 	reportArgs := []string{"compose", "run", "--rm",
@@ -602,30 +602,30 @@ func writeMarkdownReport(result *E2EResult, opts E2EOptions) error {
 
 	var b strings.Builder
 	b.WriteString("# Rate Limit E2E Test Report\n\n")
-	b.WriteString(fmt.Sprintf("- **Generated at**: %s\n", result.StartedAt.UTC().Format(time.RFC3339)))
-	b.WriteString(fmt.Sprintf("- **Project mode**: %s\n", result.Mode))
-	b.WriteString(fmt.Sprintf("- **Rule source**: %s\n", result.Source))
-	b.WriteString(fmt.Sprintf("- **Counter backend**: %s\n", result.Backend))
-	b.WriteString(fmt.Sprintf("- **Service**: %s (%s)\n\n", result.ServiceName, result.Kind))
+	fmt.Fprintf(&b, "- **Generated at**: %s\n", result.StartedAt.UTC().Format(time.RFC3339))
+	fmt.Fprintf(&b, "- **Project mode**: %s\n", result.Mode)
+	fmt.Fprintf(&b, "- **Rule source**: %s\n", result.Source)
+	fmt.Fprintf(&b, "- **Counter backend**: %s\n", result.Backend)
+	fmt.Fprintf(&b, "- **Service**: %s (%s)\n\n", result.ServiceName, result.Kind)
 
 	b.WriteString("## Test Parameters\n\n")
 	b.WriteString("| Parameter | Value |\n")
 	b.WriteString("|-----------|-------|\n")
-	b.WriteString(fmt.Sprintf("| Target URL | http://%s:%d |\n", opts.Host, opts.Port))
-	b.WriteString(fmt.Sprintf("| Test paths | %s |\n", strings.Join(opts.Paths, ", ")))
-	b.WriteString(fmt.Sprintf("| Rate | %d rps |\n", opts.Rate))
-	b.WriteString(fmt.Sprintf("| Duration | %s |\n", opts.Duration))
-	b.WriteString(fmt.Sprintf("| Total requests | %d |\n\n", result.TotalReqs))
+	fmt.Fprintf(&b, "| Target URL | http://%s:%d |\n", opts.Host, opts.Port)
+	fmt.Fprintf(&b, "| Test paths | %s |\n", strings.Join(opts.Paths, ", "))
+	fmt.Fprintf(&b, "| Rate | %d rps |\n", opts.Rate)
+	fmt.Fprintf(&b, "| Duration | %s |\n", opts.Duration)
+	fmt.Fprintf(&b, "| Total requests | %d |\n\n", result.TotalReqs)
 
 	b.WriteString("## Results\n\n")
 	b.WriteString("| Metric | Value |\n")
 	b.WriteString("|--------|-------|\n")
-	b.WriteString(fmt.Sprintf("| Status | %s |\n", statusIcon))
-	b.WriteString(fmt.Sprintf("| 200 OK | %d (%.1f%%) |\n", result.Status200, float64(result.Status200)/float64(totalReqs)*100))
-	b.WriteString(fmt.Sprintf("| 429 Too Many Requests | %d (%.1f%%) |\n", result.Status429, float64(result.Status429)/float64(totalReqs)*100))
-	b.WriteString(fmt.Sprintf("| Other errors | %d (%.1f%%) |\n", result.StatusOther, float64(result.StatusOther)/float64(totalReqs)*100))
-	b.WriteString(fmt.Sprintf("| Avg latency | %s |\n", result.AvgLatency.Round(time.Millisecond)))
-	b.WriteString(fmt.Sprintf("| P99 latency | %s |\n\n", result.P99Latency.Round(time.Millisecond)))
+	fmt.Fprintf(&b, "| Status | %s |\n", statusIcon)
+	fmt.Fprintf(&b, "| 200 OK | %d (%.1f%%) |\n", result.Status200, float64(result.Status200)/float64(totalReqs)*100)
+	fmt.Fprintf(&b, "| 429 Too Many Requests | %d (%.1f%%) |\n", result.Status429, float64(result.Status429)/float64(totalReqs)*100)
+	fmt.Fprintf(&b, "| Other errors | %d (%.1f%%) |\n", result.StatusOther, float64(result.StatusOther)/float64(totalReqs)*100)
+	fmt.Fprintf(&b, "| Avg latency | %s |\n", result.AvgLatency.Round(time.Millisecond))
+	fmt.Fprintf(&b, "| P99 latency | %s |\n\n", result.P99Latency.Round(time.Millisecond))
 
 	b.WriteString("## Environment\n\n")
 	if result.Source == "database" || result.Source == "rule_center" || result.Source == "grpc" {
@@ -637,7 +637,7 @@ func writeMarkdownReport(result *E2EResult, opts E2EOptions) error {
 	if result.Mode == "micro" {
 		b.WriteString("- Rule-center: running\n")
 	}
-	b.WriteString(fmt.Sprintf("- Consumer: %s running (port %d)\n", result.ServiceName, opts.Port))
+	fmt.Fprintf(&b, "- Consumer: %s running (port %d)\n", result.ServiceName, opts.Port)
 
 	return os.WriteFile(opts.Report, []byte(b.String()), 0o644)
 }

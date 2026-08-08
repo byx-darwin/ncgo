@@ -402,17 +402,6 @@ func addGoImportWithPlan(src, importPath, path string, plan *[]PlanItem) (string
 	return out, nil
 }
 
-func insertOnceStrictWithPlan(src, exists, anchor, addition, path string, plan *[]PlanItem, action, detail string) (string, error) {
-	out, changed, err := insertOnceStrictTracked(src, exists, anchor, addition)
-	if err != nil {
-		return "", err
-	}
-	if changed {
-		*plan = append(*plan, wirePlanWithAnchor(path, action, detail, anchorSourceLegacy, anchor))
-	}
-	return out, nil
-}
-
 func insertOnceMarkerOrAnchorWithPlan(src, exists, marker, anchor, addition, path string, plan *[]PlanItem, action, detail string) (string, error) {
 	out, changed, anchorSource, anchorValue, err := insertOnceMarkerOrAnchorTracked(src, exists, marker, anchor, addition)
 	if err != nil {
@@ -435,17 +424,6 @@ func replaceOnceStrictWithPlan(src, exists, old, new, path string, plan *[]PlanI
 	return out, nil
 }
 
-func insertAfterAnyOnceWithPlan(src, exists string, anchors []string, addition, path string, plan *[]PlanItem, action, detail string) (string, error) {
-	out, changed, err := insertAfterAnyOnceTracked(src, exists, anchors, addition)
-	if err != nil {
-		return "", err
-	}
-	if changed {
-		*plan = append(*plan, wirePlan(path, action, detail))
-	}
-	return out, nil
-}
-
 func insertAfterMarkerOrAnyWithPlan(src, exists, marker string, anchors []string, addition, path string, plan *[]PlanItem, action, detail string) (string, error) {
 	out, changed, anchorSource, anchorValue, err := insertAfterMarkerOrAnyTracked(src, exists, marker, anchors, addition)
 	if err != nil {
@@ -455,11 +433,6 @@ func insertAfterMarkerOrAnyWithPlan(src, exists, marker string, anchors []string
 		*plan = append(*plan, wirePlanWithAnchor(path, action, detail, anchorSource, anchorValue))
 	}
 	return out, nil
-}
-
-func addGoImport(src, importPath string) (string, error) {
-	out, _, err := addGoImportTracked(src, importPath)
-	return out, err
 }
 
 func addGoImportTracked(src, importPath string) (string, bool, error) {
@@ -494,11 +467,6 @@ func importPresentInCode(src, quoted string) bool {
 	return false
 }
 
-func insertOnceStrict(src, exists, anchor, addition string) (string, error) {
-	out, _, err := insertOnceStrictTracked(src, exists, anchor, addition)
-	return out, err
-}
-
 func insertOnceStrictTracked(src, exists, anchor, addition string) (string, bool, error) {
 	if strings.Contains(src, exists) {
 		return src, false, nil
@@ -523,11 +491,6 @@ func insertOnceMarkerOrAnchorTracked(src, exists, marker, anchor, addition strin
 	return out, changed, anchorSourceLegacy, anchor, nil
 }
 
-func replaceOnceStrict(src, exists, old, new string) (string, error) {
-	out, _, err := replaceOnceStrictTracked(src, exists, old, new)
-	return out, err
-}
-
 func replaceOnceStrictTracked(src, exists, old, new string) (string, bool, error) {
 	if strings.Contains(src, exists) {
 		return src, false, nil
@@ -536,23 +499,6 @@ func replaceOnceStrictTracked(src, exists, old, new string) (string, bool, error
 		return "", false, fmt.Errorf("infra: --wire could not find replacement anchor %s", strings.TrimSpace(old))
 	}
 	return strings.Replace(src, old, new, 1), true, nil
-}
-
-func insertAfterAnyOnce(src, exists string, anchors []string, addition string) (string, error) {
-	out, _, err := insertAfterAnyOnceTracked(src, exists, anchors, addition)
-	return out, err
-}
-
-func insertAfterAnyOnceTracked(src, exists string, anchors []string, addition string) (string, bool, error) {
-	if strings.Contains(src, exists) {
-		return src, false, nil
-	}
-	for _, anchor := range anchors {
-		if strings.Contains(src, anchor) {
-			return strings.Replace(src, anchor, anchor+addition, 1), true, nil
-		}
-	}
-	return "", false, fmt.Errorf("infra: --wire could not find middleware anchor for %s", strings.TrimSpace(addition))
 }
 
 func insertAfterMarkerOrAnyTracked(src, exists, marker string, anchors []string, addition string) (string, bool, string, string, error) {

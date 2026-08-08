@@ -48,12 +48,12 @@ func Seed(ctx context.Context, opts SeedOptions) error {
 func buildSeedSQL(service string, maxRequests, windowSecs int) string {
 	var b strings.Builder
 	svc := sanitizeSQLString(service)
-	b.WriteString(fmt.Sprintf("DELETE FROM rate_limit_rules WHERE service = '%s';\n", svc))
-	b.WriteString(fmt.Sprintf(`INSERT INTO rate_limit_rules (service, phase, method, match_kind, path, path_pattern, enabled, key_by, strategy, window_seconds, max_requests) VALUES
+	fmt.Fprintf(&b, "DELETE FROM rate_limit_rules WHERE service = '%s';\n", svc)
+	fmt.Fprintf(&b, `INSERT INTO rate_limit_rules (service, phase, method, match_kind, path, path_pattern, enabled, key_by, strategy, window_seconds, max_requests) VALUES
 ('%s', 'pre_auth', '*', 'prefix', NULL, '/', true, ARRAY['ip']::text[], 'fixed_window', %d, %d),
 ('%s', 'pre_auth', 'GET', 'exact', '/healthz', NULL, true, ARRAY['ip']::text[], 'fixed_window', %d, %d),
 ('%s', 'grpc', '*', 'prefix', NULL, '/', true, ARRAY['ip']::text[], 'fixed_window', %d, %d);
-`, svc, windowSecs, maxRequests, svc, windowSecs, maxRequests, svc, windowSecs, maxRequests))
+`, svc, windowSecs, maxRequests, svc, windowSecs, maxRequests, svc, windowSecs, maxRequests)
 	return b.String()
 }
 

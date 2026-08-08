@@ -7,6 +7,7 @@ import (
 	"regexp"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/byx-darwin/ncgo/internal/manifest"
 )
@@ -900,5 +901,53 @@ func TestSyncRejectsBadTarget(t *testing.T) {
 	writeManifest(t, root, manifest.KindHertz)
 	if _, err := Sync(Options{Root: root, Target: "bogus"}); err == nil {
 		t.Fatalf("expected error for invalid target")
+	}
+}
+
+func TestSyncStampsGeneratedAtMarker(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	res, err := Sync(Options{Root: root, Target: TargetAll})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if len(res.Written) == 0 {
+		t.Fatal("expected files written")
+	}
+	for _, p := range []string{"AGENTS.md", "CLAUDE.md"} {
+		b, err := os.ReadFile(filepath.Join(root, p))
+		if err != nil {
+			t.Fatalf("read %s: %v", p, err)
+		}
+		if !strings.Contains(string(b), "<!-- ncgo:generated-at: ") {
+			t.Errorf("%s missing generated-at marker:\n%s", p, b)
+		}
+	}
+}
+
+func TestReadGeneratedAt(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "CLAUDE.md")
+	content := "<!-- ncgo:managed -->\n<!-- ncgo:generated-at: 2026-04-29T00:00:00Z -->\n# body\n"
+	if err := os.WriteFile(p, []byte(content), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	ts, ok := ReadGeneratedAt(p)
+	if !ok {
+		t.Fatal("ReadGeneratedAt should find the marker")
+	}
+	if !ts.Equal(time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC)) {
+		t.Fatalf("ReadGeneratedAt = %v, want 2026-04-29T00:00:00Z", ts)
+	}
+}
+
+func TestReadGeneratedAtMissingMarker(t *testing.T) {
+	dir := t.TempDir()
+	p := filepath.Join(dir, "CLAUDE.md")
+	if err := os.WriteFile(p, []byte("<!-- ncgo:managed -->\n# body\n"), 0o644); err != nil {
+		t.Fatalf("write: %v", err)
+	}
+	if _, ok := ReadGeneratedAt(p); ok {
+		t.Fatal("ReadGeneratedAt should report no marker when absent")
 	}
 }

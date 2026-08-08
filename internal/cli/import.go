@@ -140,7 +140,7 @@ func detectModule(root string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	defer f.Close()
+	defer func() { _ = f.Close() }()
 	scanner := bufio.NewScanner(f)
 	for scanner.Scan() {
 		line := scanner.Text()
@@ -275,8 +275,8 @@ func detectIDLPath(root string, serviceName string) string {
 	// Recursive search in idl/ directory tree.
 	var found string
 	idlDir := filepath.Join(root, "idl")
-	filepath.WalkDir(idlDir, func(path string, d os.DirEntry, err error) error {
-		if err != nil || found != "" {
+	err := filepath.WalkDir(idlDir, func(path string, d os.DirEntry, walkErr error) error {
+		if walkErr != nil || found != "" {
 			return nil
 		}
 		if d.IsDir() {
@@ -291,5 +291,8 @@ func detectIDLPath(root string, serviceName string) string {
 		}
 		return nil
 	})
+	if err != nil {
+		return ""
+	}
 	return found
 }

@@ -24,6 +24,7 @@ func (s *Server) tools() []tool {
 		{Name: "ncgo_add_domain", Description: "Add a domain usecase/repository to an ncgo project.", InputSchema: schemaObject([]string{"name", "root"}, rootField("Project root containing .ncgo/manifest.yaml"), stringField("name", "Domain name, e.g. \"device\""), boolField("force", "Overwrite existing generated files"), boolField("dryRun", "Preview intended writes without modifying files"), outputTextJSONField())},
 		{Name: "ncgo_ai_init_claude", Description: "Bootstrap the hand-authored .claude starter set for a repository.", InputSchema: schemaObject([]string{"root"}, rootField("Repository root where .claude/ should be bootstrapped"), enumField("preset", []string{ai.InitPresetMinimal, ai.InitPresetTeam}), boolField("force", "Overwrite existing starter files"), boolField("dryRun", "Report without writing"), outputTextJSONField())},
 		{Name: "ncgo_ai_sync", Description: "Render AI context files for an ncgo service or micro workspace.", InputSchema: schemaObject([]string{"root"}, rootField("Service root with .ncgo/manifest.yaml or micro workspace root with ncgo.workspace"), enumField("target", []string{ai.TargetAll, ai.TargetAgents, ai.TargetClaude, ai.TargetCursor}), enumField("lang", []string{ai.LangEN, ai.LangZhCN}), boolField("force", "Overwrite unmanaged files"), boolField("dryRun", "Report without writing"), outputTextJSONField())},
+		{Name: "ncgo_ai_context", Description: "Scan real code and return structured context (domains/methods/anchors/consistency) for an ncgo service.", InputSchema: schemaObject([]string{"root"}, rootField("Service root containing .ncgo/manifest.yaml"), outputTextJSONField())},
 		{Name: "ncgo_i18n_report", Description: "Read the generated i18n report for a project and return structured payload for agents.", InputSchema: schemaObject([]string{"root"}, rootField("Project root"), outputTextJSONField())},
 		{Name: "ncgo_i18n_check", Description: "Evaluate the generated i18n report for dev or release workflows.", InputSchema: schemaObject([]string{"root"}, rootField("Project root"), enumField("mode", []string{mcpI18NCheckDev, mcpI18NCheckRelease}), outputTextJSONField())},
 		{Name: "ncgo_protolint", Description: "Lint selected .proto files with ncgo's Proto I/O rules and return structured diagnostics.", InputSchema: schemaObject([]string{"root"}, rootField("Import root used to resolve the proto files"), stringArrayField("files", "Optional proto entry files relative to root; omit to auto-discover from an ncgo service or micro workspace"), stringArrayField("rules", "Optional rule IDs to run"), stringArrayField("ignoreRules", "Optional rule IDs to suppress from the returned diagnostics"), stringArrayField("ignoreFiles", "Optional proto files whose diagnostics should be suppressed"), outputTextJSONSARIFField())},
@@ -56,6 +57,8 @@ func (s *Server) callTool(ctx context.Context, raw json.RawMessage) (map[string]
 		return callAIInitClaude(p.Arguments)
 	case "ncgo_ai_sync":
 		return callAISync(p.Arguments)
+	case "ncgo_ai_context":
+		return callAIContext(p.Arguments)
 	case "ncgo_i18n_report":
 		return callI18NReport(p.Arguments)
 	case "ncgo_i18n_check":

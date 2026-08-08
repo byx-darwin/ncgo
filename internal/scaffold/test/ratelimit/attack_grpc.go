@@ -148,7 +148,7 @@ func waitForReadyTCP(ctx context.Context, host string, port int, interval, timeo
 			if err != nil {
 				continue
 			}
-			conn.Close()
+			_ = conn.Close()
 			fmt.Printf("[check] Service ready at %s\n", addr)
 			return nil
 		}

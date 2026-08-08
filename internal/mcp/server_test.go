@@ -447,6 +447,91 @@ func TestServeToolCallAISyncInvalidOutput(t *testing.T) {
 	}
 }
 
+func TestServeToolListHasAIContext(t *testing.T) {
+	input := append(EncodeMessage(map[string]any{"jsonrpc": "2.0", "id": 1, "method": "initialize"}),
+		EncodeMessage(map[string]any{"jsonrpc": "2.0", "id": 2, "method": "tools/list"})...)
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	listed := responses[1].Result.(map[string]any)["tools"].([]any)
+	var aiCtx map[string]any
+	for _, item := range listed {
+		if item.(map[string]any)["name"] == "ncgo_ai_context" {
+			aiCtx = item.(map[string]any)
+		}
+	}
+	if aiCtx == nil {
+		t.Fatal("tools/list missing ncgo_ai_context")
+	}
+	props := aiCtx["inputSchema"].(map[string]any)["properties"].(map[string]any)
+	if _, ok := props["root"]; !ok {
+		t.Fatalf("ncgo_ai_context schema missing root: %+v", props)
+	}
+	if _, ok := props["output"]; !ok {
+		t.Fatalf("ncgo_ai_context schema missing output: %+v", props)
+	}
+}
+
+func TestServeToolCallAIContext(t *testing.T) {
+	root := seedAIContextProject(t)
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_ai_context", "arguments": map[string]any{"root": root}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) {
+		t.Fatalf("ncgo_ai_context returned error: %s", resultText(result))
+	}
+	domains, ok := result["domains"].([]any)
+	if !ok || len(domains) == 0 {
+		t.Fatalf("result missing domains field: %+v", result)
+	}
+	issues, ok := result["issues"].([]any)
+	if !ok {
+		t.Fatalf("result missing issues field: %+v", result)
+	}
+	if len(issues) != 0 {
+		t.Fatalf("issues = %+v, want empty for healthy project", issues)
+	}
+	content := resultText(result)
+	if !strings.Contains(content, "device") {
+		t.Fatalf("content missing device domain: %s", content)
+	}
+}
+
+func TestServeToolCallAIContextNoManifest(t *testing.T) {
+	root := t.TempDir()
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_ai_context", "arguments": map[string]any{"root": root}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if !result["isError"].(bool) {
+		t.Fatal("ncgo_ai_context on non-project root should be an error")
+	}
+}
+
 func TestServeToolCallAddInfra(t *testing.T) {
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
@@ -1118,6 +1203,35 @@ func seedMCPProject(t *testing.T, kind string) string {
 	}
 	if err := manifest.Save(root, m); err != nil {
 		t.Fatalf("seed manifest: %v", err)
+	}
+	return root
+}
+
+func seedAIContextProject(t *testing.T) string {
+	t.Helper()
+	root := seedMCPProject(t, manifest.KindHertz)
+	m, err := manifest.Load(root)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	m.Domains = []string{"device"}
+	if err := manifest.Save(root, m); err != nil {
+		t.Fatalf("save manifest: %v", err)
+	}
+	usecase := filepath.Join(root, "internal", "usecase", "device", "device.go")
+	if err := os.MkdirAll(filepath.Dir(usecase), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	body := `package device
+
+type UseCase struct{}
+
+func (u *UseCase) List() error { return nil }
+// ncgo:methods:start
+// ncgo:methods:end
+`
+	if err := os.WriteFile(usecase, []byte(body), 0o644); err != nil {
+		t.Fatalf("write usecase: %v", err)
 	}
 	return root
 }

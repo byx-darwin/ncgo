@@ -67,7 +67,7 @@ func runVegetaLocal(ctx context.Context, targets string, opts RunOptions) error 
 	if err := os.WriteFile(tmpFile, []byte(targets), 0o644); err != nil {
 		return fmt.Errorf("write targets file: %w", err)
 	}
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	cmd := exec.CommandContext(ctx, "vegeta", "attack",
 		"-targets="+tmpFile,
@@ -84,7 +84,7 @@ func runVegetaDocker(ctx context.Context, root, targets string, opts RunOptions)
 	if err := os.WriteFile(tmpFile, []byte(targets), 0o644); err != nil {
 		return fmt.Errorf("write targets file: %w", err)
 	}
-	defer os.Remove(tmpFile)
+	defer func() { _ = os.Remove(tmpFile) }()
 
 	cmd := exec.CommandContext(ctx, "docker", "compose", "run", "--rm",
 		"-v", tmpFile+":/targets.txt",

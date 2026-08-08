@@ -79,7 +79,7 @@ for line in raw.split(b"\n"):
     responses.append(json.loads(line))
 
 names = {tool["name"] for tool in responses[1]["result"]["tools"]}
-required = {"ncgo_version", "ncgo_doctor", "ncgo_ai_sync", "ncgo_add_infra", "ncgo_add_method"}
+required = {"ncgo_version", "ncgo_doctor", "ncgo_ai_sync", "ncgo_add_infra", "ncgo_add_method", "ncgo_ai_context"}
 missing = sorted(required - names)
 if missing:
     raise SystemExit(f"missing MCP tools: {missing}")
@@ -93,6 +93,32 @@ cp "$UPGRADE_ROOT/.ncgo/manifest.yaml" "$TMP_DIR/manifest.before.yaml"
 grep -q 'upgrade plan for' "$TMP_DIR/upgrade.out"
 grep -q '\[change\] metadata' "$TMP_DIR/upgrade.out"
 cmp -s "$UPGRADE_ROOT/.ncgo/manifest.yaml" "$TMP_DIR/manifest.before.yaml"
+
+log "ncgo check --help exposes --output"
+"$BIN" check --help >"$TMP_DIR/check-help.out"
+grep -q -- '--output' "$TMP_DIR/check-help.out"
+
+log "ncgo check passes on a healthy service"
+CHECK_ROOT="$TMP_DIR/check-ok"
+write_manifest "$CHECK_ROOT/.ncgo/manifest.yaml" github.com/acme/demo hertz demo
+cat >>"$CHECK_ROOT/.ncgo/manifest.yaml" <<'YAML'
+domains:
+  - demo
+YAML
+mkdir -p "$CHECK_ROOT/internal/usecase/demo"
+cat >"$CHECK_ROOT/internal/usecase/demo/demo.go" <<'GO'
+package demo
+
+type UseCase struct{}
+
+// ncgo:methods:start
+// ncgo:methods:end
+GO
+"$BIN" check --root "$CHECK_ROOT" >"$TMP_DIR/check-ok.out"
+grep -q 'all checks passed' "$TMP_DIR/check-ok.out"
+
+log "ncgo check exits 2 on a non-project root"
+"$BIN" check --root "$TMP_DIR" >"$TMP_DIR/check-err.out" 2>&1 && { echo "check should have failed"; exit 1; } || true
 
 log "add infra redis generates Redis data helper (hertz)"
 REDIS_ROOT="$TMP_DIR/add-redis"
