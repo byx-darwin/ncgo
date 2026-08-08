@@ -24,9 +24,16 @@ contract, so an AI agent can drive it directly.
 4. **Verify** — `go build ./... && go vet ./... && go test ./... -count=1`
    The scaffold must stay buildable after each method insertion.
 
-5. **Refresh AI context** — `ncgo ai sync --root .`
+5. **Validate with ncgo check** — `ncgo check --root .`
+   Verifies the change is internally consistent: every usecase has paired
+   `// ncgo:methods:start|end` anchors, `manifest.Domains` matches
+   `internal/usecase/*/`, and rendered AI context is not stale. Exits `0` on
+   pass, `1` on a failed check, `2` on a command error.
+
+6. **Refresh AI context** — `ncgo ai sync --root .`
    Re-renders this project's AI artifacts (see below) so agent context
-   reflects the new domain and methods.
+   reflects the new domain and methods. Re-run `ncgo check` after sync to
+   confirm the stale-context check passes.
 
 ### Anchors
 
@@ -41,7 +48,9 @@ contract, so an AI agent can drive it directly.
 - [ ] `.ncgo/manifest.yaml` lists the new domain
 - [ ] `internal/usecase/<domain>/<domain>.go` contains the new method between anchors
 - [ ] `go build ./...` passes
+- [ ] `ncgo check --root .` exits 0
 - [ ] `ncgo ai sync --root .` completes and reports the managed files written
+- [ ] `ncgo check --root .` still exits 0 after sync
 
 ### Failure Handling
 
@@ -51,5 +60,11 @@ contract, so an AI agent can drive it directly.
   or never generated; regenerate the domain with `ncgo add domain <name> --force`.
 - `make sqlc` fails — confirm `sqlc` is installed and the schema files are
   intact; see the project's design doc at `docs/ncgo/<profile>/design-doc.en.md`.
+- `ncgo check` exits 1 on `check.anchor` — a usecase lost its
+  `// ncgo:methods:start|end` markers; fix with `ncgo add domain <name> --force`.
+- `ncgo check` exits 1 on `check.manifest.consistency` — `manifest.Domains`
+  drifted from `internal/usecase/*/`; run `ncgo add domain` or fix the manifest.
+- `ncgo check` exits 1 on `check.context.stale` — AI context is older than the
+  manifest; run `ncgo ai sync --root .`.
 - `ncgo ai sync` refuses to overwrite — a file lacks the
   `<!-- ncgo:managed -->` marker; pass `--force` only if you own the file.
