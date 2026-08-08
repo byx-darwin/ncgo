@@ -2,7 +2,7 @@
 
 - **Date**: 2026-08-09
 - **Workflow**: wf-2026-08-09-057（gf-workflow full mode）
-- **Status**: Approved（brainstorming 阶段用户批准）
+- **Status**: Pending user review（brainstorming 阶段各 section 已批准；spec 文件待用户最终确认）
 - **Related specs**: `docs/superpowers/specs/2026-08-08-template-registry-closed-loop-design.md`
 - **Issue**: #57
 
@@ -163,14 +163,16 @@ my-micro/
 --template-dir <dir>    Template package local directory path
 ```
 
-### `ncgo new --mode micro` — new flags
+### `ncgo new --mode micro` — existing flags now apply
+
+`--template` and `--template-dir` flags already exist on `ncgo new` (for mono mode). This design makes them also work when `--mode micro` is set:
 
 ```
---template <name>       Template package name from registry (kind: micro)
---template-dir <dir>    Template package local directory path (kind: micro)
+ncgo new my-workspace --mode micro --template <name>       # kind: micro from registry
+ncgo new my-workspace --mode micro --template-dir <dir>    # kind: micro from local path
 ```
 
-(`--template`/`--template-dir` already exist for mono mode)
+Implementation: pass `TemplateDir` through to `micro.Generate` (currently ignored in micro mode).
 
 ### Resolution helper (shared)
 
@@ -217,7 +219,8 @@ func resolveTemplateSubDirs(pkgKind, expectedKind, dir string) (templateDir, idl
         return "workspace", "", nil
     case pkgKind == expectedKind:
         // mono: (kitex, kitex) or (hertz, hertz)
-        return "<kind>-template", "idl", nil
+        // Return "<expectedKind>-template", e.g. "kitex-template" or "hertz-template"
+        return expectedKind + "-template", "idl", nil
     case pkgKind == "micro" && expectedKind == "kitex":
         return "kitex-template", "idl/kitex", nil
     case pkgKind == "micro" && expectedKind == "hertz":
