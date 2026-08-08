@@ -1,6 +1,7 @@
 package postgenerate
 
 import (
+	"context"
 	"io"
 
 	"github.com/byx-darwin/ncgo/internal/exec"
@@ -43,10 +44,15 @@ func Run(opts Options) *Result {
 		return res
 	}
 
-	// TODO: implement steps in next tasks
-	res.Steps = []StepResult{
-		{Name: "go mod tidy", Status: "skipped", Detail: "not yet implemented"},
-		{Name: "ai sync", Status: "skipped", Detail: "not yet implemented"},
-	}
+	ctx := context.Background()
+
+	// Step 1: go mod tidy
+	goModTidyResult := goModTidy(ctx, opts)
+	res.Steps = append(res.Steps, goModTidyResult)
+
+	// Step 2: ai sync (TODO in next task)
+	aiSyncResult := StepResult{Name: "ai sync", Status: "skipped", Detail: "not yet implemented"}
+	res.Steps = append(res.Steps, aiSyncResult)
+
 	return res
 }

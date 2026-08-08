@@ -144,6 +144,11 @@ func Kitex(ctx context.Context, r Runner, dir string, args ...string) (Result, e
 	return r.Run(ctx, Cmd{Name: "kitex", Args: args, Dir: dir})
 }
 
+// GoModTidy runs `go mod tidy` from dir.
+func GoModTidy(ctx context.Context, r Runner, dir string) (Result, error) {
+	return r.Run(ctx, Cmd{Name: "go", Args: []string{"mod", "tidy"}, Dir: dir})
+}
+
 // NotFoundError is returned when the requested binary is not on PATH.
 type NotFoundError struct {
 	Name string
