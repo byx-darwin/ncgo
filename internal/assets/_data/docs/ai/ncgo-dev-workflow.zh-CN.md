@@ -22,8 +22,14 @@
 4. **验证** — `go build ./... && go vet ./... && go test ./... -count=1`
    每次方法插入后，脚手架必须保持可构建状态。
 
-5. **刷新 AI 上下文** — `ncgo ai sync --root .`
+5. **用 ncgo check 校验** — `ncgo check --root .`
+   验证改动内部一致：每个用例都有配对的 `// ncgo:methods:start|end`
+   锚点、`manifest.Domains` 与 `internal/usecase/*/` 一致、渲染的 AI 上下文
+   未过期。通过退出 `0`，校验失败退出 `1`，命令错误退出 `2`。
+
+6. **刷新 AI 上下文** — `ncgo ai sync --root .`
    重新渲染本项目的 AI 工件（见下文），使代理上下文反映新增的领域和方法。
+   sync 后重跑 `ncgo check` 确认过期检查通过。
 
 ### 锚点
 
@@ -38,7 +44,9 @@
 - [ ] `.ncgo/manifest.yaml` 列出了新领域
 - [ ] `internal/usecase/<domain>/<domain>.go` 在锚点之间包含新方法
 - [ ] `go build ./...` 通过
+- [ ] `ncgo check --root .` 退出 0
 - [ ] `ncgo ai sync --root .` 完成并报告已写入的托管文件
+- [ ] sync 后 `ncgo check --root .` 仍退出 0
 
 ### 失败处理
 
@@ -48,5 +56,11 @@
   使用 `ncgo add domain <name> --force` 重新生成领域。
 - `make sqlc` 失败 — 确认 `sqlc` 已安装且 schema 文件完整；
   参见项目设计文档 `docs/ncgo/<profile>/design-doc.zh-CN.md`。
+- `ncgo check` 因 `check.anchor` 退出 1 — 用例丢失了
+  `// ncgo:methods:start|end` 标记；用 `ncgo add domain <name> --force` 修复。
+- `ncgo check` 因 `check.manifest.consistency` 退出 1 — `manifest.Domains`
+  与 `internal/usecase/*/` 漂移；运行 `ncgo add domain` 或修正 manifest。
+- `ncgo check` 因 `check.context.stale` 退出 1 — AI 上下文比 manifest 旧；
+  运行 `ncgo ai sync --root .`。
 - `ncgo ai sync` 拒绝覆盖 — 文件缺少 `<!-- ncgo:managed -->` 标记；
   仅当你拥有该文件时才使用 `--force`。

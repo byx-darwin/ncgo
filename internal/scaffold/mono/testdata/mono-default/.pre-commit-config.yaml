@@ -25,6 +25,14 @@ repos:
           - go
         require_serial: true
 
+      - id: ncgo-check
+        name: ncgo check (anchors/manifest/context)
+        entry: ncgo check --root . --output text
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
       - id: go-vet-all-modules
         name: go vet ./... (all Go modules)
         entry: ./scripts/run-go-module-checks.sh vet
