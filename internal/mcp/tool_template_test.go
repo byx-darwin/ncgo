@@ -10,6 +10,7 @@ import (
 	"testing"
 
 	goexec "github.com/byx-darwin/ncgo/internal/exec"
+	"github.com/byx-darwin/ncgo/internal/manifest"
 )
 
 // registryFixture builds a local git repository at t.TempDir() containing the
@@ -254,5 +255,97 @@ func TestExportTemplatesDescription(t *testing.T) {
 	}
 	if !strings.Contains(desc, "template/<kind>-template/") {
 		t.Errorf("description missing 'template/<kind>-template/': %q", desc)
+	}
+}
+
+// seedMCPExportProject creates a minimal Hertz/Kitex project with a valid
+// manifest and source files matching the export template rules, but NO idl/
+// dir, so the zero-IDL export branch (idls == []) is exercised. It mirrors
+// the shape used by internal/cli/export_test.go seedExportProject.
+func seedMCPExportProject(t *testing.T, kind string) string {
+	t.Helper()
+	root := seedMCPProject(t, kind)
+	write := func(rel, content string) {
+		t.Helper()
+		abs := filepath.Join(root, filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+			t.Fatalf("mkdir %s: %v", abs, err)
+		}
+		if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+			t.Fatalf("write %s: %v", rel, err)
+		}
+	}
+	if kind == manifest.KindKitex {
+		for _, rel := range []string{
+			"main.go",
+			"conf/dev/conf.yaml",
+			"internal/base/conf/conf.go",
+			"internal/base/server/server.go",
+			"internal/base/data/data.go",
+			"internal/pkg/utils/helper.go",
+			"internal/base/middleware/mw.go",
+			"internal/base/release/release.go",
+			"internal/base/logging/log.go",
+		} {
+			write(rel, "package x\n")
+		}
+		return root
+	}
+	for _, rel := range []string{
+		"main.go",
+		"conf/dev/conf.yaml",
+		"internal/base/conf/conf.go",
+		"internal/base/server/server.go",
+		"internal/base/data/data.go",
+		"internal/router/demo/router.go",
+		"internal/pkg/utils/helper.go",
+		"internal/base/logging/log.go",
+	} {
+		write(rel, "package x\n")
+	}
+	return root
+}
+
+// TestCallExportTemplatesZeroIDL covers the ncgo_export_templates `idls`
+// structured field: a project without an idl/ dir must report an empty slice
+// (rendered as [] in JSON, never null) and use the zero-IDL text branch.
+func TestCallExportTemplatesZeroIDL(t *testing.T) {
+	root := seedMCPExportProject(t, manifest.KindHertz)
+
+	// callExportTemplates sandboxes roots to the MCP workspace (cwd); relax
+	// the boundary for this hermetic temp-project test and restore after.
+	orig := resolvePath
+	resolvePath = func(target string) (string, error) { return filepath.Abs(target) }
+	t.Cleanup(func() { resolvePath = orig })
+
+	// Text (default) output.
+	res, err := callExportTemplates([]byte(`{"root":"` + root + `"}`))
+	if err != nil {
+		t.Fatalf("callExportTemplates: %v", err)
+	}
+	if res["isError"].(bool) {
+		t.Fatalf("isError = true, want false: %s", toolText(res))
+	}
+	idls, ok := res["idls"].([]string)
+	if !ok {
+		t.Fatalf("idls = %T, want []string", res["idls"])
+	}
+	if len(idls) != 0 {
+		t.Fatalf("idls = %v, want empty (no idl/ dir)", idls)
+	}
+	if txt := toolText(res); !strings.Contains(txt, "exported ") || strings.Contains(txt, "IDL files") {
+		t.Fatalf("zero-IDL text branch wrong: %s", txt)
+	}
+
+	// JSON output renders idls as [] (not null).
+	jsonRes, err := callExportTemplates([]byte(`{"root":"` + root + `","output":"json"}`))
+	if err != nil {
+		t.Fatalf("callExportTemplates json: %v", err)
+	}
+	if jsonRes["isError"].(bool) {
+		t.Fatalf("json isError = true, want false: %s", toolText(jsonRes))
+	}
+	if json := toolText(jsonRes); !strings.Contains(json, `"idls": []`) {
+		t.Fatalf("json idls not rendered as []: %s", json)
 	}
 }
