@@ -13,10 +13,11 @@ import (
 
 // PackageMeta is the template.yaml metadata describing a template package.
 type PackageMeta struct {
-	Name        string `yaml:"name"`
-	Kind        string `yaml:"kind"`
-	Description string `yaml:"description"`
-	Version     string `yaml:"version"`
+	Name                 string   `yaml:"name"`
+	Kind                 string   `yaml:"kind"`
+	Description          string   `yaml:"description"`
+	Version              string   `yaml:"version"`
+	SkipDefaultTemplates []string `yaml:"skip_default_templates"`
 }
 
 // Package is a template package loaded from disk.
@@ -28,6 +29,9 @@ type Package struct {
 	Templates   []string // absolute .yaml paths under TemplateDir
 	IDLDir      string   // absolute idl directory (may not exist)
 	IDLs        []string // absolute .proto paths under IDLDir
+	SchemaDir   string   // absolute schema directory (may not exist)
+	Schemas     []string // absolute .sql paths under SchemaDir
+	LayoutFile  string   // absolute layout.yaml path (may not exist)
 }
 
 // ReadPackageMeta reads <dir>/template.yaml. A missing file returns an error
@@ -94,6 +98,23 @@ func LoadPackage(dir, kind string) (*Package, error) {
 			}
 			return nil
 		})
+	}
+	pkg.SchemaDir = filepath.Join(abs, "schema")
+	if fi, err := os.Stat(pkg.SchemaDir); err == nil && fi.IsDir() {
+		_ = filepath.Walk(pkg.SchemaDir, func(path string, info os.FileInfo, err error) error {
+			if err != nil {
+				return err
+			}
+			if !info.IsDir() && strings.HasSuffix(path, ".sql") {
+				pkg.Schemas = append(pkg.Schemas, path)
+			}
+			return nil
+		})
+	}
+
+	layoutPath := filepath.Join(abs, "layout.yaml")
+	if _, err := os.Stat(layoutPath); err == nil {
+		pkg.LayoutFile = layoutPath
 	}
 	return pkg, nil
 }

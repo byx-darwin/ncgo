@@ -73,3 +73,43 @@ func TestReadPackageMetaMissing(t *testing.T) {
 		t.Errorf("want fs.ErrNotExist, got %v", err)
 	}
 }
+
+func TestLoadPackage_SkipDefaultTemplates(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "template.yaml"), []byte("name: test-pkg\nkind: kitex\ndescription: test\nversion: 1\nskip_default_templates:\n  - handler.yaml\n  - server.yaml\n"), 0644)
+	os.MkdirAll(filepath.Join(dir, "kitex-template"), 0755)
+	os.WriteFile(filepath.Join(dir, "kitex-template", "test.yaml"), []byte("path: test.go\nbody: test\n"), 0644)
+	pkg, err := LoadPackage(dir, "kitex")
+	if err != nil {
+		t.Fatalf("LoadPackage: %v", err)
+	}
+	if !pkg.HasMeta {
+		t.Fatal("expected HasMeta=true")
+	}
+	if len(pkg.Meta.SkipDefaultTemplates) != 2 || pkg.Meta.SkipDefaultTemplates[0] != "handler.yaml" {
+		t.Fatalf("skip_default_templates = %v", pkg.Meta.SkipDefaultTemplates)
+	}
+}
+
+func TestLoadPackage_SchemaAndLayout(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "template.yaml"), []byte("name: test\nkind: kitex\n"), 0644)
+	os.MkdirAll(filepath.Join(dir, "kitex-template"), 0755)
+	os.WriteFile(filepath.Join(dir, "kitex-template", "test.yaml"), []byte("path: test.go\nbody: test\n"), 0644)
+	os.MkdirAll(filepath.Join(dir, "schema"), 0755)
+	os.WriteFile(filepath.Join(dir, "schema", "000002_test.sql"), []byte("CREATE TABLE test;"), 0644)
+	os.WriteFile(filepath.Join(dir, "layout.yaml"), []byte("templates:"), 0644)
+	pkg, err := LoadPackage(dir, "kitex")
+	if err != nil {
+		t.Fatalf("LoadPackage: %v", err)
+	}
+	if pkg.SchemaDir == "" {
+		t.Error("expected SchemaDir to be set")
+	}
+	if len(pkg.Schemas) != 1 {
+		t.Errorf("expected 1 schema, got %d", len(pkg.Schemas))
+	}
+	if pkg.LayoutFile == "" {
+		t.Error("expected LayoutFile to be set")
+	}
+}
