@@ -50,8 +50,8 @@ func Run(opts Options) *Result {
 	goModTidyResult := goModTidy(ctx, opts)
 	res.Steps = append(res.Steps, goModTidyResult)
 
-	// Step 2: ai sync (TODO in next task)
-	aiSyncResult := StepResult{Name: "ai sync", Status: "skipped", Detail: "not yet implemented"}
+	// Step 2: ai sync
+	aiSyncResult := aiSync(ctx, opts)
 	res.Steps = append(res.Steps, aiSyncResult)
 
 	return res

@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"testing"
 
 	"github.com/byx-darwin/ncgo/internal/exec"
@@ -77,6 +79,74 @@ func TestRun_GoModTidyFailure(t *testing.T) {
 	// ai sync should still run (or be skipped due to "none" target)
 	if len(res.Steps) < 2 {
 		t.Fatal("expected 2 steps even if first failed")
+	}
+}
+
+func TestRun_AISyncNone(t *testing.T) {
+	var buf bytes.Buffer
+	opts := Options{
+		Dir:         t.TempDir(),
+		AITarget:    "none",
+		RanGenerate: true,
+		Runner:      &fakeRunner{success: true},
+		Stdout:      &buf,
+	}
+	res := Run(opts)
+	// Find ai sync step
+	var aiStep *StepResult
+	for i := range res.Steps {
+		if res.Steps[i].Name == "ai sync" {
+			aiStep = &res.Steps[i]
+			break
+		}
+	}
+	if aiStep == nil {
+		t.Fatal("ai sync step not found")
+	}
+	if aiStep.Status != "skipped" {
+		t.Errorf("ai sync: expected 'skipped' for target=none, got %q", aiStep.Status)
+	}
+}
+
+func TestRun_DefaultTarget(t *testing.T) {
+	var buf bytes.Buffer
+	dir := t.TempDir()
+	// Create a minimal manifest so ai.Sync doesn't fail
+	manifestDir := filepath.Join(dir, ".ncgo")
+	if err := os.MkdirAll(manifestDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	manifestBody := `service:
+  name: test
+  kind: hertz
+  idl: idl/app.proto
+module: example.com/test
+`
+	if err := os.WriteFile(filepath.Join(manifestDir, "manifest.yaml"), []byte(manifestBody), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	opts := Options{
+		Dir:         dir,
+		AITarget:    "", // empty should default to "claude"
+		RanGenerate: true,
+		Runner:      &fakeRunner{success: true},
+		Stdout:      &buf,
+	}
+	res := Run(opts)
+	var aiStep *StepResult
+	for i := range res.Steps {
+		if res.Steps[i].Name == "ai sync" {
+			aiStep = &res.Steps[i]
+			break
+		}
+	}
+	if aiStep == nil {
+		t.Fatal("ai sync step not found")
+	}
+	// Should succeed (or fail gracefully if manifest is incomplete)
+	if aiStep.Status != "succeeded" && aiStep.Status != "failed" {
+		t.Errorf("ai sync: expected 'succeeded' or 'failed', got %q", aiStep.Status)
 	}
 }
 
