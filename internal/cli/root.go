@@ -17,6 +17,7 @@ import (
 	"github.com/byx-darwin/ncgo/internal/cli/interactive"
 	goexec "github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/postgenerate"
 	"github.com/byx-darwin/ncgo/internal/registry"
 	"github.com/byx-darwin/ncgo/internal/scaffold/micro"
 	"github.com/byx-darwin/ncgo/internal/scaffold/mono"
@@ -166,6 +167,8 @@ type newOptions struct {
 	ruleCenterAddr string // rule-center gRPC address (e.g., rule-center:8888)
 	templateDir    string // mono template package directory replacing embedded code templates and the IDL placeholder
 	templateName   string // mono template name from the registry cache (run `ncgo template pull` first)
+	aiTarget       string // AI sync target: claude (default) | all | agents | cursor | none
+	noAutoSteps    bool   // skip automatic post-generation steps
 }
 
 func newNewCmd() *cobra.Command {
@@ -192,6 +195,8 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&opts.ruleCenterAddr, "rule-center-addr", "", "Rule-center gRPC address for rate-limit rule queries (e.g., localhost:8888)")
 	f.StringVar(&opts.templateDir, "template-dir", "", "Mono template package directory replacing embedded code templates and the IDL placeholder")
 	f.StringVar(&opts.templateName, "template", "", "Mono template name from the registry cache (run `ncgo template pull` first)")
+	f.StringVar(&opts.aiTarget, "ai-target", "claude", "AI sync target: claude | all | agents | cursor | none")
+	f.BoolVar(&opts.noAutoSteps, "no-auto-steps", false, "Skip automatic post-generation steps")
 	return cmd
 }
 
@@ -287,8 +292,24 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 	if res.TemplateIDLFallback {
 		fmt.Fprintln(out, "(template package has no idl/; used built-in IDL placeholder)")
 	}
+	// Run auto post-generation steps
+	var pgResult *postgenerate.Result
+	if res.RanGenerate {
+		pgResult = postgenerate.Run(postgenerate.Options{
+			Dir:         res.Dir,
+			AITarget:    opts.aiTarget,
+			NoAutoSteps: opts.noAutoSteps,
+			RanGenerate: res.RanGenerate,
+			Stdout:      out,
+		})
+	}
+	// Filter NextSteps: remove auto-executed steps
+	nextSteps := res.NextSteps
+	if pgResult != nil && !opts.noAutoSteps {
+		nextSteps = filterAutoSteps(nextSteps, pgResult)
+	}
 	fmt.Fprintln(out, "\nnext steps:")
-	for _, s := range res.NextSteps {
+	for _, s := range nextSteps {
 		fmt.Fprintf(out, "  $ %s\n", s)
 	}
 	return nil
@@ -431,4 +452,42 @@ func readLine(r io.Reader) string {
 		return scanner.Text()
 	}
 	return ""
+}
+
+// filterAutoSteps removes NextSteps that were auto-executed.
+func filterAutoSteps(steps []string, pgResult *postgenerate.Result) []string {
+	if pgResult == nil {
+		return steps
+	}
+	filtered := make([]string, 0, len(steps))
+	for _, step := range steps {
+		// Skip "go mod tidy" if it succeeded
+		if strings.Contains(step, "go mod tidy") {
+			succeeded := false
+			for _, r := range pgResult.Steps {
+				if r.Name == "go mod tidy" && r.Status == "succeeded" {
+					succeeded = true
+					break
+				}
+			}
+			if succeeded {
+				continue
+			}
+		}
+		// Skip "ncgo ai sync" if it succeeded
+		if strings.Contains(step, "ncgo ai sync") {
+			succeeded := false
+			for _, r := range pgResult.Steps {
+				if r.Name == "ai sync" && r.Status == "succeeded" {
+					succeeded = true
+					break
+				}
+			}
+			if succeeded {
+				continue
+			}
+		}
+		filtered = append(filtered, step)
+	}
+	return filtered
 }
