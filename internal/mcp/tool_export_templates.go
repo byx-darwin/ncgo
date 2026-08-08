@@ -59,17 +59,29 @@ func callExportTemplates(raw json.RawMessage) (map[string]any, error) {
 	if templates == nil {
 		templates = []string{}
 	}
+	idls := result.IDLs
+	if idls == nil {
+		idls = []string{}
+	}
 	fields := map[string]any{
 		"outputDir": result.OutputDir,
 		"kind":      kind,
 		"templates": templates,
+		"idls":      idls,
 	}
 
 	text, err := formatMCPOutput(output, map[string]outputWriter{
 		mcpOutputText: func(w io.Writer) error {
-			fmt.Fprintf(w, "exported %d templates to %s/\n", len(result.Templates), result.OutputDir)
+			if len(result.IDLs) > 0 {
+				fmt.Fprintf(w, "exported %d templates and %d IDL files to %s/\n", len(result.Templates), len(result.IDLs), result.OutputDir)
+			} else {
+				fmt.Fprintf(w, "exported %d templates to %s/\n", len(result.Templates), result.OutputDir)
+			}
 			for _, t := range result.Templates {
 				fmt.Fprintf(w, "  - %s\n", t)
+			}
+			for _, f := range result.IDLs {
+				fmt.Fprintf(w, "  - %s\n", f)
 			}
 			return nil
 		},
