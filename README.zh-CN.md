@@ -143,7 +143,7 @@ make dev
 
 | 命令 | 作用 |
 | --- | --- |
-| `ncgo new` | 创建 mono 服务或 micro 工作区 |
+| `ncgo new` | 创建 mono 服务或 micro 工作区；`--template-dir <dir>` / `--template <name>` 从模板包生成（`--template`/`--template-dir` 互斥，且都不与 `--preset` 组合使用） |
 | `ncgo import` | 为已有的 Hertz/Kitex 项目反向生成 `.ncgo/manifest.yaml` |
 | `ncgo add domain` | 生成 usecase / repository / DI register 文件 |
 | `ncgo add method` | 在 ncgo anchor 标记中插入方法桩 |
@@ -156,7 +156,15 @@ make dev
 | `ncgo upgrade` | 更新 ncgo/assets 元数据 |
 | `ncgo extract domain` | 规划或执行 mono-to-micro 迁移 |
 | `ncgo export templates` | 从已有 ncgo 项目导出代码模板 |
+| `ncgo template list` | 列出官方模板 registry 中的模板包 |
+| `ncgo template pull <name>` | 从 registry 拉取模板包到本地缓存 |
 | `ncgo mcp serve` | 通过 MCP stdio 暴露部分 ncgo 能力 |
+
+`ncgo new --template <name>` 会从已由 `ncgo template pull <name>` 缓存的模板包
+生成项目；`--template-dir <dir>` 则指向任意本地模板包（即 `ncgo export templates`
+生成的目录结构）。这两个 flag 互斥，且都不与 `--preset` 组合使用。registry URL
+默认指向官方仓库，可通过 `--registry <url>` 或 `NCGO_REGISTRY` 覆盖。完整 registry
+工作流见 [docs/examples.zh-CN.md](#9-从官方模板生成基础项目)。
 
 ## 典型使用路径
 

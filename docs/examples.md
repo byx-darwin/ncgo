@@ -830,6 +830,17 @@ The exported templates are:
 Excluded paths: `internal/pb/` (hz-generated protobuf code) and `kitex_gen/`
 (kitex-generated RPC stubs).
 
+The export also writes the project's service IDL into `template/idl/` with the
+service name parameterized (for example
+`template/idl/app/{{ToLower .ServiceName}}.proto`), so consumers can render it
+onto their own default IDL path.
+
+A template package is the base project's starting code. `ncgo new --template-dir`
+(or `--template`) consumes it as a renamed clone: generation replaces the module
+path and service name in the exported files and produces a fresh scaffold under
+your own `--module` / service name, rather than copying the source project
+verbatim.
+
 ## 7. Rule-center rate-limit integration
 
 When multiple Hertz services need to share rate-limit rules, create a standalone
@@ -965,3 +976,29 @@ into `KitexCanaryLoadBalancer.RuleProvider`. Tested with `polaris-go v1.7.1`.
   sets `release.track` metadata on instances.
 
 GA hardening (metrics / cache+TTL / dry-run / runtime harness) is future work.
+
+## 9. Generate base projects from official templates
+
+Once a template is reviewed and merged into the official registry:
+
+```bash
+ncgo template list                 # browse official templates
+ncgo template pull base-kitex      # cache locally
+ncgo new my-svc --module github.com/acme/my-svc --kind kitex --template base-kitex
+```
+
+Or point at any local template package (the layout `ncgo export templates` produces):
+
+```bash
+ncgo new my-svc --module github.com/acme/my-svc --kind kitex \
+  --template-dir path/to/base-kitex
+```
+
+A template package is a directory with `<kind>-template/*.yaml`, optionally
+`idl/*.proto` and a `template.yaml` metadata file (`name`, `kind`,
+`description`, `version`). To contribute one: export from a mature project,
+add `template.yaml` + `README.md`, open a PR against the registry repository
+for official review.
+
+The registry URL defaults to the official repository; override with
+`--registry <url>` or `NCGO_REGISTRY`.
