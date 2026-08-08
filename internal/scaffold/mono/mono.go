@@ -53,13 +53,15 @@ type Options struct {
 	Now            time.Time   // injected clock for golden tests; zero means time.Now().UTC()
 	Preset         string      // preset name (e.g., "rule-center")
 	RuleCenterAddr string      // rule-center gRPC address; when set, Hertz scaffolds rule_center_client.go
+	TemplateDir    string      // external template package dir; replaces embedded <kind>-template and IDL placeholder
 }
 
 // Result describes what Generate produced.
 type Result struct {
-	Dir         string   // resolved absolute target directory
-	NextSteps   []string // shell commands the user/agent should run next
-	RanGenerate bool     // true when hz was invoked successfully
+	Dir                 string   // resolved absolute target directory
+	NextSteps           []string // shell commands the user/agent should run next
+	RanGenerate         bool     // true when hz was invoked successfully
+	TemplateIDLFallback bool     // true when the template package carried no IDL and the built-in placeholder applied
 }
 
 var nameRE = regexp.MustCompile(`^[a-z][a-z0-9-]{0,62}$`)
@@ -95,6 +97,14 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if err := writeTemplate(dir, opts); err != nil {
 		return nil, err
 	}
+	templateIDLFallback := false
+	if opts.TemplateDir != "" {
+		fallback, err := overlayTemplatePackage(dir, opts)
+		if err != nil {
+			return nil, err
+		}
+		templateIDLFallback = fallback
+	}
 	if err := writeIDLPlaceholder(dir, idl, opts); err != nil {
 		return nil, err
 	}
@@ -122,7 +132,7 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	// Update opts.Dir to absolute path so nextSteps computes relative
 	// paths correctly when the user runs ncgo new inside the target dir.
 	opts.Dir = dir
-	res := &Result{Dir: dir, NextSteps: nextSteps(opts, idl)}
+	res := &Result{Dir: dir, NextSteps: nextSteps(opts, idl), TemplateIDLFallback: templateIDLFallback}
 	if opts.NoGenerate {
 		return res, nil
 	}
@@ -203,6 +213,9 @@ func runGenerator(ctx context.Context, r exec.Runner, dir string, opts Options, 
 }
 
 func (o Options) validate() error {
+	if o.Preset != "" && o.TemplateDir != "" {
+		return errors.New("scaffold: --template-dir and --preset are mutually exclusive")
+	}
 	if !nameRE.MatchString(o.Name) {
 		return fmt.Errorf("scaffold: name %q must match %s", o.Name, nameRE)
 	}

@@ -162,6 +162,7 @@ type newOptions struct {
 	dir            string
 	noGenerate     bool
 	ruleCenterAddr string // rule-center gRPC address (e.g., rule-center:8888)
+	templateDir    string // mono template package directory replacing embedded code templates and the IDL placeholder
 }
 
 func newNewCmd() *cobra.Command {
@@ -186,6 +187,7 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&opts.dir, "dir", "", "Target directory, default ./<name>")
 	f.BoolVar(&opts.noGenerate, "no-generate", false, "Mono only: skip the generator invocation; only write manifest + template/ + idl placeholder")
 	f.StringVar(&opts.ruleCenterAddr, "rule-center-addr", "", "Rule-center gRPC address for rate-limit rule queries (e.g., localhost:8888)")
+	f.StringVar(&opts.templateDir, "template-dir", "", "Mono template package directory replacing embedded code templates and the IDL placeholder")
 	return cmd
 }
 
@@ -247,6 +249,7 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 		Preset:         opts.preset,
 		IDL:            opts.idl,
 		RuleCenterAddr: opts.ruleCenterAddr,
+		TemplateDir:    opts.templateDir,
 		AssetsVersion:  assets.Version(),
 		NCGOVersion:    Version,
 		NoGenerate:     opts.noGenerate,

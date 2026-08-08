@@ -70,6 +70,17 @@ func TestResolveBuildInfoKeepsInjectedValues(t *testing.T) {
 	}
 }
 
+func TestNewCmdHasTemplateDirFlag(t *testing.T) {
+	cmd := newNewCmd()
+	f := cmd.Flags().Lookup("template-dir")
+	if f == nil {
+		t.Fatal("--template-dir flag not registered on ncgo new")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--template-dir default = %q, want empty", f.DefValue)
+	}
+}
+
 func TestPreflightSkippedWhenNoGenerate(t *testing.T) {
 	var out strings.Builder
 	err := preflightTools(context.Background(), manifest.KindHertz, true, &out, strings.NewReader("n"))
