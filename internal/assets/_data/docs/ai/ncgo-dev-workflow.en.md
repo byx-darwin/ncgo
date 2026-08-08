@@ -64,7 +64,7 @@ contract, so an AI agent can drive it directly.
   `// ncgo:methods:start|end` markers; fix with `ncgo add domain <name> --force`.
 - `ncgo check` exits 1 on `check.manifest.consistency` — `manifest.Domains`
   drifted from `internal/usecase/*/`; run `ncgo add domain` or fix the manifest.
-- `ncgo check` exits 1 on `check.context.stale` — AI context is older than the
-  manifest; run `ncgo ai sync --root .`.
+- `ncgo check` exits 1 on `check.context.stale` — the rendered AI context's
+  declared domains differ from the manifest; run `ncgo ai sync --root .`.
 - `ncgo ai sync` refuses to overwrite — a file lacks the
   `<!-- ncgo:managed -->` marker; pass `--force` only if you own the file.

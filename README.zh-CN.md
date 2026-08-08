@@ -303,7 +303,7 @@ ncgo ai sync --root user-api --target all
 
 这些文件带有 `<!-- ncgo:managed -->` 标记。没有该标记的已有文件默认不会覆盖，除非传 `--force`。项目私有说明放在 `AGENTS.local.md`，会附加到长版上下文文件；`.claude/generated/project-context.md` 保持 deterministic。
 
-渲染出的文件还会携带 `<!-- ncgo:generated-at: ... -->` 标记，记录生成它们的 manifest 时间戳；`ncgo check` 通过读取该标记判断上下文文件是否已过期。
+渲染出的文件会携带 `<!-- ncgo:generated-at: ... -->` 标记，记录生成它们的 manifest 时间戳。`ncgo check` 会比较渲染上下文文件里声明的 domains 与当前 `manifest.Domains`；不一致即表示上下文已过期。
 
 当 `--root` 指向 micro 工作区根目录时，生成文件会基于 `ncgo.workspace`
 描述工作区级事实并列出已登记服务。如需服务级上下文，请进入对应服务目录执行
