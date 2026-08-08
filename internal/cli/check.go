@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/spf13/cobra"
 
-	"github.com/byx-darwin/ncgo/internal/ai"
 	"github.com/byx-darwin/ncgo/internal/doctor"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scan"
@@ -38,7 +38,7 @@ func newCheckCmd() *cobra.Command {
 		Short: "Validate AI context integrity and manifest consistency",
 		Long: "Verify that every usecase has paired // ncgo:methods anchors, that " +
 			"manifest domains match internal/usecase/*/ directories, and that rendered " +
-			"AI context files are not older than the manifest. Exits 0 on pass, 1 on " +
+			"AI context files' declared domains match the manifest. Exits 0 on pass, 1 on " +
 			"check failure, 2 on command error (e.g. root is not an ncgo service).",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -140,35 +140,93 @@ func consistencyChecks(s *scan.ScanResult) []doctor.Check {
 	return out
 }
 
-// contextStaleChecks compares each rendered context file's generated-at marker
-// against the manifest timestamp. Missing files are skipped (not a failure).
+// contextStaleChecks compares the domains declared in a rendered context file
+// (CLAUDE.md or AGENTS.md, whichever exists) against the current manifest. A
+// mismatch means the AI context is stale (a domain was added/removed without
+// re-running `ai sync`). Missing context files are skipped (not a failure).
 func contextStaleChecks(root string, m *manifest.Manifest) []doctor.Check {
-	var out []doctor.Check
-	stale := 0
+	path := ""
 	for _, rel := range contextFileTargets() {
-		path := filepath.Join(root, rel)
-		if !pathExists(path) {
-			continue
+		if rel == ".claude/skills/ncgo-dev/SKILL.md" || rel == ".cursor/rules/ncgo.mdc" {
+			continue // SKILL.md / .mdc do not carry the domains fact line
 		}
-		ts, ok := ai.ReadGeneratedAt(path)
-		if ok && !ts.Before(m.GeneratedAt) {
-			continue
+		candidate := filepath.Join(root, rel)
+		if pathExists(candidate) {
+			path = candidate
+			break
 		}
-		stale++
-		out = append(out, doctor.Check{
+	}
+	if path == "" {
+		return []doctor.Check{okContextCheck("no rendered context file present; nothing to compare")}
+	}
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return []doctor.Check{{
 			ID: "check.context.stale", OK: false, Severity: doctor.SeverityError,
-			Message: fmt.Sprintf("%s is stale (context older than manifest)", rel),
+			Message: fmt.Sprintf("read %s: %v", path, err), File: path,
+		}}
+	}
+	rendered := parseContextDomains(string(body))
+	if rendered == nil {
+		return []doctor.Check{okContextCheck("context file has no domains fact line")}
+	}
+	if !sameStringSet(rendered, m.Domains) {
+		return []doctor.Check{{
+			ID: "check.context.stale", OK: false, Severity: doctor.SeverityError,
+			Message: fmt.Sprintf("%s is stale: context declares domains %v, manifest has %v", filepath.Base(path), rendered, m.Domains),
 			File:    path,
 			Hint:    "run `ncgo ai sync --root .`",
-		})
+		}}
 	}
-	if stale == 0 {
-		out = append(out, doctor.Check{
-			ID: "check.context.stale", OK: true, Severity: doctor.SeverityError,
-			Message: "AI context files are up to date",
-		})
+	return []doctor.Check{okContextCheck("AI context domains match manifest")}
+}
+
+func okContextCheck(msg string) doctor.Check {
+	return doctor.Check{ID: "check.context.stale", OK: true, Severity: doctor.SeverityError, Message: msg}
+}
+
+// parseContextDomains extracts the domain list from a rendered context file's
+// "- domains: [a, b]" fact line. Returns nil when the line is absent.
+func parseContextDomains(content string) []string {
+	for _, line := range strings.Split(content, "\n") {
+		line = strings.TrimSpace(line)
+		if !strings.HasPrefix(line, "- domains: `[") {
+			continue
+		}
+		rest := strings.TrimPrefix(line, "- domains: `[")
+		rest = strings.TrimSuffix(rest, "]`")
+		if rest == "" {
+			return []string{}
+		}
+		parts := strings.Split(rest, ",")
+		out := make([]string, 0, len(parts))
+		for _, p := range parts {
+			if s := strings.TrimSpace(p); s != "" {
+				out = append(out, s)
+			}
+		}
+		return out
 	}
-	return out
+	return nil
+}
+
+// sameStringSet reports whether two slices contain the same strings
+// (order-insensitive).
+func sameStringSet(a, b []string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	seen := make(map[string]int, len(a))
+	for _, s := range a {
+		seen[s]++
+	}
+	for _, s := range b {
+		seen[s]--
+		if seen[s] < 0 {
+			return false
+		}
+	}
+	return true
 }
 
 // contextFileTargets lists the context files ai sync renders and check audits.
