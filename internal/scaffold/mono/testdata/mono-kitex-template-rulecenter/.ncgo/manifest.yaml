@@ -1,0 +1,11 @@
+ncgo:
+    version: 0.0.0-test
+    assets_version: test-assets
+mode: mono
+module: github.com/x/rulecenter
+service:
+    name: rulecenter
+    kind: kitex
+    with_database: false
+    idl: idl/rulecenter.proto
+generated_at: 2026-04-29T00:00:00Z

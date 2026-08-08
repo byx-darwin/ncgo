@@ -996,9 +996,26 @@ ncgo new my-svc --module github.com/acme/my-svc --kind kitex \
 
 A template package is a directory with `<kind>-template/*.yaml`, optionally
 `idl/*.proto` and a `template.yaml` metadata file (`name`, `kind`,
-`description`, `version`). To contribute one: export from a mature project,
-add `template.yaml` + `README.md`, open a PR against the registry repository
-for official review.
+`description`, `version`). Preset-like packages may also carry `schema/*.sql`
+files (copied to `internal/db/schema/`, rendered with `{{.Module}}`/
+`{{.ServiceName}}`), a root `layout.yaml` (replaces the default layout), and a
+`skip_default_templates` list in `template.yaml` (default per-layer templates
+to skip). To contribute one: export from a mature project, add `template.yaml`
++ `README.md`, open a PR against the registry repository for official review.
+
+### Preset-equivalent packages
+
+A package that mirrors a built-in preset is *preset-equivalent*. For example,
+the official `rule-center` package declares
+`skip_default_templates: [handler.yaml, server.yaml, usecase.yaml,
+repository.yaml]`, carries `schema/000002_rate_limit_rules.sql`, a root
+`layout.yaml`, and `idl/rulecenter.proto`, so
+`ncgo new my-svc --kind kitex --template rule-center` produces the same tree as
+`--preset rule-center` (merge semantics: embedded defaults are kept except the
+skipped ones, and package templates are overlaid). One residual difference: the
+preset writes the IDL as `idl/rule-center.proto` while the template package
+writes `idl/rulecenter.proto` (same proto content, different filename; the
+Makefile's `IDL_FILE` follows suit).
 
 The registry URL defaults to the official repository; override with
 `--registry <url>` or `NCGO_REGISTRY`.

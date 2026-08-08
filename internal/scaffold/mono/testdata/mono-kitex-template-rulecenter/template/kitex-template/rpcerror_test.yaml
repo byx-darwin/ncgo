@@ -1,0 +1,56 @@
+# Kitex custom template — internal/pkg/rpcerror tests
+path: internal/pkg/rpcerror/rpcerror_test.go
+update_behavior:
+  type: cover
+body: |-
+  package rpcerror
+
+  import (
+      "fmt"
+      "strings"
+      "testing"
+      "time"
+
+      "github.com/cloudwego/kitex/pkg/kerrors"
+  )
+
+  func TestToBizErrorMapsOopsCode(t *testing.T) {
+      err := ToBizError(fmt.Errorf("test error"))
+      if err == nil {
+          t.Fatal("expected non-nil error from ToBizError")
+      }
+  }
+
+  func TestToBizErrorNil(t *testing.T) {
+      if err := ToBizError(nil); err != nil {
+          t.Fatalf("expected nil, got %v", err)
+      }
+  }
+
+  func TestRateLimited(t *testing.T) {
+      err := RateLimited(30 * time.Second)
+      bizErr, ok := kerrors.FromBizStatusError(err)
+      if !ok {
+          t.Fatalf("RateLimited must be a BizStatusError, got %T", err)
+      }
+      if bizErr.BizStatusCode() != 10429 {
+          t.Errorf("biz code = %d, want 10429", bizErr.BizStatusCode())
+      }
+      if !strings.Contains(bizErr.BizMessage(), "rate limited") {
+          t.Errorf("biz message = %q", bizErr.BizMessage())
+      }
+      if v, ok := bizErr.BizExtra()[MetaRetryAfter]; !ok || v != "30" {
+          t.Errorf("BizExtra[%q] = %q, want %q", MetaRetryAfter, v, "30")
+      }
+  }
+
+  func TestRateLimitedDefaultRetryAfter(t *testing.T) {
+      err := RateLimited(0)
+      bizErr, ok := kerrors.FromBizStatusError(err)
+      if !ok {
+          t.Fatalf("RateLimited must be a BizStatusError, got %T", err)
+      }
+      if v := bizErr.BizExtra()[MetaRetryAfter]; v != "60" {
+          t.Errorf("BizExtra[%q] = %q, want %q (default)", MetaRetryAfter, v, "60")
+      }
+  }

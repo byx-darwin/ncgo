@@ -39,21 +39,22 @@ import (
 
 // Options describes a `ncgo new --mode mono` invocation.
 type Options struct {
-	Name           string      // service name; also default base directory
-	Module         string      // Go module path
-	Kind           string      // service kind: manifest.KindHertz (default) | manifest.KindKitex
-	Dir            string      // target directory; must be empty or nonexistent
-	WithDatabase   bool        // postgres scaffolding flag
-	Infra          []string    // creation-time infra add-ons (currently only redis)
-	IDL            string      // IDL path relative to project root; default differs by Kind
-	AssetsVersion  string      // recorded into manifest.ncgo.assets_version
-	NCGOVersion    string      // recorded into manifest.ncgo.version
-	NoGenerate     bool        // when true, skip the generator (hz/kitex) invocation
-	Runner         exec.Runner // injected exec; nil means exec.NewDefault()
-	Now            time.Time   // injected clock for golden tests; zero means time.Now().UTC()
-	Preset         string      // preset name (e.g., "rule-center")
-	RuleCenterAddr string      // rule-center gRPC address; when set, Hertz scaffolds rule_center_client.go
-	TemplateDir    string      // external template package dir; replaces embedded <kind>-template and IDL placeholder
+	Name                 string      // service name; also default base directory
+	Module               string      // Go module path
+	Kind                 string      // service kind: manifest.KindHertz (default) | manifest.KindKitex
+	Dir                  string      // target directory; must be empty or nonexistent
+	WithDatabase         bool        // postgres scaffolding flag
+	Infra                []string    // creation-time infra add-ons (currently only redis)
+	IDL                  string      // IDL path relative to project root; default differs by Kind
+	AssetsVersion        string      // recorded into manifest.ncgo.assets_version
+	NCGOVersion          string      // recorded into manifest.ncgo.version
+	NoGenerate           bool        // when true, skip the generator (hz/kitex) invocation
+	Runner               exec.Runner // injected exec; nil means exec.NewDefault()
+	Now                  time.Time   // injected clock for golden tests; zero means time.Now().UTC()
+	Preset               string      // preset name (e.g., "rule-center")
+	RuleCenterAddr       string      // rule-center gRPC address; when set, Hertz scaffolds rule_center_client.go
+	TemplateDir          string      // external template package dir; replaces embedded <kind>-template and IDL placeholder
+	SkipDefaultTemplates []string    // from template package's skip_default_templates
 }
 
 // Result describes what Generate produced.
@@ -94,12 +95,39 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if opts.Preset == "rule-center" {
 		idl = filepath.ToSlash(filepath.Join("idl", "rule-center.proto"))
 	}
+	// Load the template package once before writeTemplate so its
+	// skip_default_templates metadata can drop the embedded default per-layer
+	// templates, and reuse the loaded package in the overlay below.
+	var pkg *scaffoldtemplate.Package
+	if opts.TemplateDir != "" {
+		pkg, err = scaffoldtemplate.LoadPackage(opts.TemplateDir, defaultKind(opts.Kind))
+		if err != nil {
+			return nil, err
+		}
+		opts.SkipDefaultTemplates = pkg.Meta.SkipDefaultTemplates
+		// A template package's IDL defines the project IDL path: the manifest,
+		// generator command, and placeholder all target the package's real proto.
+		// This matches defaultIDL for variable-named packages
+		// ({{ToLower .ServiceName}}.proto) and fixes fixed-named packages (e.g.
+		// rule-center's idl/rulecenter.proto) whose filename would otherwise diverge
+		// from the default <name>.proto path, leaving a stale empty placeholder.
+		// writeIDLPlaceholder never clobbers an existing IDL, so the overlay-written
+		// real proto wins.
+		if len(pkg.IDLs) > 0 {
+			rel, err := filepath.Rel(pkg.IDLDir, pkg.IDLs[0])
+			if err == nil {
+				rel = filepath.ToSlash(rel)
+				rel = strings.ReplaceAll(rel, "{{ToLower .ServiceName}}", idlNameToken(opts))
+				idl = filepath.ToSlash(filepath.Join("idl", rel))
+			}
+		}
+	}
 	if err := writeTemplate(dir, opts); err != nil {
 		return nil, err
 	}
 	templateIDLFallback := false
 	if opts.TemplateDir != "" {
-		fallback, err := overlayTemplatePackage(dir, opts)
+		fallback, err := overlayTemplatePackage(dir, opts, pkg)
 		if err != nil {
 			return nil, err
 		}

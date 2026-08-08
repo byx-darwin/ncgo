@@ -76,3 +76,19 @@ func TestGenerateGoldenWithRuleCenter(t *testing.T) {
 	}
 	golden.Tree(t, "mono-with-rulecenter", res.Dir)
 }
+
+// TestGenerateGoldenTemplateRuleCenter locks the `--template <rule-center
+// package>` output tree. The snapshot must equal the rule-center preset tree
+// modulo the documented IDL filename difference (idl/rulecenter.proto here vs
+// idl/rule-center.proto for the preset; the manifest Service.IDL records the
+// differing path).
+func TestGenerateGoldenTemplateRuleCenter(t *testing.T) {
+	opts := goldenOpts(t, "rulecenter", false)
+	opts.Kind = manifest.KindKitex
+	opts.TemplateDir = seedRuleCenterTemplatePackage(t)
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	golden.Tree(t, "mono-kitex-template-rulecenter", res.Dir)
+}

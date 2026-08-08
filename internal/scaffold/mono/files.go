@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -91,7 +92,7 @@ extend google.protobuf.MessageOptions {
 // reads its variables inline so no extra file is needed.
 func writeTemplate(dir string, opts Options) error {
 	if defaultKind(opts.Kind) == manifest.KindKitex {
-		return writeKitexTemplate(dir, opts.Preset, opts.Module)
+		return writeKitexTemplate(dir, opts)
 	}
 	return writeHertzTemplate(dir, opts)
 }
@@ -159,7 +160,9 @@ func writeHertzTemplate(dir string, opts Options) error {
 // scaffold) and the generated Makefile's `update` target can consume
 // them at the same path. When a preset is specified, it also writes
 // preset-specific layout and extra files.
-func writeKitexTemplate(dir string, preset string, module string) error {
+func writeKitexTemplate(dir string, opts Options) error {
+	preset := opts.Preset
+	module := opts.Module
 	tplDir := filepath.Join(dir, "template", "kitex-template")
 	if err := os.MkdirAll(tplDir, 0o755); err != nil {
 		return fmt.Errorf("scaffold: mkdir %s: %w", tplDir, err)
@@ -182,6 +185,12 @@ func writeKitexTemplate(dir string, preset string, module string) error {
 		// templates under the rulecenter/ dirs; skip the default per-layer templates
 		// so they don't generate duplicate ruleservice/ scaffolding.
 		if preset == "rule-center" && (name == "handler.yaml" || name == "server.yaml" || name == "usecase.yaml" || name == "repository.yaml") {
+			continue
+		}
+		// A template package can skip default per-layer templates via its
+		// skip_default_templates metadata, making `--template <pkg>` equivalent
+		// to a preset that supplies its own layer files.
+		if slices.Contains(opts.SkipDefaultTemplates, name) {
 			continue
 		}
 		b, err := fs.ReadFile(srcFS, "kitex/kitex-template/"+name)
@@ -457,21 +466,49 @@ func copyHertzTemplateYAML(dir string, srcFS fs.FS) error {
 // overlayTemplatePackage replaces the embedded <kind>-template YAML and the
 // IDL placeholder with the contents of an external template package. It
 // reports true when the package carries no IDL and the built-in placeholder
-// still applies (backward compatibility with pre-IDL exports).
-func overlayTemplatePackage(dir string, opts Options) (bool, error) {
+// still applies (backward compatibility with pre-IDL exports). The package is
+// loaded once by Generate so its skip_default_templates metadata can take
+// effect before writeTemplate runs.
+func overlayTemplatePackage(dir string, opts Options, pkg *scaffoldtemplate.Package) (bool, error) {
 	kind := defaultKind(opts.Kind)
-	pkg, err := scaffoldtemplate.LoadPackage(opts.TemplateDir, kind)
-	if err != nil {
-		return false, err
-	}
-	// Replace (not merge) the embedded per-file template set with the
-	// package's <kind>-template yamls.
 	tplTarget := filepath.Join(dir, "template", kind+"-template")
 	if err := os.RemoveAll(tplTarget); err != nil {
 		return false, fmt.Errorf("scaffold: remove %s: %w", tplTarget, err)
 	}
 	if err := os.MkdirAll(tplTarget, 0o755); err != nil {
 		return false, fmt.Errorf("scaffold: mkdir %s: %w", tplTarget, err)
+	}
+	// A preset-like package (non-empty skip_default_templates, e.g. rule-center)
+	// MERGES: it retains the embedded default templates that are NOT in the skip
+	// list, then overlays the package's own templates on top (package wins on
+	// filename conflict). This keeps main.yaml/client.yaml/conf.yaml/data.yaml/
+	// interceptor.yaml/makefile.yaml/migration_*.yaml/rpcerror*.yaml and the
+	// embedded ratelimit_* files that the equivalent preset would retain. A
+	// package without a skip list fully REPLACES the embedded set (backward
+	// compatible).
+	if len(pkg.Meta.SkipDefaultTemplates) > 0 {
+		srcFS := assets.FS()
+		assetDir := kind + "/" + kind + "-template"
+		entries, err := fs.ReadDir(srcFS, assetDir)
+		if err != nil {
+			return false, fmt.Errorf("scaffold: read embedded %s: %w", assetDir, err)
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if slices.Contains(pkg.Meta.SkipDefaultTemplates, name) {
+				continue
+			}
+			b, err := fs.ReadFile(srcFS, assetDir+"/"+name)
+			if err != nil {
+				return false, fmt.Errorf("scaffold: read embedded %s/%s: %w", assetDir, name, err)
+			}
+			if err := os.WriteFile(filepath.Join(tplTarget, name), b, 0o644); err != nil {
+				return false, fmt.Errorf("scaffold: write %s: %w", name, err)
+			}
+		}
 	}
 	for _, src := range pkg.Templates {
 		b, err := os.ReadFile(src)
@@ -513,6 +550,47 @@ func overlayTemplatePackage(dir string, opts Options) (bool, error) {
 			}
 		}
 	}
+	// Copy the package's schema/*.sql files onto the sqlc schema dir with
+	// module/service-name variables rendered.
+	if len(pkg.Schemas) > 0 {
+		schemaTarget := filepath.Join(dir, "internal", "db", "schema")
+		if err := os.MkdirAll(schemaTarget, 0o755); err != nil {
+			return false, fmt.Errorf("scaffold: mkdir %s: %w", schemaTarget, err)
+		}
+		for _, src := range pkg.Schemas {
+			b, err := os.ReadFile(src)
+			if err != nil {
+				return false, fmt.Errorf("scaffold: read schema %s: %w", src, err)
+			}
+			rendered, err := scaffoldtemplate.Render(string(b), scaffoldtemplate.RenderData{
+				Module:      opts.Module,
+				ServiceName: opts.Name,
+			})
+			if err != nil {
+				return false, fmt.Errorf("scaffold: render schema %s: %w", src, err)
+			}
+			target := filepath.Join(schemaTarget, filepath.Base(src))
+			if err := os.WriteFile(target, []byte(rendered), 0o644); err != nil {
+				return false, fmt.Errorf("scaffold: write %s: %w", target, err)
+			}
+		}
+	}
+
+	// Copy the package's custom layout.yaml over the template dir one.
+	if pkg.LayoutFile != "" {
+		b, err := os.ReadFile(pkg.LayoutFile)
+		if err != nil {
+			return false, fmt.Errorf("scaffold: read layout %s: %w", pkg.LayoutFile, err)
+		}
+		layoutTarget := filepath.Join(dir, "template", "layout.yaml")
+		if err := os.MkdirAll(filepath.Dir(layoutTarget), 0o755); err != nil {
+			return false, fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(layoutTarget), err)
+		}
+		if err := os.WriteFile(layoutTarget, b, 0o644); err != nil {
+			return false, fmt.Errorf("scaffold: write %s: %w", layoutTarget, err)
+		}
+	}
+
 	// Render the package IDLs onto the kind's default IDL path. A package with
 	// no idl/ directory falls back to the built-in placeholder.
 	if len(pkg.IDLs) == 0 {

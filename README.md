@@ -195,6 +195,15 @@ the official repository; override it with `--registry <url>` on `ncgo template
 list`/`pull`, or set `NCGO_REGISTRY`. See the full registry workflow in
 [docs/examples.md](docs/examples.md#9-generate-base-projects-from-official-templates).
 
+A template package may also declare `skip_default_templates` in `template.yaml`
+(list of default per-layer templates to skip, so a preset-like package can
+provide its own `handler`/`server`/`usecase`/`repository` templates without
+duplicate scaffolding), carry `schema/*.sql` files (copied to
+`internal/db/schema/`, rendered with `{{.Module}}`/`{{.ServiceName}}`), and a
+root `layout.yaml` (replaces the default layout). This is how
+`ncgo new --kind kitex --template rule-center` achieves equivalence with the
+built-in `--preset rule-center`.
+
 ## Typical Workflows
 
 | Scenario | Start with | Best when |

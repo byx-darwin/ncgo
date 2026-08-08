@@ -1,0 +1,30 @@
+# sqlc configuration for Kitex RPC service
+# Place this file at: internal/db/sqlc.yaml
+# Run: sqlc generate -f internal/db/sqlc.yaml
+#
+# Directory layout expected:
+#   internal/db/
+#     sqlc.yaml        ← this file
+#     schema/          ← *.sql DDL files (CREATE TABLE ...)
+#     query/           ← *.sql query files (named queries with sqlc annotations)
+#     gen/             ← generated Go code (do not edit manually)
+
+version: "2"
+sql:
+  - engine: "postgresql"
+    queries: "./query"
+    schema: "./schema"
+    gen:
+      go:
+        package: "gen"
+        out: "./gen"
+        # Native pgx/v5 — generated Queries accept *pgxpool.Pool / pgx.Tx.
+        # Required to use pgx.Batch, CopyFrom, LISTEN/NOTIFY, native array/JSONB types.
+        sql_package: "pgx/v5"
+        emit_json_tags: true
+        emit_db_tags: true
+        emit_prepared_queries: false
+        emit_exact_table_names: false
+        # Pointers (*string, *int32) for nullable columns — Go-idiomatic.
+        # Drop this line to get pgtype.Text / pgtype.Int4 instead.
+        emit_pointers_for_null_types: true

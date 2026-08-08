@@ -1,0 +1,58 @@
+minimum_pre_commit_version: '3.7.0'
+default_install_hook_types:
+  - pre-commit
+  - pre-push
+
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+        args:
+          - --markdown-linebreak-ext=md
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-merge-conflict
+      - id: check-added-large-files
+
+  - repo: local
+    hooks:
+      - id: gofmt
+        name: gofmt
+        entry: bash -c 'gofmt -w "$@"' --
+        language: system
+        types:
+          - go
+        require_serial: true
+
+      - id: ncgo-check
+        name: ncgo check (anchors/manifest/context)
+        entry: ncgo check --root . --output text
+        language: system
+        pass_filenames: false
+        always_run: true
+        stages: [pre-commit]
+
+      - id: go-vet-all-modules
+        name: go vet ./... (all Go modules)
+        entry: ./scripts/run-go-module-checks.sh vet
+        language: system
+        pass_filenames: false
+        stages:
+          - pre-push
+
+      - id: go-test-all-modules
+        name: go test ./... -count=1 (all Go modules)
+        entry: ./scripts/run-go-module-checks.sh test
+        language: system
+        pass_filenames: false
+        stages:
+          - pre-push
+
+      - id: go-build-all-modules
+        name: go build . (all Go modules)
+        entry: ./scripts/run-go-module-checks.sh build
+        language: system
+        pass_filenames: false
+        stages:
+          - pre-push
