@@ -148,7 +148,7 @@ make dev
 | `ncgo add domain` | 生成 usecase / repository / DI register 文件 |
 | `ncgo add method` | 在 ncgo anchor 标记中插入方法桩 |
 | `ncgo add infra` | 添加 Redis / logging / canary / polaris_adapter 等可选基础设施 helper |
-| `ncgo add rpc` / `ncgo add bff` | 在 micro 工作区中新增服务 |
+| `ncgo add rpc` / `ncgo add bff` | 在 micro 工作区中新增服务（`--template` / `--template-dir` 消费模版包；`add bff` 还支持 `--preset`） |
 | `ncgo ai init claude` | 初始化 hand-authored `.claude` starter files（`--preset minimal` 或 `--preset team`） |
 | `ncgo ai sync` | 渲染 AI 上下文文件——默认 `claude` 目标；`--target all\|agents\|claude\|cursor` 选择分组 |
 | `ncgo doctor` | 检查宿主机工具、项目元数据与默认 proto 契约问题 |
@@ -246,6 +246,40 @@ ncgo add bff web-bff --root .
 当你在 micro 根目录执行 `ncgo doctor --root .` 或 `ncgo protolint --root .` 时，ncgo
 现在会自动遍历 `ncgo.workspace` 里登记的服务，并聚合各服务 `manifest.service.idl`
 上的 proto lint 结果。
+
+### Micro 工作区模版消费
+
+`ncgo new --mode micro` 与 `ncgo add rpc/bff` 支持 `--template <name>`（从官方 registry
+拉取）或 `--template-dir <path>`（本地目录）消费模版包：
+
+```bash
+# 使用 micro 模版包创建工作区
+ncgo new commerce --module github.com/acme/commerce --mode micro \
+  --template my-micro
+
+# 使用同一个 micro 模版包添加服务
+ncgo add rpc user-rpc --template my-micro
+ncgo add bff web-bff --template my-micro
+
+# 或使用独立的 mono 模版包
+ncgo add rpc user-rpc --template base-kitex
+ncgo add bff web-bff --template base-hertz
+```
+
+Micro 模版包（`kind: micro`）在一个包中打包工作区骨架模板与服务层模板：
+
+```
+my-micro/
+├── template.yaml          # kind: micro
+├── workspace/             # 工作区骨架模板（.tpl → 变量替换）
+├── kitex-template/        # RPC 服务模板（add rpc 使用）
+├── hertz-template/        # BFF 服务模板（add bff 使用）
+└── idl/
+    ├── kitex/             # Kitex IDL 模板
+    └── hertz/             # Hertz IDL 模板
+```
+
+`--preset`、`--template`、`--template-dir` 三者互斥。
 
 ## Prepare vs Generate
 

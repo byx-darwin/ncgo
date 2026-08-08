@@ -361,6 +361,52 @@ ncgo protolint --root . --output json
 `--plan` 可以先预览 service 路径、module 名称和后续生成器步骤，再决定是
 否真正写入文件。
 
+### 3.1 Micro 工作区模版消费
+
+`ncgo new --mode micro` 与 `ncgo add rpc/bff` 通过 `--template <name>`（从 registry
+缓存）或 `--template-dir <path>`（本地路径）消费模版包：
+
+```bash
+# 从 registry 拉取 micro 模版包
+ncgo template pull my-micro
+
+# 使用 micro 模版包创建工作区
+ncgo new commerce --module github.com/acme/commerce --mode micro --template my-micro
+
+# 使用同一个 micro 模版包添加服务
+ncgo add rpc user-rpc --template my-micro
+ncgo add bff web-bff --template my-micro
+
+# 或使用独立的 mono 模版包
+ncgo add rpc user-rpc --template base-kitex
+ncgo add bff web-bff --template base-hertz
+
+# 本地模版目录同样生效
+ncgo new commerce --module github.com/acme/commerce --mode micro \
+  --template-dir ./my-micro-pkg
+```
+
+**Micro 模版包结构**（`kind: micro`）：
+
+```
+my-micro/
+├── template.yaml              # name, kind: micro, description, version
+├── workspace/                 # 工作区骨架模板
+│   ├── compose.yaml.tpl       # .tpl 后缀 → Go 模板变量替换
+│   └── scripts/build.sh.tpl
+├── kitex-template/            # Kitex 服务模板（add rpc 使用）
+│   └── *.yaml
+├── hertz-template/            # Hertz 服务模板（add bff 使用）
+│   └── *.yaml
+└── idl/
+    ├── kitex/*.proto          # Kitex IDL 模板
+    └── hertz/app/*.proto      # Hertz IDL 模板
+```
+
+- `--preset`、`--template`、`--template-dir` 三者互斥。
+- `add rpc` 接受 `kind: kitex` 或 `kind: micro` 包（从 micro 包中提取 kitex 模板）。
+- `add bff` 接受 `kind: hertz` 或 `kind: micro` 包（从 micro 包中提取 hertz 模板）。
+
 当工作区里已经有服务 manifest 时，`ncgo doctor --root .` 与 `ncgo protolint --root .`
 会自动聚合 `ncgo.workspace` 中列出的各个服务 `manifest.service.idl`，不必手动逐个
 传 `--file`。

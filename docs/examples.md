@@ -408,6 +408,52 @@ ncgo protolint --root . --output json
 The `--plan` output lets you preview service paths, module names, and generator
 steps before writing files.
 
+### 3.1 Micro workspace template consumption
+
+`ncgo new --mode micro` and `ncgo add rpc/bff` consume template packages via
+`--template <name>` (from the registry cache) or `--template-dir <path>` (local):
+
+```bash
+# Pull a micro template package from the registry
+ncgo template pull my-micro
+
+# Create workspace using the micro template package
+ncgo new commerce --module github.com/acme/commerce --mode micro --template my-micro
+
+# Add services reusing the same micro template package
+ncgo add rpc user-rpc --template my-micro
+ncgo add bff web-bff --template my-micro
+
+# Or use standalone mono template packages for individual services
+ncgo add rpc user-rpc --template base-kitex
+ncgo add bff web-bff --template base-hertz
+
+# Local template directory works the same way
+ncgo new commerce --module github.com/acme/commerce --mode micro \
+  --template-dir ./my-micro-pkg
+```
+
+**Micro template package structure** (`kind: micro`):
+
+```
+my-micro/
+├── template.yaml              # name, kind: micro, description, version
+├── workspace/                 # Workspace skeleton templates
+│   ├── compose.yaml.tpl       # .tpl suffix → Go template variable substitution
+│   └── scripts/build.sh.tpl
+├── kitex-template/            # Kitex service templates (used by add rpc)
+│   └── *.yaml
+├── hertz-template/            # Hertz service templates (used by add bff)
+│   └── *.yaml
+└── idl/
+    ├── kitex/*.proto          # Kitex IDL templates
+    └── hertz/app/*.proto      # Hertz IDL templates
+```
+
+- `--preset`, `--template`, and `--template-dir` are mutually exclusive.
+- `add rpc` accepts `kind: kitex` or `kind: micro` packages (extracts kitex templates from micro).
+- `add bff` accepts `kind: hertz` or `kind: micro` packages (extracts hertz templates from micro).
+
 When the workspace already contains service manifests, `ncgo doctor --root .`
 and `ncgo protolint --root .` automatically walk the services listed in
 `ncgo.workspace` and aggregate proto lint results from each
