@@ -28,6 +28,9 @@ var newMCPTool = structuredMCPTool[*newResult]{
 		if res.RanGenerate != nil {
 			out["ranGenerate"] = *res.RanGenerate
 		}
+		if len(res.AutoSteps) > 0 {
+			out["autoSteps"] = res.AutoSteps
+		}
 		return out
 	},
 	isError: func(*newResult) bool { return false },
@@ -136,6 +139,7 @@ func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra [
 
 	// Run auto post-generation steps
 	var autoSteps []postgenerate.StepResult
+	nextSteps := res.NextSteps
 	if res.RanGenerate {
 		pgResult := postgenerate.Run(postgenerate.Options{
 			Dir:         res.Dir,
@@ -145,12 +149,14 @@ func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra [
 			Stdout:      io.Discard, // MCP doesn't print progress
 		})
 		autoSteps = pgResult.Steps
+		// Remove auto-executed steps from NextSteps (parity with CLI).
+		nextSteps = pgResult.FilterNextSteps(nextSteps)
 	}
 
 	ran := res.RanGenerate
 	return &newResult{
 		Dir:         res.Dir,
-		NextSteps:   res.NextSteps,
+		NextSteps:   nextSteps,
 		Mode:        manifest.ModeMono,
 		RanGenerate: &ran,
 		AutoSteps:   autoSteps,
@@ -188,10 +194,20 @@ func formatMCPNewOutput(res *newResult, output string) (string, error) {
 					return err
 				}
 			}
+			if len(res.AutoSteps) > 0 {
+				if _, err := fmt.Fprintf(w, "\nauto steps:\n"); err != nil {
+					return err
+				}
+				for _, s := range res.AutoSteps {
+					if _, err := fmt.Fprintf(w, "  %s: %s %s\n", s.Name, s.Status, s.Detail); err != nil {
+						return err
+					}
+				}
+			}
 			return nil
 		},
 		mcpOutputJSON: func(w io.Writer) error {
-			return writeJSONOutput(w, map[string]any{
+			out := map[string]any{
 				"dir":       res.Dir,
 				"nextSteps": res.NextSteps,
 				"mode":      res.Mode,
@@ -201,7 +217,11 @@ func formatMCPNewOutput(res *newResult, output string) (string, error) {
 					}
 					return nil
 				}(),
-			})
+			}
+			if len(res.AutoSteps) > 0 {
+				out["autoSteps"] = res.AutoSteps
+			}
+			return writeJSONOutput(w, out)
 		},
 	})
 }

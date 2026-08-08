@@ -160,3 +160,46 @@ func (f *fakeRunner) Run(_ context.Context, c exec.Cmd) (exec.Result, error) {
 	}
 	return exec.Result{ExitCode: 0}, nil
 }
+
+func TestResultFilterNextSteps(t *testing.T) {
+	succeeded := &Result{
+		Steps: []StepResult{
+			{Name: "go mod tidy", Status: "succeeded"},
+			{Name: "ai sync", Status: "succeeded"},
+		},
+	}
+	steps := []string{"go mod tidy", "ncgo ai sync --target all --root .", "hz update", "make lint"}
+	got := succeeded.FilterNextSteps(steps)
+	want := []string{"hz update", "make lint"}
+	if len(got) != len(want) {
+		t.Fatalf("FilterNextSteps len = %d, want %d (got %v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("FilterNextSteps[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestResultFilterNextStepsKeepsFailedAndSkipped(t *testing.T) {
+	failed := &Result{
+		Steps: []StepResult{
+			{Name: "go mod tidy", Status: "failed"},
+			{Name: "ai sync", Status: "skipped"},
+		},
+	}
+	steps := []string{"go mod tidy", "ncgo ai sync --target all --root ."}
+	got := failed.FilterNextSteps(steps)
+	if len(got) != 2 {
+		t.Errorf("FilterNextSteps should keep steps when not succeeded, got %v", got)
+	}
+}
+
+func TestResultFilterNextStepsNilReceiver(t *testing.T) {
+	var nilResult *Result
+	steps := []string{"go mod tidy", "ncgo ai sync --target all --root ."}
+	got := nilResult.FilterNextSteps(steps)
+	if len(got) != 2 {
+		t.Errorf("FilterNextSteps(nil) should keep all steps, got %v", got)
+	}
+}

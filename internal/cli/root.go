@@ -455,39 +455,8 @@ func readLine(r io.Reader) string {
 }
 
 // filterAutoSteps removes NextSteps that were auto-executed.
+// It delegates to postgenerate.Result.FilterNextSteps so CLI and MCP share
+// the same filtering behavior.
 func filterAutoSteps(steps []string, pgResult *postgenerate.Result) []string {
-	if pgResult == nil {
-		return steps
-	}
-	filtered := make([]string, 0, len(steps))
-	for _, step := range steps {
-		// Skip "go mod tidy" if it succeeded
-		if strings.Contains(step, "go mod tidy") {
-			succeeded := false
-			for _, r := range pgResult.Steps {
-				if r.Name == "go mod tidy" && r.Status == "succeeded" {
-					succeeded = true
-					break
-				}
-			}
-			if succeeded {
-				continue
-			}
-		}
-		// Skip "ncgo ai sync" if it succeeded
-		if strings.Contains(step, "ncgo ai sync") {
-			succeeded := false
-			for _, r := range pgResult.Steps {
-				if r.Name == "ai sync" && r.Status == "succeeded" {
-					succeeded = true
-					break
-				}
-			}
-			if succeeded {
-				continue
-			}
-		}
-		filtered = append(filtered, step)
-	}
-	return filtered
+	return pgResult.FilterNextSteps(steps)
 }
