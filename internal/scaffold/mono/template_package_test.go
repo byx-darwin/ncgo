@@ -113,6 +113,70 @@ func TestGenerateTemplatePackageParseError(t *testing.T) {
 	}
 }
 
+// seedRuleCenterLikePackage builds a kitex template package that mirrors the
+// rule-center preset: it skips the default per-layer templates, carries its own
+// schema/*.sql files and a custom layout.yaml.
+func seedRuleCenterLikePackage(t *testing.T) string {
+	t.Helper()
+	pkg := t.TempDir()
+	os.WriteFile(filepath.Join(pkg, "template.yaml"), []byte("name: rule-center-like\nkind: kitex\nskip_default_templates:\n  - handler.yaml\n  - server.yaml\n  - usecase.yaml\n  - repository.yaml\n"), 0644)
+	os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0755)
+	os.WriteFile(filepath.Join(pkg, "kitex-template", "test.yaml"), []byte("path: main.go\nupdate_behavior:\n  type: cover\nbody: |\n  package main\n"), 0644)
+	os.MkdirAll(filepath.Join(pkg, "schema"), 0755)
+	os.WriteFile(filepath.Join(pkg, "schema", "000002_rate_limit_rules.sql"), []byte("-- {{.Module}}\nCREATE TABLE rate_limit_rules (id bigint);"), 0644)
+	os.WriteFile(filepath.Join(pkg, "layout.yaml"), []byte("templates:\n  - path: main.go\n"), 0644)
+	os.MkdirAll(filepath.Join(pkg, "idl"), 0755)
+	os.WriteFile(filepath.Join(pkg, "idl", "demo.proto"), []byte("syntax = \"proto3\";\nservice {{.ServiceName}} {}\n"), 0644)
+	return pkg
+}
+
+func TestGenerateTemplatePackageRuleCenterLike(t *testing.T) {
+	opts := templatePkgOptions(t, seedRuleCenterLikePackage(t))
+	if _, err := Generate(context.Background(), opts); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	// The package's test.yaml replaces the embedded template set, and the
+	// default per-layer templates are skipped.
+	kitexTpl := filepath.Join(opts.Dir, "template", "kitex-template")
+	if _, err := os.Stat(filepath.Join(kitexTpl, "test.yaml")); err != nil {
+		t.Errorf("package template test.yaml missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(kitexTpl, "handler.yaml")); err == nil {
+		t.Error("default handler.yaml should be skipped")
+	}
+	if _, err := os.Stat(filepath.Join(kitexTpl, "server.yaml")); err == nil {
+		t.Error("default server.yaml should be skipped")
+	}
+	// Package schema is copied and rendered with the module variable.
+	schema, err := os.ReadFile(filepath.Join(opts.Dir, "internal", "db", "schema", "000002_rate_limit_rules.sql"))
+	if err != nil {
+		t.Fatalf("schema missing: %v", err)
+	}
+	schemaBody := string(schema)
+	if strings.Contains(schemaBody, "{{.Module}}") {
+		t.Errorf("module placeholder not replaced:\n%s", schemaBody)
+	}
+	if !strings.Contains(schemaBody, opts.Module) {
+		t.Errorf("module not rendered into schema:\n%s", schemaBody)
+	}
+	// Package layout.yaml is copied into the template dir.
+	layout, err := os.ReadFile(filepath.Join(opts.Dir, "template", "layout.yaml"))
+	if err != nil {
+		t.Fatalf("layout.yaml missing: %v", err)
+	}
+	if !strings.Contains(string(layout), "templates:") {
+		t.Errorf("layout.yaml content mismatch:\n%s", layout)
+	}
+	// Package IDL is rendered onto the kitex default path.
+	idlBody, err := os.ReadFile(filepath.Join(opts.Dir, "idl", "demo.proto"))
+	if err != nil {
+		t.Fatalf("rendered idl missing: %v", err)
+	}
+	if !strings.Contains(string(idlBody), "service demo {}") {
+		t.Errorf("service name not rendered:\n%s", idlBody)
+	}
+}
+
 // seedHertzTemplatePackage builds a minimal hertz template package with a
 // root-level Makefile (containing template variables) and a non-root conf
 // template, so the overlay can be checked to write root templates and leave

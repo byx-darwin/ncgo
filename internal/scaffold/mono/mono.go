@@ -95,12 +95,23 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if opts.Preset == "rule-center" {
 		idl = filepath.ToSlash(filepath.Join("idl", "rule-center.proto"))
 	}
+	// Load the template package once before writeTemplate so its
+	// skip_default_templates metadata can drop the embedded default per-layer
+	// templates, and reuse the loaded package in the overlay below.
+	var pkg *scaffoldtemplate.Package
+	if opts.TemplateDir != "" {
+		pkg, err = scaffoldtemplate.LoadPackage(opts.TemplateDir, defaultKind(opts.Kind))
+		if err != nil {
+			return nil, err
+		}
+		opts.SkipDefaultTemplates = pkg.Meta.SkipDefaultTemplates
+	}
 	if err := writeTemplate(dir, opts); err != nil {
 		return nil, err
 	}
 	templateIDLFallback := false
 	if opts.TemplateDir != "" {
-		fallback, err := overlayTemplatePackage(dir, opts)
+		fallback, err := overlayTemplatePackage(dir, opts, pkg)
 		if err != nil {
 			return nil, err
 		}

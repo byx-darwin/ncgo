@@ -466,13 +466,11 @@ func copyHertzTemplateYAML(dir string, srcFS fs.FS) error {
 // overlayTemplatePackage replaces the embedded <kind>-template YAML and the
 // IDL placeholder with the contents of an external template package. It
 // reports true when the package carries no IDL and the built-in placeholder
-// still applies (backward compatibility with pre-IDL exports).
-func overlayTemplatePackage(dir string, opts Options) (bool, error) {
+// still applies (backward compatibility with pre-IDL exports). The package is
+// loaded once by Generate so its skip_default_templates metadata can take
+// effect before writeTemplate runs.
+func overlayTemplatePackage(dir string, opts Options, pkg *scaffoldtemplate.Package) (bool, error) {
 	kind := defaultKind(opts.Kind)
-	pkg, err := scaffoldtemplate.LoadPackage(opts.TemplateDir, kind)
-	if err != nil {
-		return false, err
-	}
 	// Replace (not merge) the embedded per-file template set with the
 	// package's <kind>-template yamls.
 	tplTarget := filepath.Join(dir, "template", kind+"-template")
@@ -522,6 +520,47 @@ func overlayTemplatePackage(dir string, opts Options) (bool, error) {
 			}
 		}
 	}
+	// Copy the package's schema/*.sql files onto the sqlc schema dir with
+	// module/service-name variables rendered.
+	if len(pkg.Schemas) > 0 {
+		schemaTarget := filepath.Join(dir, "internal", "db", "schema")
+		if err := os.MkdirAll(schemaTarget, 0o755); err != nil {
+			return false, fmt.Errorf("scaffold: mkdir %s: %w", schemaTarget, err)
+		}
+		for _, src := range pkg.Schemas {
+			b, err := os.ReadFile(src)
+			if err != nil {
+				return false, fmt.Errorf("scaffold: read schema %s: %w", src, err)
+			}
+			rendered, err := scaffoldtemplate.Render(string(b), scaffoldtemplate.RenderData{
+				Module:      opts.Module,
+				ServiceName: opts.Name,
+			})
+			if err != nil {
+				return false, fmt.Errorf("scaffold: render schema %s: %w", src, err)
+			}
+			target := filepath.Join(schemaTarget, filepath.Base(src))
+			if err := os.WriteFile(target, []byte(rendered), 0o644); err != nil {
+				return false, fmt.Errorf("scaffold: write %s: %w", target, err)
+			}
+		}
+	}
+
+	// Copy the package's custom layout.yaml over the template dir one.
+	if pkg.LayoutFile != "" {
+		b, err := os.ReadFile(pkg.LayoutFile)
+		if err != nil {
+			return false, fmt.Errorf("scaffold: read layout %s: %w", pkg.LayoutFile, err)
+		}
+		layoutTarget := filepath.Join(dir, "template", "layout.yaml")
+		if err := os.MkdirAll(filepath.Dir(layoutTarget), 0o755); err != nil {
+			return false, fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(layoutTarget), err)
+		}
+		if err := os.WriteFile(layoutTarget, b, 0o644); err != nil {
+			return false, fmt.Errorf("scaffold: write %s: %w", layoutTarget, err)
+		}
+	}
+
 	// Render the package IDLs onto the kind's default IDL path. A package with
 	// no idl/ directory falls back to the built-in placeholder.
 	if len(pkg.IDLs) == 0 {
