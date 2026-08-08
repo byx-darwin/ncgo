@@ -1,0 +1,8 @@
+# ncgo exported template — conf/dev/conf.yaml
+path: conf/dev/conf.yaml
+update_behavior:
+    type: skip
+body: |
+    server:
+      host: localhost
+      port: 8888

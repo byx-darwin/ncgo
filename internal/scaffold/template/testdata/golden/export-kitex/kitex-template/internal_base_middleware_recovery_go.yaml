@@ -1,0 +1,8 @@
+# ncgo exported template — internal/base/middleware/recovery.go
+path: internal/base/middleware/recovery.go
+update_behavior:
+    type: cover
+body: |
+    package middleware
+
+    func Recovery() {}

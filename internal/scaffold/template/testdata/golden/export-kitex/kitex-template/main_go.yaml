@@ -1,0 +1,14 @@
+# ncgo exported template — main.go
+path: main.go
+update_behavior:
+    type: cover
+body: |
+    package main
+
+    import (
+    	"{{.Module}}/internal/handler/{{ToLower .ServiceName}}"
+    )
+
+    func main() {
+    	_ = {{ToLower .ServiceName}}.Ping()
+    }

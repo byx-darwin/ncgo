@@ -1,0 +1,8 @@
+# ncgo exported template — internal/base/server/server.go
+path: internal/base/server/server.go
+update_behavior:
+    type: cover
+body: |
+    package server
+
+    func Run() {}

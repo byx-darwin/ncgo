@@ -1,0 +1,8 @@
+# ncgo exported template — internal/base/release/canary.go
+path: internal/base/release/canary.go
+update_behavior:
+    type: cover
+body: |
+    package release
+
+    func Canary() {}

@@ -1,0 +1,11 @@
+syntax = "proto3";
+package app;
+
+option go_package = "{{.Module}}/kitex_gen/{{ToLower .ServiceName}}";
+
+service {{.ServiceName}} {
+  rpc Ping(PingReq) returns (PingResp);
+}
+
+message PingReq {}
+message PingResp {}
