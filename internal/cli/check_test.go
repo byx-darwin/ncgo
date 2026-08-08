@@ -73,11 +73,46 @@ func TestRunCheckExitOneOnBrokenAnchors(t *testing.T) {
 	}
 }
 
+func TestRunCheckExitOneOnStaleDomains(t *testing.T) {
+	root := seedCheckProject(t)
+	// manifest has domain device; the context file claims device + ghost, so the
+	// rendered domains fact no longer matches the manifest -> stale.
+	claude := filepath.Join(root, "CLAUDE.md")
+	content := "<!-- ncgo:managed -->\n# Project Context for Claude Code\n\n## Project Facts\n\n- domains: `[device, ghost]`\n"
+	if err := os.WriteFile(claude, []byte(content), 0o644); err != nil {
+		t.Fatalf("write CLAUDE.md: %v", err)
+	}
+	var out bytes.Buffer
+	cmd := &cobra.Command{}
+	cmd.SetOut(&out)
+	err := runCheck(cmd, &checkOptions{root: root})
+	var ec *exitCodeError
+	if !errors.As(err, &ec) || ec.code != 1 {
+		t.Fatalf("err = %v, want exitCodeError code 1 (context claims ghost domain)", err)
+	}
+}
+
+func TestParseContextDomains(t *testing.T) {
+	tests := []struct{ in, want string }{
+		{"- domains: `[device, order]`", "device,order"},
+		{"- domains: `[device]`", "device"},
+		{"- domains: `[]`", ""},
+		{"no domains line here", ""},
+	}
+	for _, tt := range tests {
+		got := strings.Join(parseContextDomains(tt.in), ",")
+		if got != tt.want {
+			t.Errorf("parseContextDomains(%q) = %q, want %q", tt.in, got, tt.want)
+		}
+	}
+}
+
 func TestRunCheckExitOneOnStaleContext(t *testing.T) {
 	root := seedCheckProject(t)
-	// Write a CLAUDE.md with a marker older than manifest.GeneratedAt.
+	// manifest has domain device; the context file declares an empty domain list,
+	// so the rendered domains fact no longer matches the manifest -> stale.
 	claude := filepath.Join(root, "CLAUDE.md")
-	content := "<!-- ncgo:managed -->\n<!-- ncgo:generated-at: 2020-01-01T00:00:00Z -->\n# body\n"
+	content := "<!-- ncgo:managed -->\n# Project Context for Claude Code\n\n## Project Facts\n\n- domains: `[]`\n"
 	if err := os.WriteFile(claude, []byte(content), 0o644); err != nil {
 		t.Fatalf("write CLAUDE.md: %v", err)
 	}

@@ -360,9 +360,10 @@ skipped unless `--force` is passed. Add project-specific notes in
 `AGENTS.local.md`; they are appended to the long-form generated context files,
 while `.claude/generated/project-context.md` stays deterministic.
 
-Rendered files also carry a `<!-- ncgo:generated-at: ... -->` marker with the
-manifest timestamp that produced them; `ncgo check` reads it to detect context
-files that are older than the manifest.
+Rendered files carry a `<!-- ncgo:generated-at: ... -->` marker with the
+manifest timestamp that produced them. `ncgo check` compares the domains
+declared in a rendered context file against the current `manifest.Domains`;
+a mismatch means the context is stale.
 
 When `--root` is a micro workspace root, the generated files describe
 workspace-level facts from `ncgo.workspace` and list the registered services.
