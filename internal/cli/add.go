@@ -216,12 +216,12 @@ func runAddRPC(cmd *cobra.Command, name string, opts *addRPCOptions) error {
 	if err := validateAddOutput("add rpc", opts.output); err != nil {
 		return err
 	}
+	if opts.preset != "" && (opts.template != "" || opts.templateDir != "") {
+		return fmt.Errorf("add rpc: --preset and --template/--template-dir are mutually exclusive")
+	}
 	templateDir, err := registry.ResolveTemplateDir(opts.template, opts.templateDir)
 	if err != nil {
 		return err
-	}
-	if opts.preset != "" && templateDir != "" {
-		return fmt.Errorf("add rpc: --preset and --template/--template-dir are mutually exclusive")
 	}
 	res, err := rpc.Add(cmd.Context(), rpc.Options{
 		Root:          opts.root,
@@ -321,12 +321,12 @@ func runAddBFF(cmd *cobra.Command, name string, opts *addBFFOptions) error {
 	if err := validateAddOutput("add bff", opts.output); err != nil {
 		return err
 	}
+	if opts.preset != "" && (opts.template != "" || opts.templateDir != "") {
+		return fmt.Errorf("add bff: --preset and --template/--template-dir are mutually exclusive")
+	}
 	templateDir, err := registry.ResolveTemplateDir(opts.template, opts.templateDir)
 	if err != nil {
 		return err
-	}
-	if opts.preset != "" && templateDir != "" {
-		return fmt.Errorf("add bff: --preset and --template/--template-dir are mutually exclusive")
 	}
 	res, err := bff.Add(cmd.Context(), bff.Options{
 		Root:          opts.root,

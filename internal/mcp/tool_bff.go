@@ -45,7 +45,7 @@ func callAddBFF(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 	if err != nil {
 		return textResult(err.Error(), true), nil
 	}
-	if args.Preset != "" && templateDir != "" {
+	if args.Preset != "" && (args.Template != "" || args.TemplateDir != "") {
 		return textResult("--preset and --template/--templateDir are mutually exclusive", true), nil
 	}
 
