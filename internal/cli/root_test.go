@@ -83,6 +83,52 @@ func TestNewCmdHasTemplateDirFlag(t *testing.T) {
 	}
 }
 
+func TestNewCmdHasTemplateFlag(t *testing.T) {
+	cmd := newNewCmd()
+	f := cmd.Flags().Lookup("template")
+	if f == nil {
+		t.Fatal("--template flag not registered on ncgo new")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--template default = %q, want empty", f.DefValue)
+	}
+}
+
+func TestRunNewMonoTemplateAndTemplateDirMutuallyExclusive(t *testing.T) {
+	cmd := newNewCmd()
+	cmd.SetOut(new(strings.Builder))
+	opts := &newOptions{
+		module:       "github.com/acme/demo",
+		kind:         manifest.KindKitex,
+		db:           "none",
+		dir:          filepath.Join(t.TempDir(), "demo"),
+		noGenerate:   true,
+		templateDir:  t.TempDir(),
+		templateName: "base-kitex",
+	}
+	err := runNewMono(cmd, "demo", opts)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("want mutually exclusive error, got %v", err)
+	}
+}
+
+func TestRunNewMonoTemplateNotCachedError(t *testing.T) {
+	cmd := newNewCmd()
+	cmd.SetOut(new(strings.Builder))
+	opts := &newOptions{
+		module:       "github.com/acme/demo",
+		kind:         manifest.KindKitex,
+		db:           "none",
+		dir:          filepath.Join(t.TempDir(), "demo"),
+		noGenerate:   true,
+		templateName: "not-in-cache-xyz-98765",
+	}
+	err := runNewMono(cmd, "demo", opts)
+	if err == nil || !strings.Contains(err.Error(), "ncgo template pull") {
+		t.Errorf("want cache-miss error mentioning 'ncgo template pull', got %v", err)
+	}
+}
+
 func TestRunNewMonoPrintsTemplateIDLFallbackNotice(t *testing.T) {
 	const notice = "(template package has no idl/; used built-in IDL placeholder)"
 	run := func(templateDir string) string {
