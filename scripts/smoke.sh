@@ -294,4 +294,40 @@ grep -q 'service exporttgt' "$TMP_DIR/export-tgt/idl/app/exporttgt.proto"
   cat "$TMP_DIR/protolint.out" >&2; exit 1; }
 grep -q 'template package has no idl' "$TMP_DIR/new.out" && exit 1 || true
 
+log "new --mode micro --template-dir workspace overlay"
+MICRO_PKG="$TMP_DIR/micro-pkg"
+mkdir -p "$MICRO_PKG/workspace" "$MICRO_PKG/kitex-template" "$MICRO_PKG/hertz-template"
+cat >"$MICRO_PKG/template.yaml" <<'YAML'
+name: test-micro
+kind: micro
+description: smoke test micro package
+version: "1"
+YAML
+printf 'name: {{.ServiceName}}\nmodule: {{.Module}}\n' >"$MICRO_PKG/workspace/custom.yaml.tpl"
+printf 'path: main.go\nbody: package main\n' >"$MICRO_PKG/kitex-template/main.yaml"
+printf 'path: main.go\nbody: package main\n' >"$MICRO_PKG/hertz-template/main.yaml"
+"$BIN" new myworkspace --module github.com/acme/myworkspace --mode micro \
+  --dir "$TMP_DIR/micro-ws" --template-dir "$MICRO_PKG" >"$TMP_DIR/micro.out"
+grep -q 'scaffolded micro workspace' "$TMP_DIR/micro.out"
+test -f "$TMP_DIR/micro-ws/custom.yaml"
+grep -q 'name: myworkspace' "$TMP_DIR/micro-ws/custom.yaml"
+grep -q 'module: github.com/acme/myworkspace' "$TMP_DIR/micro-ws/custom.yaml"
+# Built-in files still present
+test -f "$TMP_DIR/micro-ws/ncgo.workspace"
+test -f "$TMP_DIR/micro-ws/compose.yaml"
+
+log "add rpc --template-dir with micro package"
+"$BIN" add rpc payment-rpc --root "$TMP_DIR/micro-ws" --no-generate \
+  --template-dir "$MICRO_PKG" >"$TMP_DIR/add-rpc.out"
+grep -q 'wrote.*services/payment-rpc' "$TMP_DIR/add-rpc.out"
+test -f "$TMP_DIR/micro-ws/services/payment-rpc/.ncgo/manifest.yaml"
+test -f "$TMP_DIR/micro-ws/services/payment-rpc/template/kitex-template/main.yaml"
+
+log "add bff --template-dir with micro package"
+"$BIN" add bff web-bff --root "$TMP_DIR/micro-ws" --no-generate \
+  --template-dir "$MICRO_PKG" >"$TMP_DIR/add-bff.out"
+grep -q 'wrote.*services/web-bff' "$TMP_DIR/add-bff.out"
+test -f "$TMP_DIR/micro-ws/services/web-bff/.ncgo/manifest.yaml"
+test -f "$TMP_DIR/micro-ws/services/web-bff/template/hertz-template/main.yaml"
+
 log "smoke OK"
