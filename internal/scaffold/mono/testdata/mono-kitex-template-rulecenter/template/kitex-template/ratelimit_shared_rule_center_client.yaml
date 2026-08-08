@@ -1,0 +1,164 @@
+# Shared rule-center gRPC client (framework-agnostic)
+path: internal/pkg/middleware/rule_center_client.go
+update_behavior:
+  type: cover
+# body uses clip chomping (|, not |-) on purpose: the generated file must keep
+# the trailing newline of the original asset for golden byte-identity.
+body: |
+  // Optional rule-center client for Kitex services.
+  //
+  // To enable: copy this file to internal/pkg/middleware/rule_center_client.go
+  // in your project, then wire it into the rate-limit resolver options:
+  //
+  //	rlOpts.RuleCenter = middleware.NewRuleCenterClient(cfg.RateLimit.RuleCenter.Address)
+  //
+  // Required dependency:
+  //
+  //	go get github.com/byx-darwin/go-tools/go-common
+  //
+  // This client uses the Kitex-generated ruleservice client
+  // (kitex_gen/api/ratelimit/v1/ruleservice), which includes retry,
+  // circuit-breaker, and caller-service metadata.
+
+  package middleware
+
+  import (
+  	"context"
+  	"fmt"
+  	"time"
+
+  	kitexclient "github.com/cloudwego/kitex/client"
+
+  	"github.com/byx-darwin/go-tools/go-framework/config"
+  	"{{.Module}}/internal/base/conf"
+  	"{{.Module}}/internal/pkg/ratelimit"
+  	"{{.Module}}/kitex_gen/api/ratelimit/v1"
+  	"{{.Module}}/kitex_gen/api/ratelimit/v1/ruleservice"
+  )
+
+  // RuleCenterConfig mirrors the timeout pattern of Kitex's generated
+  // client.Config (pkg/client/<service>/client.go). It controls per-call RPC
+  // timeout and connection verification for the rule-center client.
+  type RuleCenterConfig struct {
+  	Address                string
+  	RPCTimeoutMilliseconds int // per-call RPC timeout; default 200ms
+  	ConnectTimeoutMillis   int // initial connection timeout; default 100ms
+  }
+
+  // DefaultRuleCenterConfig returns a config with safe defaults, mirroring
+  // the Kitex client pattern (100ms connect, 200ms RPC).
+  func DefaultRuleCenterConfig(address string) RuleCenterConfig {
+  	return RuleCenterConfig{
+  		Address:                address,
+  		RPCTimeoutMilliseconds: 200,
+  		ConnectTimeoutMillis:   100,
+  	}
+  }
+
+  // RuleCenterClient implements ratelimit.GRPCClient by querying the
+  // rule-center Kitex service via the generated Kitex client.
+  type RuleCenterClient struct {
+  	cli ruleservice.Client
+  }
+
+  // NewRuleCenterClient creates a Kitex client connected to the rule-center
+  // service at the given address (e.g. "rule-center.internal:8888").
+  // Uses DefaultRuleCenterConfig for timeouts.
+  func NewRuleCenterClient(address string) (*RuleCenterClient, error) {
+  	if address == "" {
+  		return nil, fmt.Errorf("rule_center: address is required")
+  	}
+  	return NewRuleCenterClientWithConfig(DefaultRuleCenterConfig(address))
+  }
+
+  // NewRuleCenterClientWithTimeout creates a client with a custom per-call
+  // RPC timeout.
+  func NewRuleCenterClientWithTimeout(address string, timeout time.Duration) (*RuleCenterClient, error) {
+  	if address == "" {
+  		return nil, fmt.Errorf("rule_center: address is required")
+  	}
+  	cfg := DefaultRuleCenterConfig(address)
+  	cfg.RPCTimeoutMilliseconds = int(timeout.Milliseconds())
+  	return NewRuleCenterClientWithConfig(cfg)
+  }
+
+  // NewRuleCenterClientWithConfig creates a client with explicit timeout
+  // configuration. The timeouts map to kitexclient.WithRPCTimeout and
+  // kitexclient.WithConnectTimeout.
+  func NewRuleCenterClientWithConfig(cfg RuleCenterConfig) (*RuleCenterClient, error) {
+  	rpcTimeout := time.Duration(cfg.RPCTimeoutMilliseconds) * time.Millisecond
+  	if rpcTimeout <= 0 {
+  		rpcTimeout = 200 * time.Millisecond
+  	}
+  	connectTimeout := time.Duration(cfg.ConnectTimeoutMillis) * time.Millisecond
+  	if connectTimeout <= 0 {
+  		connectTimeout = 100 * time.Millisecond
+  	}
+
+  	cli, err := ruleservice.NewClient("rulecenter",
+  		kitexclient.WithHostPorts(cfg.Address),
+  		kitexclient.WithConnectTimeout(connectTimeout),
+  		kitexclient.WithRPCTimeout(rpcTimeout),
+  	)
+  	if err != nil {
+  		return nil, fmt.Errorf("rule_center: connect %s: %w", cfg.Address, err)
+  	}
+
+  	return &RuleCenterClient{
+  		cli: cli,
+  	}, nil
+  }
+
+  func strPtrOrNil(s string) *string {
+  	if s == "" {
+  		return nil
+  	}
+  	return &s
+  }
+
+  // Close satisfies the server wiring contract. The Kitex client manages its
+  // own lifecycle, so no explicit close is required.
+  func (c *RuleCenterClient) Close() error {
+  	return nil
+  }
+
+  // ResolveRateLimitRule implements ratelimit.GRPCClient.
+  // It calls the rule-center GetRule RPC and converts the proto response
+  // to *conf.RateLimitRuleConfig.
+  //
+  // Return contract:
+  //   - (*conf.RateLimitRuleConfig, true, nil): matched a remote rule
+  //   - (nil, false, nil): remote answered "not found"
+  //   - (nil, false, error): remote query failed
+  func (c *RuleCenterClient) ResolveRateLimitRule(ctx context.Context, lookup ratelimit.Lookup) (*conf.RateLimitRuleConfig, bool, error) {
+  	resp, err := c.cli.GetRule(ctx, &ratelimitv1.GetRuleReq{
+  		Service: lookup.Service,
+  		Phase:   lookup.Phase,
+  		Method:  lookup.Method,
+  		Path:    lookup.Path,
+  		AppKey:  strPtrOrNil(lookup.AppKey),
+  	})
+  	if err != nil {
+  		return nil, false, fmt.Errorf("rule_center: GetRule(%s, %s, %s, %s): %w",
+  			lookup.Service, lookup.Phase, lookup.Method, lookup.Path, err)
+  	}
+
+  	if !resp.GetFound() {
+  		return nil, false, nil
+  	}
+
+  	rule := resp.GetRule()
+  	if rule == nil {
+  		return nil, false, nil
+  	}
+
+  	cfg := &conf.RateLimitRuleConfig{
+  		Enabled:          true,
+  		Strategy:         rule.GetStrategy(),
+  		WindowSeconds:    config.Duration{Duration: time.Duration(rule.GetWindowSeconds()) * time.Second},
+  		MaxRequests:      int(rule.GetMaxRequests()),
+  		KeyBy:            rule.GetKeyBy(),
+  		ClientTTLSeconds: config.Duration{Duration: time.Duration(rule.GetClientTtlSeconds()) * time.Second},
+  	}
+  	return cfg, true, nil
+  }

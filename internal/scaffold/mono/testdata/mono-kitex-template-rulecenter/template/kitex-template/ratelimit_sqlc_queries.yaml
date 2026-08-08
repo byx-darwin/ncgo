@@ -1,0 +1,64 @@
+# Kitex rule-center preset — sqlc query definitions for rate_limit_rules
+path: internal/db/query/rate_limit_rule.sql
+update_behavior:
+  type: cover
+body: |-
+  -- name: GetRateLimitExactRuleByAppKey :one
+  SELECT * FROM rate_limit_rules
+  WHERE service = $1 AND phase = $2 AND method = $3 AND match_kind = 'exact' AND (path = $4 OR path = '*') AND app_key = $5 AND enabled = true
+  ORDER BY priority DESC, id DESC
+  LIMIT 1;
+
+  -- name: GetRateLimitExactRuleFallback :one
+  SELECT * FROM rate_limit_rules
+  WHERE service = $1 AND phase = $2 AND method = $3 AND match_kind = 'exact' AND (path = $4 OR path = '*') AND app_key IS NULL AND enabled = true
+  ORDER BY priority DESC, id DESC
+  LIMIT 1;
+
+  -- name: GetRateLimitPatternRuleByAppKey :many
+  SELECT * FROM rate_limit_rules
+  WHERE service = $1 AND phase = $2 AND method = $3 AND app_key = $4 AND enabled = true AND (path_pattern = '*' OR path = $5)
+  ORDER BY priority DESC, id DESC;
+
+  -- name: GetRateLimitPatternRuleFallback :many
+  SELECT * FROM rate_limit_rules
+  WHERE service = $1 AND phase = $2 AND method = $3 AND app_key IS NULL AND enabled = true AND (path_pattern = '*' OR path = $4)
+  ORDER BY priority DESC, id DESC;
+
+  -- name: CreateRateLimitRule :one
+  INSERT INTO rate_limit_rules (
+      service, phase, method, match_kind, path, path_pattern, app_key,
+      priority, enabled, key_by, strategy, window_seconds, max_requests,
+      requests_per_second, burst, client_ttl_seconds
+  ) VALUES (
+      $1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16
+  ) RETURNING id;
+
+  -- name: UpdateRateLimitRule :exec
+  UPDATE rate_limit_rules SET
+      enabled = COALESCE(sqlc.narg('enabled'), enabled),
+      priority = COALESCE(sqlc.narg('priority'), priority),
+      strategy = COALESCE(sqlc.narg('strategy'), strategy),
+      window_seconds = COALESCE(sqlc.narg('window_seconds'), window_seconds),
+      max_requests = COALESCE(sqlc.narg('max_requests'), max_requests),
+      requests_per_second = COALESCE(sqlc.narg('requests_per_second'), requests_per_second),
+      burst = COALESCE(sqlc.narg('burst'), burst),
+      client_ttl_seconds = COALESCE(sqlc.narg('client_ttl_seconds'), client_ttl_seconds),
+      key_by = COALESCE(sqlc.narg('key_by'), key_by),
+      updated_at = now()
+  WHERE id = $1;
+
+  -- name: DeleteRateLimitRule :exec
+  DELETE FROM rate_limit_rules WHERE id = $1;
+
+  -- name: ListRateLimitRules :many
+  SELECT * FROM rate_limit_rules
+  WHERE (sqlc.narg('service')::text IS NULL OR service = sqlc.narg('service')::text)
+    AND (sqlc.narg('phase')::text IS NULL OR phase = sqlc.narg('phase')::text)
+  ORDER BY priority DESC, id DESC
+  LIMIT sqlc.arg('limit') OFFSET sqlc.arg('offset');
+
+  -- name: CountRateLimitRules :one
+  SELECT count(*) FROM rate_limit_rules
+  WHERE (sqlc.narg('service')::text IS NULL OR service = sqlc.narg('service')::text)
+    AND (sqlc.narg('phase')::text IS NULL OR phase = sqlc.narg('phase')::text);

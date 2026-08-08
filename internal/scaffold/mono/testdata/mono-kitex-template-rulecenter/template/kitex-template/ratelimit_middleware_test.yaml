@@ -1,0 +1,109 @@
+# Kitex custom template — rate-limit middleware tests
+path: internal/base/middleware/ratelimit_test.go
+update_behavior:
+  type: cover
+body: |-
+  package middleware
+
+  import (
+  	"context"
+  	"errors"
+  	"testing"
+  	"time"
+
+  	"github.com/cloudwego/kitex/pkg/endpoint"
+  	"github.com/cloudwego/kitex/pkg/kerrors"
+
+  	config "github.com/byx-darwin/go-tools/go-framework/config"
+
+  	"{{.Module}}/internal/base/conf"
+  	"{{.Module}}/internal/pkg/ratelimit"
+  )
+
+  type fakeStore struct{ ok bool; err error; calls int }
+
+  func (s *fakeStore) Allow(ctx context.Context, key string, rule conf.RateLimitRuleConfig) (bool, error) {
+  	s.calls++
+  	return s.ok, s.err
+  }
+
+  func fixedDeps(store ratelimit.Store) MiddlewareDeps {
+  	return MiddlewareDeps{
+  		Resolver: ratelimit.NewResolver(conf.RateLimitConfig{PostAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{Enabled: true, Strategy: "fixed_window", WindowSeconds: config.Duration{Duration: 60 * time.Second}, MaxRequests: 1}}}, ratelimit.Options{}),
+  		Store:    store,
+  		Lookup:   func(ctx context.Context) ratelimit.Lookup { return ratelimit.Lookup{Service: "svc", Method: "Ping", Phase: "post_auth"} },
+  	}
+  }
+
+  func callMW(t *testing.T, mw endpoint.Middleware) error {
+  	t.Helper()
+  	return mw(func(ctx context.Context, req, resp interface{}) error { return nil })(context.Background(), nil, nil)
+  }
+
+  func baseCfg(mode string, enabled, failOpen bool) conf.RateLimitConfig {
+  	return conf.RateLimitConfig{
+  		Enabled:  enabled,
+  		Mode:     mode,
+  		FailOpen: failOpen,
+  		PostAuth: conf.RateLimitPhaseConfig{Enabled: true, DefaultRule: conf.RateLimitRuleConfig{
+  			Enabled: true, Strategy: "fixed_window",
+  			WindowSeconds:    config.Duration{Duration: 60 * time.Second},
+  			MaxRequests:      1,
+  			ClientTTLSeconds: config.Duration{Duration: 30 * time.Second},
+  		}},
+  	}
+  }
+
+  func TestRateLimitEnforceRejects10429(t *testing.T) {
+  	store := &fakeStore{ok: false}
+  	mw := RateLimitWith(baseCfg("enforce", true, true), fixedDeps(store))
+  	err := callMW(t, mw)
+  	bizErr, ok := kerrors.FromBizStatusError(err)
+  	if !ok {
+  		t.Fatalf("want BizStatusError, got %v", err)
+  	}
+  	if bizErr.BizStatusCode() != 10429 {
+  		t.Errorf("biz code = %d, want 10429", bizErr.BizStatusCode())
+  	}
+  	if v := bizErr.BizExtra()["rl-retry-after"]; v == "" {
+  		t.Errorf("BizExtra[\"rl-retry-after\"] missing; want retry-after hint")
+  	}
+  	if store.calls != 1 {
+  		t.Errorf("store.calls = %d, want 1", store.calls)
+  	}
+  }
+
+  func TestRateLimitShadowPassesButCounts(t *testing.T) {
+  	store := &fakeStore{ok: false}
+  	mw := RateLimitWith(baseCfg("shadow", true, true), fixedDeps(store))
+  	if err := callMW(t, mw); err != nil {
+  		t.Fatalf("shadow must pass, got %v", err)
+  	}
+  	if store.calls != 1 {
+  		t.Errorf("store.calls = %d, want 1 (shadow must still count)", store.calls)
+  	}
+  }
+
+  func TestRateLimitDisabledPasses(t *testing.T) {
+  	store := &fakeStore{ok: false}
+  	mw := RateLimitWith(baseCfg("enforce", false, true), fixedDeps(store))
+  	if err := callMW(t, mw); err != nil {
+  		t.Fatalf("disabled must pass, got %v", err)
+  	}
+  	if store.calls != 0 {
+  		t.Errorf("store.calls = %d, want 0", store.calls)
+  	}
+  }
+
+  func TestRateLimitStoreErrorFailOpen(t *testing.T) {
+  	store := &fakeStore{err: errors.New("redis down")}
+  	mw := RateLimitWith(baseCfg("enforce", true, true), fixedDeps(store))
+  	if err := callMW(t, mw); err != nil {
+  		t.Fatalf("fail_open must pass on store error, got %v", err)
+  	}
+  }
+
+  func TestStaticLimitOptionZeroWhenZero(t *testing.T) {
+  	// Zero config returns a zero-value Option (server/limit unavailable in Kitex v0.16.3).
+  	_ = StaticLimitOption(conf.StaticLimitConfig{})
+  }
