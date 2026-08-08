@@ -268,6 +268,9 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 	if !res.RanGenerate {
 		fmt.Fprintln(out, "(generator not invoked; --no-generate set)")
 	}
+	if res.TemplateIDLFallback {
+		fmt.Fprintln(out, "(template package has no idl/; used built-in IDL placeholder)")
+	}
 	fmt.Fprintln(out, "\nnext steps:")
 	for _, s := range res.NextSteps {
 		fmt.Fprintf(out, "  $ %s\n", s)

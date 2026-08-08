@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -78,6 +80,42 @@ func TestNewCmdHasTemplateDirFlag(t *testing.T) {
 	}
 	if f.DefValue != "" {
 		t.Errorf("--template-dir default = %q, want empty", f.DefValue)
+	}
+}
+
+func TestRunNewMonoPrintsTemplateIDLFallbackNotice(t *testing.T) {
+	const notice = "(template package has no idl/; used built-in IDL placeholder)"
+	run := func(templateDir string) string {
+		t.Helper()
+		var out strings.Builder
+		cmd := newNewCmd()
+		cmd.SetOut(&out)
+		opts := &newOptions{
+			module:      "github.com/acme/demo",
+			kind:        manifest.KindKitex,
+			db:          "none",
+			dir:         filepath.Join(t.TempDir(), "demo"),
+			noGenerate:  true,
+			templateDir: templateDir,
+		}
+		if err := runNewMono(cmd, "demo", opts); err != nil {
+			t.Fatalf("runNewMono: %v", err)
+		}
+		return out.String()
+	}
+
+	// Package with a kitex-template dir but no idl/ → fallback notice prints.
+	pkg := t.TempDir()
+	os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0o755)
+	os.WriteFile(filepath.Join(pkg, "kitex-template", "main_go.yaml"),
+		[]byte("path: main.go\nbody: |\n  package main\n"), 0o644)
+	if got := run(pkg); !strings.Contains(got, notice) {
+		t.Errorf("fallback notice missing for no-idl package:\n%s", got)
+	}
+
+	// No template package → no fallback notice.
+	if got := run(""); strings.Contains(got, notice) {
+		t.Errorf("fallback notice should not print without --template-dir:\n%s", got)
 	}
 }
 
