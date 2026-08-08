@@ -9,6 +9,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/registry"
 	"github.com/byx-darwin/ncgo/internal/scaffold/micro"
 	"github.com/byx-darwin/ncgo/internal/scaffold/mono"
 )
@@ -51,6 +52,8 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 		NoGenerate     bool     `json:"noGenerate"`
 		Preset         string   `json:"preset"`
 		RuleCenterAddr string   `json:"ruleCenterAddr"`
+		Template       string   `json:"template"`
+		TemplateDir    string   `json:"templateDir"`
 		Output         string   `json:"output"`
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
@@ -80,7 +83,12 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 	case manifest.ModeMono:
 		res, err = runNewMono(ctx, args.Name, args.Module, dir, args.Kind, args.DB, args.Infra, args.NoGenerate, args.Preset, args.RuleCenterAddr, ncgoVersion, assetsVersion)
 	case manifest.ModeMicro:
-		res, err = runNewMicro(args.Name, args.Module, dir, ncgoVersion, assetsVersion)
+		var templateDir string
+		templateDir, err = registry.ResolveTemplateDir(args.Template, args.TemplateDir)
+		if err != nil {
+			return textResult(err.Error(), true), nil
+		}
+		res, err = runNewMicro(args.Name, args.Module, dir, ncgoVersion, assetsVersion, templateDir)
 	default:
 		return textResult(fmt.Sprintf("mode %q is invalid (mono|micro)", args.Mode), true), nil
 	}
@@ -130,13 +138,14 @@ func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra [
 	}, nil
 }
 
-func runNewMicro(name, module, dir, ncgoVersion, assetsVersion string) (*newResult, error) {
+func runNewMicro(name, module, dir, ncgoVersion, assetsVersion, templateDir string) (*newResult, error) {
 	res, err := micro.Generate(micro.Options{
 		Name:          name,
 		Module:        module,
 		Dir:           dir,
 		AssetsVersion: assetsVersion,
 		NCGOVersion:   ncgoVersion,
+		TemplateDir:   templateDir,
 	})
 	if err != nil {
 		return nil, err

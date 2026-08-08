@@ -11,6 +11,7 @@ import (
 	"github.com/byx-darwin/ncgo/internal/ai"
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/registry"
 	"github.com/byx-darwin/ncgo/internal/scaffold/bff"
 	"github.com/byx-darwin/ncgo/internal/scaffold/domain"
 	"github.com/byx-darwin/ncgo/internal/scaffold/infra"
@@ -168,14 +169,16 @@ func runAddDomain(cmd *cobra.Command, name string, opts *addDomainOptions) error
 }
 
 type addRPCOptions struct {
-	root       string
-	module     string
-	dir        string
-	noGenerate bool
-	dryRun     bool
-	plan       bool
-	output     string
-	preset     string
+	root        string
+	module      string
+	dir         string
+	noGenerate  bool
+	dryRun      bool
+	plan        bool
+	output      string
+	preset      string
+	template    string
+	templateDir string
 }
 
 func newAddRPCCmd() *cobra.Command {
@@ -200,6 +203,8 @@ func newAddRPCCmd() *cobra.Command {
 	f.BoolVar(&opts.plan, "plan", false, "Shorthand for --dry-run --output json")
 	f.StringVar(&opts.output, "output", "text", "Output format: text or json")
 	f.StringVar(&opts.preset, "preset", "", "Preset template to use (e.g., rule-center)")
+	f.StringVar(&opts.template, "template", "", "Template package name from registry (kitex or micro kind)")
+	f.StringVar(&opts.templateDir, "template-dir", "", "Template package local directory path (kitex or micro kind)")
 	return cmd
 }
 
@@ -209,6 +214,13 @@ func runAddRPC(cmd *cobra.Command, name string, opts *addRPCOptions) error {
 		opts.output = "json"
 	}
 	if err := validateAddOutput("add rpc", opts.output); err != nil {
+		return err
+	}
+	if opts.preset != "" && (opts.template != "" || opts.templateDir != "") {
+		return fmt.Errorf("add rpc: --preset and --template/--template-dir are mutually exclusive")
+	}
+	templateDir, err := registry.ResolveTemplateDir(opts.template, opts.templateDir)
+	if err != nil {
 		return err
 	}
 	res, err := rpc.Add(cmd.Context(), rpc.Options{
@@ -221,6 +233,7 @@ func runAddRPC(cmd *cobra.Command, name string, opts *addRPCOptions) error {
 		NoGenerate:    opts.noGenerate,
 		DryRun:        opts.dryRun,
 		Preset:        opts.preset,
+		TemplateDir:   templateDir,
 	})
 	if err != nil {
 		return err
@@ -261,13 +274,16 @@ func runAddRPC(cmd *cobra.Command, name string, opts *addRPCOptions) error {
 }
 
 type addBFFOptions struct {
-	root       string
-	module     string
-	dir        string
-	noGenerate bool
-	dryRun     bool
-	plan       bool
-	output     string
+	root        string
+	module      string
+	dir         string
+	noGenerate  bool
+	dryRun      bool
+	plan        bool
+	output      string
+	preset      string
+	template    string
+	templateDir string
 }
 
 func newAddBFFCmd() *cobra.Command {
@@ -291,6 +307,9 @@ func newAddBFFCmd() *cobra.Command {
 	f.BoolVar(&opts.dryRun, "dry-run", false, "Preview intended BFF service writes without modifying files")
 	f.BoolVar(&opts.plan, "plan", false, "Shorthand for --dry-run --output json")
 	f.StringVar(&opts.output, "output", "text", "Output format: text or json")
+	f.StringVar(&opts.preset, "preset", "", "Preset template to use (e.g., rule-center)")
+	f.StringVar(&opts.template, "template", "", "Template package name from registry (hertz or micro kind)")
+	f.StringVar(&opts.templateDir, "template-dir", "", "Template package local directory path (hertz or micro kind)")
 	return cmd
 }
 
@@ -302,6 +321,13 @@ func runAddBFF(cmd *cobra.Command, name string, opts *addBFFOptions) error {
 	if err := validateAddOutput("add bff", opts.output); err != nil {
 		return err
 	}
+	if opts.preset != "" && (opts.template != "" || opts.templateDir != "") {
+		return fmt.Errorf("add bff: --preset and --template/--template-dir are mutually exclusive")
+	}
+	templateDir, err := registry.ResolveTemplateDir(opts.template, opts.templateDir)
+	if err != nil {
+		return err
+	}
 	res, err := bff.Add(cmd.Context(), bff.Options{
 		Root:          opts.root,
 		Name:          name,
@@ -311,6 +337,8 @@ func runAddBFF(cmd *cobra.Command, name string, opts *addBFFOptions) error {
 		NCGOVersion:   Version,
 		NoGenerate:    opts.noGenerate,
 		DryRun:        opts.dryRun,
+		Preset:        opts.preset,
+		TemplateDir:   templateDir,
 	})
 	if err != nil {
 		return err

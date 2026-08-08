@@ -50,8 +50,17 @@ func ReadPackageMeta(dir string) (PackageMeta, error) {
 }
 
 // LoadPackage loads a template package rooted at dir for the given kind.
-// template.yaml is optional (HasMeta=false); when present its kind must
-// match. The package must contain at least one .yaml in <kind>-template/.
+// template.yaml is optional (HasMeta=false); when present its kind must be
+// compatible with the expected kind. The expected kind determines which
+// subdirectories are loaded:
+//
+//   - (pkgKind="", expected=kitex|hertz) → <kind>-template/ + idl/
+//   - (pkgKind=expected) → <kind>-template/ + idl/ (or workspace/ when kind=micro)
+//   - (pkgKind=micro, expected=kitex|hertz) → <kind>-template/ + idl/<kind>/
+//   - mismatch → error
+//
+// When a kind-specific IDL subdirectory (e.g. idl/kitex/) contains no .proto
+// files, LoadPackage falls back to the flat idl/ directory.
 func LoadPackage(dir, kind string) (*Package, error) {
 	abs, err := filepath.Abs(dir)
 	if err != nil {
@@ -65,18 +74,19 @@ func LoadPackage(dir, kind string) (*Package, error) {
 	switch {
 	case err == nil:
 		pkg.Meta, pkg.HasMeta = meta, true
-		if meta.Kind != "" && meta.Kind != kind {
-			return nil, fmt.Errorf("template package %q has kind %q, want %q", dir, meta.Kind, kind)
-		}
 	case errors.Is(err, fs.ErrNotExist):
 		// optional metadata
 	default:
 		return nil, err
 	}
-	pkg.TemplateDir = filepath.Join(abs, kind+"-template")
+	tplSubDir, idlSubDir, err := resolveTemplateSubDirs(pkg.Meta.Kind, kind)
+	if err != nil {
+		return nil, fmt.Errorf("template package %q: %w", dir, err)
+	}
+	pkg.TemplateDir = filepath.Join(abs, tplSubDir)
 	entries, err := os.ReadDir(pkg.TemplateDir)
 	if err != nil {
-		return nil, fmt.Errorf("template package %q has no %s-template/ directory", dir, kind)
+		return nil, fmt.Errorf("template package %q has no %s/ directory", dir, tplSubDir)
 	}
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
@@ -84,10 +94,13 @@ func LoadPackage(dir, kind string) (*Package, error) {
 		}
 		pkg.Templates = append(pkg.Templates, filepath.Join(pkg.TemplateDir, e.Name()))
 	}
-	if len(pkg.Templates) == 0 {
-		return nil, fmt.Errorf("template package %q has no .yaml templates in %s-template/", dir, kind)
+	// For service template directories, require at least one .yaml template.
+	// For workspace directories (micro expected kind), any file format is valid
+	// (the overlay walks the directory directly and handles .tpl substitution).
+	if len(pkg.Templates) == 0 && kind != "micro" {
+		return nil, fmt.Errorf("template package %q has no .yaml templates in %s/", dir, tplSubDir)
 	}
-	pkg.IDLDir = filepath.Join(abs, "idl")
+	pkg.IDLDir = filepath.Join(abs, idlSubDir)
 	if fi, err := os.Stat(pkg.IDLDir); err == nil && fi.IsDir() {
 		_ = filepath.Walk(pkg.IDLDir, func(path string, info os.FileInfo, err error) error {
 			if err != nil {
@@ -98,6 +111,25 @@ func LoadPackage(dir, kind string) (*Package, error) {
 			}
 			return nil
 		})
+	}
+	// IDL fallback: when a kind-specific subdirectory (e.g. idl/kitex/) has
+	// no .proto files, try the flat idl/ directory for backward compatibility.
+	if idlSubDir != "idl" && len(pkg.IDLs) == 0 {
+		flatIDL := filepath.Join(abs, "idl")
+		if fi, err := os.Stat(flatIDL); err == nil && fi.IsDir() {
+			_ = filepath.Walk(flatIDL, func(path string, info os.FileInfo, err error) error {
+				if err != nil {
+					return err
+				}
+				if !info.IsDir() && strings.HasSuffix(path, ".proto") {
+					pkg.IDLs = append(pkg.IDLs, path)
+				}
+				return nil
+			})
+			if len(pkg.IDLs) > 0 {
+				pkg.IDLDir = flatIDL
+			}
+		}
 	}
 	pkg.SchemaDir = filepath.Join(abs, "schema")
 	if fi, err := os.Stat(pkg.SchemaDir); err == nil && fi.IsDir() {
@@ -117,4 +149,24 @@ func LoadPackage(dir, kind string) (*Package, error) {
 		pkg.LayoutFile = layoutPath
 	}
 	return pkg, nil
+}
+
+// resolveTemplateSubDirs returns the template and IDL subdirectory names
+// based on the package's declared kind and the consumer's expected kind.
+func resolveTemplateSubDirs(pkgKind, expectedKind string) (tplDir, idlDir string, err error) {
+	switch {
+	case pkgKind == "" || pkgKind == expectedKind:
+		// No metadata or matching kind.
+		// For micro expected kind, use workspace/; otherwise <kind>-template/.
+		if expectedKind == "micro" {
+			return "workspace", "", nil
+		}
+		return expectedKind + "-template", "idl", nil
+	case pkgKind == "micro" && expectedKind == "kitex":
+		return "kitex-template", "idl/kitex", nil
+	case pkgKind == "micro" && expectedKind == "hertz":
+		return "hertz-template", "idl/hertz", nil
+	default:
+		return "", "", fmt.Errorf("template package kind %q does not match expected kind %q", pkgKind, expectedKind)
+	}
 }

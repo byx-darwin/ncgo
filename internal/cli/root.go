@@ -307,6 +307,13 @@ func runNewMicro(cmd *cobra.Command, name string, opts *newOptions) error {
 	if len(opts.infra) > 0 {
 		return errors.New("--infra is only supported with --mode mono")
 	}
+	if opts.preset != "" {
+		return errors.New("--preset is only supported with --mode mono")
+	}
+	templateDir, err := registry.ResolveTemplateDir(opts.templateName, opts.templateDir)
+	if err != nil {
+		return err
+	}
 	dir := opts.dir
 	if dir == "" {
 		dir = filepath.Join(".", name)
@@ -317,6 +324,7 @@ func runNewMicro(cmd *cobra.Command, name string, opts *newOptions) error {
 		Dir:           dir,
 		AssetsVersion: assets.Version(),
 		NCGOVersion:   Version,
+		TemplateDir:   templateDir,
 	})
 	if err != nil {
 		return err

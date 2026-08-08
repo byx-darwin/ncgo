@@ -32,6 +32,7 @@ type Options struct {
 	NoGenerate    bool        // skip kitex invocation
 	DryRun        bool        // report intended service writes without modifying files
 	Preset        string      // preset template name (e.g., "rule-center")
+	TemplateDir   string      // external template package dir; replaces embedded kitex-template and IDL placeholder
 	Runner        exec.Runner // injected exec; nil means mono default
 	Now           time.Time   // injected clock for tests
 }
@@ -97,6 +98,7 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 		NCGOVersion:   opts.NCGOVersion,
 		NoGenerate:    opts.NoGenerate,
 		Preset:        opts.Preset,
+		TemplateDir:   opts.TemplateDir,
 		Runner:        opts.Runner,
 		Now:           opts.Now,
 	})

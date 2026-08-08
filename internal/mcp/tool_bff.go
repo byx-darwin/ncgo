@@ -6,18 +6,22 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/byx-darwin/ncgo/internal/registry"
 	"github.com/byx-darwin/ncgo/internal/scaffold/bff"
 )
 
 func callAddBFF(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersion string) (map[string]any, error) {
 	var args struct {
-		Name       string `json:"name"`
-		Root       string `json:"root"`
-		Module     string `json:"module"`
-		Dir        string `json:"dir"`
-		NoGenerate bool   `json:"noGenerate"`
-		DryRun     bool   `json:"dryRun"`
-		Output     string `json:"output"`
+		Name        string `json:"name"`
+		Root        string `json:"root"`
+		Module      string `json:"module"`
+		Dir         string `json:"dir"`
+		NoGenerate  bool   `json:"noGenerate"`
+		DryRun      bool   `json:"dryRun"`
+		Preset      string `json:"preset"`
+		Template    string `json:"template"`
+		TemplateDir string `json:"templateDir"`
+		Output      string `json:"output"`
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
@@ -37,6 +41,14 @@ func callAddBFF(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 		return textResult(err.Error(), true), nil
 	}
 
+	templateDir, err := registry.ResolveTemplateDir(args.Template, args.TemplateDir)
+	if err != nil {
+		return textResult(err.Error(), true), nil
+	}
+	if args.Preset != "" && (args.Template != "" || args.TemplateDir != "") {
+		return textResult("--preset and --template/--templateDir are mutually exclusive", true), nil
+	}
+
 	res, err := bff.Add(ctx, bff.Options{
 		Root:          args.Root,
 		Name:          args.Name,
@@ -46,6 +58,8 @@ func callAddBFF(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 		NCGOVersion:   ncgoVersion,
 		NoGenerate:    args.NoGenerate,
 		DryRun:        args.DryRun,
+		Preset:        args.Preset,
+		TemplateDir:   templateDir,
 	})
 	if err != nil {
 		return textResult(err.Error(), true), nil

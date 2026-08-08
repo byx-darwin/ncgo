@@ -174,7 +174,7 @@ below.
 | `ncgo add domain` | Generate usecase / repository / DI register files |
 | `ncgo add method` | Insert a method stub at ncgo anchor markers |
 | `ncgo add infra` | Add optional infra helpers such as Redis / logging / canary / polaris_adapter |
-| `ncgo add rpc` / `ncgo add bff` | Add services inside a micro workspace |
+| `ncgo add rpc` / `ncgo add bff` | Add services inside a micro workspace (`--template` / `--template-dir` consume template packages; `add bff` also supports `--preset`) |
 | `ncgo ai init claude` | Bootstrap hand-authored `.claude` starter files (`--preset minimal` or `--preset team`) |
 | `ncgo ai sync` | Render AI context files — `claude` target by default; `--target all\|agents\|claude\|cursor` selects a group |
 | `ncgo protolint` | Lint selected `.proto` files with Proto I/O rules |
@@ -286,6 +286,42 @@ ncgo add bff web-bff --root .
 Each generated service keeps its own `.ncgo/manifest.yaml`, `Dockerfile`, and
 service-local `compose.yaml`; the workspace root `compose.yaml` is refreshed as
 services are added.
+
+### Micro workspace template consumption
+
+`ncgo new --mode micro` and `ncgo add rpc/bff` accept `--template <name>`
+(from the official registry) or `--template-dir <path>` (local directory) to
+consume template packages:
+
+```bash
+# Create workspace with a micro template package
+ncgo new commerce --module github.com/acme/commerce --mode micro \
+  --template my-micro
+
+# Add services using the same micro template package
+ncgo add rpc user-rpc --template my-micro
+ncgo add bff web-bff --template my-micro
+
+# Or use standalone mono template packages
+ncgo add rpc user-rpc --template base-kitex
+ncgo add bff web-bff --template base-hertz
+```
+
+A micro template package (`kind: micro`) bundles workspace skeleton templates
+and service-layer templates in one package:
+
+```
+my-micro/
+├── template.yaml          # kind: micro
+├── workspace/             # workspace skeleton templates (.tpl → variable substitution)
+├── kitex-template/        # RPC service templates (used by add rpc)
+├── hertz-template/        # BFF service templates (used by add bff)
+└── idl/
+    ├── kitex/             # Kitex IDL templates
+    └── hertz/             # Hertz IDL templates
+```
+
+`--preset`, `--template`, and `--template-dir` are mutually exclusive.
 
 ## Prepare vs Generate
 

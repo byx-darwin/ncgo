@@ -14,6 +14,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
+	scaffoldtemplate "github.com/byx-darwin/ncgo/internal/scaffold/template"
 )
 
 type Options struct {
@@ -23,6 +24,7 @@ type Options struct {
 	AssetsVersion string
 	NCGOVersion   string
 	Now           time.Time
+	TemplateDir   string // external template package dir; overlays workspace/ templates onto built-in skeleton
 }
 
 type Result struct {
@@ -64,6 +66,20 @@ func Generate(opts Options) (*Result, error) {
 	}
 	if err := os.WriteFile(filepath.Join(dir, "services", ".gitkeep"), nil, 0o644); err != nil {
 		return nil, fmt.Errorf("micro: write services/.gitkeep: %w", err)
+	}
+	// Overlay workspace templates if TemplateDir is set.
+	if opts.TemplateDir != "" {
+		pkg, err := scaffoldtemplate.LoadPackage(opts.TemplateDir, "micro")
+		if err != nil {
+			return nil, err
+		}
+		data := scaffoldtemplate.RenderData{
+			Module:      opts.Module,
+			ServiceName: opts.Name,
+		}
+		if err := scaffoldtemplate.OverlayWorkspaceTemplates(dir, pkg, data); err != nil {
+			return nil, fmt.Errorf("micro: workspace overlay: %w", err)
+		}
 	}
 	return &Result{Dir: dir, NextSteps: nextSteps(opts)}, nil
 }

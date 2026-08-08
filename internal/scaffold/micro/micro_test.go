@@ -75,6 +75,38 @@ func TestGenerateRejectsNonEmptyDir(t *testing.T) {
 	}
 }
 
+func TestGenerateWithTemplateDirOverlaysWorkspace(t *testing.T) {
+	pkgDir := t.TempDir()
+	os.WriteFile(filepath.Join(pkgDir, "template.yaml"),
+		[]byte("name: test-micro\nkind: micro\ndescription: test\nversion: \"1\"\n"), 0o644)
+	os.MkdirAll(filepath.Join(pkgDir, "workspace"), 0o755)
+	os.WriteFile(filepath.Join(pkgDir, "workspace", "custom.txt.tpl"),
+		[]byte("module={{.Module}} name={{.ServiceName}}\n"), 0o644)
+	os.MkdirAll(filepath.Join(pkgDir, "kitex-template"), 0o755)
+	os.WriteFile(filepath.Join(pkgDir, "kitex-template", "a.yaml"), []byte("path: a.go\n"), 0o644)
+	os.MkdirAll(filepath.Join(pkgDir, "hertz-template"), 0o755)
+	os.WriteFile(filepath.Join(pkgDir, "hertz-template", "a.yaml"), []byte("path: a.go\n"), 0o644)
+
+	opts := baseOpts(t)
+	opts.TemplateDir = pkgDir
+	res, err := Generate(opts)
+	if err != nil {
+		t.Fatalf("Generate with template: %v", err)
+	}
+	for _, p := range []string{"ncgo.workspace", "README.md", "compose.yaml"} {
+		if _, err := os.Stat(filepath.Join(res.Dir, p)); err != nil {
+			t.Errorf("built-in %s missing: %v", p, err)
+		}
+	}
+	custom, err := os.ReadFile(filepath.Join(res.Dir, "custom.txt"))
+	if err != nil {
+		t.Fatalf("read custom.txt: %v", err)
+	}
+	if !strings.Contains(string(custom), "module=github.com/acme/shop") || !strings.Contains(string(custom), "name=shop") {
+		t.Errorf("custom.txt not rendered: %s", custom)
+	}
+}
+
 func TestValidateRejectsBadInputs(t *testing.T) {
 	cases := []struct {
 		name string
