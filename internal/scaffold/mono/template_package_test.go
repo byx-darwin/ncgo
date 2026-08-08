@@ -102,7 +102,7 @@ func TestGenerateTemplatePackageKindMismatch(t *testing.T) {
 	os.WriteFile(filepath.Join(pkg, "kitex-template", "a.yaml"), []byte("path: main.go\n"), 0o644)
 	opts := templatePkgOptions(t, pkg)
 	_, err := Generate(context.Background(), opts)
-	if err == nil || !strings.Contains(err.Error(), "has kind") {
+	if err == nil || !strings.Contains(err.Error(), "does not match expected kind") {
 		t.Errorf("want kind mismatch error, got %v", err)
 	}
 }
