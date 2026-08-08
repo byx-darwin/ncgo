@@ -222,6 +222,16 @@ func replaceServiceName(body, serviceName string) string {
 		})
 	}
 
+	// Replace lowercase service name occurrences that appear as bounded
+	// tokens: path segments, package declarations, package qualifiers,
+	// and quoted import paths. Non-boundary occurrences (userrpc2,
+	// myuserrpc) are left untouched.
+	lower := serviceNameLower(serviceName)
+	if lower != "" {
+		segRE := regexp.MustCompile(`(^|[\s/."'])` + regexp.QuoteMeta(lower) + `($|[\s/."'])`)
+		body = segRE.ReplaceAllString(body, "${1}{{ToLower .ServiceName}}${2}")
+	}
+
 	return body
 }
 

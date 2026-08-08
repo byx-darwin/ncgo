@@ -133,6 +133,30 @@ func TestServiceNameLower(t *testing.T) {
 	}
 }
 
+func TestReplaceServiceName_LowercaseSegments(t *testing.T) {
+	body := "import \"{{.Module}}/internal/handler/userrpc\"\n" +
+		"package userrpc\n" +
+		"_ = userrpc.Ping()\n"
+	got := replaceServiceName(body, "UserRpc")
+	if strings.Contains(got, "userrpc") {
+		t.Errorf("lowercase service name should be replaced:\n%s", got)
+	}
+	if strings.Count(got, "{{ToLower .ServiceName}}") != 3 {
+		t.Errorf("expected 3 lowercase substitutions, got:\n%s", got)
+	}
+}
+
+func TestReplaceServiceName_LowercaseNoFalsePositive(t *testing.T) {
+	body := "userrpc2 := 1\nmyuserrpc := 2\nUserRpcExtra := 3"
+	got := replaceServiceName(body, "UserRpc")
+	if !strings.Contains(got, "userrpc2") || !strings.Contains(got, "myuserrpc") {
+		t.Errorf("non-boundary lowercase occurrences must be kept:\n%s", got)
+	}
+	if !strings.Contains(got, "{{.ServiceName}}Extra") {
+		t.Errorf("PascalCase substitution must still work:\n%s", got)
+	}
+}
+
 func TestExport_MinimalHertz(t *testing.T) {
 	dir := t.TempDir()
 
