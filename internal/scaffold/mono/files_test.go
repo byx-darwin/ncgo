@@ -1,9 +1,13 @@
 package mono
 
 import (
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"testing/fstest"
+
+	"github.com/byx-darwin/ncgo/internal/manifest"
 )
 
 func TestExpandIncludes(t *testing.T) {
@@ -36,5 +40,28 @@ func TestExpandIncludesMissingFragment(t *testing.T) {
 	_, err := expandIncludes([]byte("layouts:\n  # {{include: ratelimit/missing}}\n"), fsys)
 	if err == nil || !strings.Contains(err.Error(), "ratelimit/missing") {
 		t.Fatalf("want missing-fragment error, got %v", err)
+	}
+}
+
+func TestWriteKitexTemplate_SkipDefaultTemplates(t *testing.T) {
+	dir := t.TempDir()
+	opts := Options{
+		Kind:                 manifest.KindKitex,
+		Module:               "example.com/test",
+		Name:                 "test",
+		SkipDefaultTemplates: []string{"handler.yaml", "server.yaml"},
+	}
+	if err := writeKitexTemplate(dir, opts); err != nil {
+		t.Fatalf("writeKitexTemplate: %v", err)
+	}
+	tplDir := filepath.Join(dir, "template", "kitex-template")
+	if _, err := os.Stat(filepath.Join(tplDir, "handler.yaml")); err == nil {
+		t.Error("handler.yaml should be skipped")
+	}
+	if _, err := os.Stat(filepath.Join(tplDir, "server.yaml")); err == nil {
+		t.Error("server.yaml should be skipped")
+	}
+	if _, err := os.Stat(filepath.Join(tplDir, "usecase.yaml")); err != nil {
+		t.Error("usecase.yaml should exist")
 	}
 }

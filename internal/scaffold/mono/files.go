@@ -6,6 +6,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -91,7 +92,7 @@ extend google.protobuf.MessageOptions {
 // reads its variables inline so no extra file is needed.
 func writeTemplate(dir string, opts Options) error {
 	if defaultKind(opts.Kind) == manifest.KindKitex {
-		return writeKitexTemplate(dir, opts.Preset, opts.Module)
+		return writeKitexTemplate(dir, opts)
 	}
 	return writeHertzTemplate(dir, opts)
 }
@@ -159,7 +160,9 @@ func writeHertzTemplate(dir string, opts Options) error {
 // scaffold) and the generated Makefile's `update` target can consume
 // them at the same path. When a preset is specified, it also writes
 // preset-specific layout and extra files.
-func writeKitexTemplate(dir string, preset string, module string) error {
+func writeKitexTemplate(dir string, opts Options) error {
+	preset := opts.Preset
+	module := opts.Module
 	tplDir := filepath.Join(dir, "template", "kitex-template")
 	if err := os.MkdirAll(tplDir, 0o755); err != nil {
 		return fmt.Errorf("scaffold: mkdir %s: %w", tplDir, err)
@@ -182,6 +185,12 @@ func writeKitexTemplate(dir string, preset string, module string) error {
 		// templates under the rulecenter/ dirs; skip the default per-layer templates
 		// so they don't generate duplicate ruleservice/ scaffolding.
 		if preset == "rule-center" && (name == "handler.yaml" || name == "server.yaml" || name == "usecase.yaml" || name == "repository.yaml") {
+			continue
+		}
+		// A template package can skip default per-layer templates via its
+		// skip_default_templates metadata, making `--template <pkg>` equivalent
+		// to a preset that supplies its own layer files.
+		if slices.Contains(opts.SkipDefaultTemplates, name) {
 			continue
 		}
 		b, err := fs.ReadFile(srcFS, "kitex/kitex-template/"+name)
