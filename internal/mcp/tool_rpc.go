@@ -6,19 +6,22 @@ import (
 	"fmt"
 	"io"
 
+	"github.com/byx-darwin/ncgo/internal/registry"
 	"github.com/byx-darwin/ncgo/internal/scaffold/rpc"
 )
 
 func callAddRPC(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersion string) (map[string]any, error) {
 	var args struct {
-		Name       string `json:"name"`
-		Root       string `json:"root"`
-		Module     string `json:"module"`
-		Dir        string `json:"dir"`
-		NoGenerate bool   `json:"noGenerate"`
-		DryRun     bool   `json:"dryRun"`
-		Preset     string `json:"preset"`
-		Output     string `json:"output"`
+		Name        string `json:"name"`
+		Root        string `json:"root"`
+		Module      string `json:"module"`
+		Dir         string `json:"dir"`
+		NoGenerate  bool   `json:"noGenerate"`
+		DryRun      bool   `json:"dryRun"`
+		Preset      string `json:"preset"`
+		Template    string `json:"template"`
+		TemplateDir string `json:"templateDir"`
+		Output      string `json:"output"`
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
@@ -38,6 +41,14 @@ func callAddRPC(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 		return textResult(err.Error(), true), nil
 	}
 
+	templateDir, err := registry.ResolveTemplateDir(args.Template, args.TemplateDir)
+	if err != nil {
+		return textResult(err.Error(), true), nil
+	}
+	if args.Preset != "" && templateDir != "" {
+		return textResult("--preset and --template/--templateDir are mutually exclusive", true), nil
+	}
+
 	res, err := rpc.Add(ctx, rpc.Options{
 		Root:          args.Root,
 		Name:          args.Name,
@@ -48,6 +59,7 @@ func callAddRPC(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 		NoGenerate:    args.NoGenerate,
 		DryRun:        args.DryRun,
 		Preset:        args.Preset,
+		TemplateDir:   templateDir,
 	})
 	if err != nil {
 		return textResult(err.Error(), true), nil
