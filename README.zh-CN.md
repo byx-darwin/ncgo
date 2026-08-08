@@ -167,6 +167,13 @@ make dev
 或设置 `NCGO_REGISTRY`。完整 registry 工作流见
 [docs/examples.zh-CN.md](docs/examples.zh-CN.md#9-从官方模板生成基础项目)。
 
+模板包还可以在 `template.yaml` 中声明 `skip_default_templates`（要跳过的默认分层
+模板列表，这样预设类模板包可以提供自己的 `handler`/`server`/`usecase`/`repository`
+模板，而不会重复生成脚手架），携带 `schema/*.sql` 文件（复制到
+`internal/db/schema/`，使用 `{{.Module}}`/`{{.ServiceName}}` 渲染），以及根目录的
+`layout.yaml`（替换默认 layout）。这正是 `ncgo new --kind kitex --template rule-center`
+能与内置 `--preset rule-center` 等价的原因。
+
 ## 典型使用路径
 
 | 场景 | 起步命令 | 适合什么时候 |

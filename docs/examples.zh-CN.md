@@ -895,8 +895,23 @@ ncgo new my-svc --module github.com/acme/my-svc --kind kitex \
 ```
 
 模板包是一个目录，包含 `<kind>-template/*.yaml`，可选 `idl/*.proto`，以及可选的
-`template.yaml` 元数据文件（`name`、`kind`、`description`、`version`）。要贡献一个
-模板：先从成熟项目导出，补上 `template.yaml` + `README.md`，然后向 registry 仓库
-提 PR，等待官方评审。
+`template.yaml` 元数据文件（`name`、`kind`、`description`、`version`）。预设类模板包
+还可以携带 `schema/*.sql` 文件（复制到 `internal/db/schema/`，使用
+`{{.Module}}`/`{{.ServiceName}}` 渲染）、根目录 `layout.yaml`（替换默认 layout），
+并在 `template.yaml` 中声明 `skip_default_templates`（要跳过的默认分层模板）。要贡献
+一个模板：先从成熟项目导出，补上 `template.yaml` + `README.md`，然后向 registry
+仓库提 PR，等待官方评审。
+
+### 预设等价模板包
+
+一个镜像了内置预设的模板包即「预设等价」（preset-equivalent）包。例如，官方
+`rule-center` 包声明了 `skip_default_templates: [handler.yaml, server.yaml,
+usecase.yaml, repository.yaml]`，携带 `schema/000002_rate_limit_rules.sql`、
+根目录 `layout.yaml` 和 `idl/rulecenter.proto`，因此
+`ncgo new my-svc --kind kitex --template rule-center` 会生成与
+`--preset rule-center` 相同的目录树（合并语义：除被跳过的部分外保留内置默认模板，
+并叠加模板包自身的模板）。仅剩一处差异：预设把 IDL 写为 `idl/rule-center.proto`，
+而模板包路径写入 `idl/rulecenter.proto`（proto 内容一致、文件名不同；Makefile 的
+`IDL_FILE` 也随之反映）。
 
 registry URL 默认指向官方仓库；可通过 `--registry <url>` 或 `NCGO_REGISTRY` 覆盖。
