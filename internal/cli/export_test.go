@@ -14,8 +14,11 @@ import (
 )
 
 // seedExportProject creates a minimal Hertz project with source files
-// that match export template rules.
-func seedExportProject(t *testing.T, kind string) string {
+// that match export template rules. When withIDL is true an idl/ fixture
+// is added for the given kind (hertz: idl/app/demo.proto, kitex:
+// idl/demo.proto); when false the project has no idl/ dir so the
+// zero-IDL output branch is exercised.
+func seedExportProject(t *testing.T, kind string, withIDL bool) string {
 	t.Helper()
 	root := t.TempDir()
 	m := &manifest.Manifest{
@@ -44,7 +47,9 @@ func seedExportProject(t *testing.T, kind string) string {
 		writeFile(t, root, "internal/router/demo/router.go", "package router\n")
 		writeFile(t, root, "internal/pkg/utils/helper.go", "package utils\n")
 		writeFile(t, root, "internal/base/logging/log.go", "package logging\n")
-		writeFile(t, root, "idl/app/demo.proto", "syntax = \"proto3\";\nservice Demo {}\n")
+		if withIDL {
+			writeFile(t, root, "idl/app/demo.proto", "syntax = \"proto3\";\nservice Demo {}\n")
+		}
 	case manifest.KindKitex:
 		writeFile(t, root, "main.go", "package main\n")
 		writeFile(t, root, "conf/dev/conf.yaml", "server:\n  host: localhost\n")
@@ -55,7 +60,9 @@ func seedExportProject(t *testing.T, kind string) string {
 		writeFile(t, root, "internal/base/middleware/mw.go", "package middleware\n")
 		writeFile(t, root, "internal/base/release/release.go", "package release\n")
 		writeFile(t, root, "internal/base/logging/log.go", "package logging\n")
-		writeFile(t, root, "idl/demo.proto", "syntax = \"proto3\";\nservice Demo {}\n")
+		if withIDL {
+			writeFile(t, root, "idl/demo.proto", "syntax = \"proto3\";\nservice Demo {}\n")
+		}
 	}
 
 	return root
@@ -73,7 +80,7 @@ func writeFile(t *testing.T, root, rel string, content string) {
 }
 
 func TestRunExportTemplatesHertz(t *testing.T) {
-	root := seedExportProject(t, manifest.KindHertz)
+	root := seedExportProject(t, manifest.KindHertz, true)
 
 	var out bytes.Buffer
 	cmd := &cobra.Command{}
@@ -118,7 +125,7 @@ func TestRunExportTemplatesHertz(t *testing.T) {
 }
 
 func TestRunExportTemplatesKitex(t *testing.T) {
-	root := seedExportProject(t, manifest.KindKitex)
+	root := seedExportProject(t, manifest.KindKitex, true)
 
 	var out bytes.Buffer
 	cmd := &cobra.Command{}
@@ -145,7 +152,9 @@ func TestRunExportTemplatesKitex(t *testing.T) {
 }
 
 func TestRunExportTemplatesAutoDetectKind(t *testing.T) {
-	root := seedExportProject(t, manifest.KindHertz)
+	// Seed without an idl/ fixture so this test covers the zero-IDL output
+	// contract: `exported %d templates to %s/` (no "IDL files").
+	root := seedExportProject(t, manifest.KindHertz, false)
 
 	var out bytes.Buffer
 	cmd := &cobra.Command{}
@@ -160,5 +169,11 @@ func TestRunExportTemplatesAutoDetectKind(t *testing.T) {
 	text := out.String()
 	if !strings.Contains(text, "exported ") {
 		t.Fatalf("text missing 'exported ': %s", text)
+	}
+	if !strings.Contains(text, "templates to ") {
+		t.Fatalf("text missing 'templates to ' (zero-IDL branch): %s", text)
+	}
+	if strings.Contains(text, "IDL files") {
+		t.Fatalf("zero-IDL output must not contain 'IDL files': %s", text)
 	}
 }

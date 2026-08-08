@@ -176,6 +176,7 @@ func TestExport_IDL(t *testing.T) {
 			"option go_package = \"github.com/acme/test/kitex_gen/userapi\";\n"+
 			"service UserApi {\n  rpc Ping(PingReq) returns (PingResp);\n}\n")
 	writeFileExport(t, dir, "idl/openapi/openapi.proto", "syntax = \"proto3\";\n")
+	writeFileExport(t, dir, "idl/validate/validate.proto", "syntax = \"proto3\";\n")
 
 	result, err := Export(ExportOptions{Root: dir, Kind: "hertz",
 		Module: "github.com/acme/test", ServiceName: "UserApi"})
@@ -198,6 +199,9 @@ func TestExport_IDL(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(dir, "template", "idl", "openapi")); !os.IsNotExist(err) {
 		t.Error("idl/openapi must be excluded from export")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "template", "idl", "validate")); !os.IsNotExist(err) {
+		t.Error("idl/validate must be excluded from export")
 	}
 }
 
