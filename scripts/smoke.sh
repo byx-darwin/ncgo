@@ -266,4 +266,32 @@ if grep -q 'github.com/acme/demo/internal/repository/device' "$EXTRACT_ROOT/serv
   exit 1
 fi
 
+log "export templates -> new --template-dir closed loop"
+EXPORT_SRC="$TMP_DIR/export-src"
+write_manifest "$EXPORT_SRC/.ncgo/manifest.yaml" github.com/acme/exportsrc hertz exportsrc
+mkdir -p "$EXPORT_SRC/internal/handler/exportsrc" "$EXPORT_SRC/idl/app"
+printf 'package main\n' >"$EXPORT_SRC/main.go"
+printf 'package exportsrc\n' >"$EXPORT_SRC/internal/handler/exportsrc/handler.go"
+# The proto service name must equal exportName(manifest name)=Exportsrc so
+# export variabilizes it into {{.ServiceName}}.
+cat >"$EXPORT_SRC/idl/app/exportsrc.proto" <<'PROTO'
+syntax = "proto3";
+package app;
+service Exportsrc {}
+PROTO
+"$BIN" export templates --root "$EXPORT_SRC" >"$TMP_DIR/export.out"
+grep -q 'exported ' "$TMP_DIR/export.out"
+grep -q 'IDL files' "$TMP_DIR/export.out"
+test -f "$EXPORT_SRC/template/idl/app/"'{{ToLower .ServiceName}}'".proto"
+"$BIN" new exporttgt --module github.com/acme/exporttgt --kind hertz --no-generate \
+  --dir "$TMP_DIR/export-tgt" --template-dir "$EXPORT_SRC/template" >"$TMP_DIR/new.out"
+grep -q 'scaffolded exporttgt' "$TMP_DIR/new.out"
+test -f "$TMP_DIR/export-tgt/idl/app/exporttgt.proto"
+grep -q 'service exporttgt' "$TMP_DIR/export-tgt/idl/app/exporttgt.proto"
+# The rendered proto must still be valid proto (risk mitigation: variabilizing
+# must not break syntax). The --file flag matches the CLI (singular).
+"$BIN" protolint --root "$TMP_DIR/export-tgt" --file idl/app/exporttgt.proto >"$TMP_DIR/protolint.out" 2>&1 || {
+  cat "$TMP_DIR/protolint.out" >&2; exit 1; }
+grep -q 'template package has no idl' "$TMP_DIR/new.out" && exit 1 || true
+
 log "smoke OK"

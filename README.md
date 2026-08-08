@@ -169,7 +169,7 @@ below.
 
 | Command | Purpose |
 | --- | --- |
-| `ncgo new` | Scaffold a mono service or micro workspace |
+| `ncgo new` | Scaffold a mono service or micro workspace; `--template-dir <dir>` / `--template <name>` generate from a template package (`--template`/`--template-dir` are mutually exclusive and neither combines with `--preset`) |
 | `ncgo import` | Generate `.ncgo/manifest.yaml` for an existing Hertz/Kitex project |
 | `ncgo add domain` | Generate usecase / repository / DI register files |
 | `ncgo add method` | Insert a method stub at ncgo anchor markers |
@@ -183,7 +183,17 @@ below.
 | `ncgo upgrade` | Update ncgo/assets metadata |
 | `ncgo extract domain` | Plan or apply mono-to-micro extraction |
 | `ncgo export templates` | Export code templates from an existing ncgo project |
+| `ncgo template list` | List template packages in the official template registry |
+| `ncgo template pull <name>` | Pull a template package from the registry into the local cache |
 | `ncgo mcp serve` | Expose selected ncgo operations over MCP stdio |
+
+`ncgo new --template <name>` generates from a template package already cached by
+`ncgo template pull <name>`; `--template-dir <dir>` points at any local template
+package (the layout `ncgo export templates` produces). The two flags are mutually
+exclusive, and neither is combined with `--preset`. The registry URL defaults to
+the official repository; override it with `--registry <url>` on `ncgo template
+list`/`pull`, or set `NCGO_REGISTRY`. See the full registry workflow in
+[docs/examples.md](docs/examples.md#9-generate-base-projects-from-official-templates).
 
 ## Typical Workflows
 

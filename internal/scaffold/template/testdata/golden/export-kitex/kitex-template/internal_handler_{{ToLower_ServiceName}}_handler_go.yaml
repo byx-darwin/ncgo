@@ -1,0 +1,11 @@
+# ncgo exported template — internal/handler/{{ToLower .ServiceName}}/handler.go
+path: internal/handler/{{ToLower .ServiceName}}/handler.go
+update_behavior:
+    type: skip
+loop_service: true
+body: |
+    package {{ToLower .ServiceName}}
+
+    type {{.ServiceName}}Impl struct{}
+
+    func (u *{{.ServiceName}}Impl) Ping() {}

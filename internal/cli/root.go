@@ -17,6 +17,7 @@ import (
 	"github.com/byx-darwin/ncgo/internal/cli/interactive"
 	goexec "github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/registry"
 	"github.com/byx-darwin/ncgo/internal/scaffold/micro"
 	"github.com/byx-darwin/ncgo/internal/scaffold/mono"
 )
@@ -66,6 +67,7 @@ func newRootCmd() *cobra.Command {
 	cmd.AddCommand(newExportCmd())
 	cmd.AddCommand(newTestCmd())
 	cmd.AddCommand(newImportCmd())
+	cmd.AddCommand(newTemplateCmd())
 	cmd.AddCommand(newCompletionCmd())
 	return cmd
 }
@@ -162,6 +164,8 @@ type newOptions struct {
 	dir            string
 	noGenerate     bool
 	ruleCenterAddr string // rule-center gRPC address (e.g., rule-center:8888)
+	templateDir    string // mono template package directory replacing embedded code templates and the IDL placeholder
+	templateName   string // mono template name from the registry cache (run `ncgo template pull` first)
 }
 
 func newNewCmd() *cobra.Command {
@@ -186,6 +190,8 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&opts.dir, "dir", "", "Target directory, default ./<name>")
 	f.BoolVar(&opts.noGenerate, "no-generate", false, "Mono only: skip the generator invocation; only write manifest + template/ + idl placeholder")
 	f.StringVar(&opts.ruleCenterAddr, "rule-center-addr", "", "Rule-center gRPC address for rate-limit rule queries (e.g., localhost:8888)")
+	f.StringVar(&opts.templateDir, "template-dir", "", "Mono template package directory replacing embedded code templates and the IDL placeholder")
+	f.StringVar(&opts.templateName, "template", "", "Mono template name from the registry cache (run `ncgo template pull` first)")
 	return cmd
 }
 
@@ -230,6 +236,18 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 	default:
 		return fmt.Errorf("--db %q is invalid (postgres|none)", opts.db)
 	}
+	templateDir := opts.templateDir
+	if opts.templateName != "" {
+		if templateDir != "" {
+			return errors.New("--template and --template-dir are mutually exclusive")
+		}
+		client := registry.NewClient(registry.ResolveURL(""), goexec.NewDefault())
+		dir := client.LocalPath(opts.templateName)
+		if fi, err := os.Stat(dir); err != nil || !fi.IsDir() {
+			return fmt.Errorf("template %q not in cache (%s); run: ncgo template pull %s", opts.templateName, dir, opts.templateName)
+		}
+		templateDir = dir
+	}
 	if err := preflightTools(cmd.Context(), opts.kind, opts.noGenerate, cmd.OutOrStdout(), cmd.InOrStdin()); err != nil {
 		return err
 	}
@@ -247,6 +265,7 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 		Preset:         opts.preset,
 		IDL:            opts.idl,
 		RuleCenterAddr: opts.ruleCenterAddr,
+		TemplateDir:    templateDir,
 		AssetsVersion:  assets.Version(),
 		NCGOVersion:    Version,
 		NoGenerate:     opts.noGenerate,
@@ -264,6 +283,9 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 	fmt.Fprintf(out, "scaffolded %s at %s\n", name, res.Dir)
 	if !res.RanGenerate {
 		fmt.Fprintln(out, "(generator not invoked; --no-generate set)")
+	}
+	if res.TemplateIDLFallback {
+		fmt.Fprintln(out, "(template package has no idl/; used built-in IDL placeholder)")
 	}
 	fmt.Fprintln(out, "\nnext steps:")
 	for _, s := range res.NextSteps {

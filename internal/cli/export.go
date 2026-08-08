@@ -70,9 +70,16 @@ func runExportTemplates(cmd *cobra.Command, opts *exportTemplatesOptions) error 
 	}
 
 	out := cmd.OutOrStdout()
-	fmt.Fprintf(out, "exported %d templates to %s/\n", len(result.Templates), result.OutputDir)
+	if len(result.IDLs) > 0 {
+		fmt.Fprintf(out, "exported %d templates and %d IDL files to %s/\n", len(result.Templates), len(result.IDLs), result.OutputDir)
+	} else {
+		fmt.Fprintf(out, "exported %d templates to %s/\n", len(result.Templates), result.OutputDir)
+	}
 	for _, t := range result.Templates {
 		fmt.Fprintf(out, "  - %s\n", t)
+	}
+	for _, f := range result.IDLs {
+		fmt.Fprintf(out, "  - %s\n", f)
 	}
 	return nil
 }

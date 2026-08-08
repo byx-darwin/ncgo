@@ -742,6 +742,14 @@ ncgo export templates --kind kitex
 
 排除路径：`internal/pb/`（hz 生成的 protobuf 代码）和 `kitex_gen/`（kitex 生成的 RPC stub）。
 
+导出还会把项目的服务 IDL 写入 `template/idl/`，文件名中的服务名会被参数化
+（例如 `template/idl/app/{{ToLower .ServiceName}}.proto`），这样使用者可以把它
+渲染到自己的默认 IDL 路径上。
+
+模板包内容就是基础项目的起始代码。`ncgo new --template-dir`（或 `--template`）
+把它当作“换名复制”来消费：生成时只替换导出文件里的 module 与服务名，并用你传入
+的 `--module` / 服务名生成一个全新的脚手架，而不是逐字复制源项目。
+
 ## 7. 规则中心限流集成
 
 当多个 Hertz 服务需要共享限流规则时，可以创建一个独立的 Kitex gRPC
@@ -868,3 +876,27 @@ v1.7.1` 测试通过。
   `release.track` metadata。
 
 GA 加固（metrics / cache+TTL / dry-run / runtime harness）属于后续工作。
+
+## 9. 从官方模板生成基础项目
+
+当某个模板经过评审并合入官方 registry 之后：
+
+```bash
+ncgo template list                 # 浏览官方模板
+ncgo template pull base-kitex      # 拉取到本地缓存
+ncgo new my-svc --module github.com/acme/my-svc --kind kitex --template base-kitex
+```
+
+也可以直接指向任意本地模板包（即 `ncgo export templates` 生成的目录结构）：
+
+```bash
+ncgo new my-svc --module github.com/acme/my-svc --kind kitex \
+  --template-dir path/to/base-kitex
+```
+
+模板包是一个目录，包含 `<kind>-template/*.yaml`，可选 `idl/*.proto`，以及可选的
+`template.yaml` 元数据文件（`name`、`kind`、`description`、`version`）。要贡献一个
+模板：先从成熟项目导出，补上 `template.yaml` + `README.md`，然后向 registry 仓库
+提 PR，等待官方评审。
+
+registry URL 默认指向官方仓库；可通过 `--registry <url>` 或 `NCGO_REGISTRY` 覆盖。

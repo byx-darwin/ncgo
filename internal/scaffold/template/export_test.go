@@ -79,11 +79,55 @@ func (u *UserApiImpl) Ping() {}`
 func TestReplaceServiceName_ImportPath(t *testing.T) {
 	body := `import "github.com/acme/test/internal/handler/userapi"`
 	got := replaceServiceName(body, "UserApi")
-	// The import path substitution for userapi in path segments is handled
-	// by templatePath, not replaceServiceName (which focuses on PascalCase types).
-	// This test just verifies no crash on mixed content.
-	if got == "" {
-		t.Error("expected non-empty output")
+	// replaceServiceName substitutes bounded lowercase tokens in path segments
+	// and package qualifiers, so the userapi import path is variabilized here;
+	// templatePath separately handles parameterizing the OUTPUT file path.
+	if strings.Contains(got, "userapi") {
+		t.Errorf("import path should be variabilized, got:\n%s", got)
+	}
+	if !strings.Contains(got, "{{ToLower .ServiceName}}") {
+		t.Errorf("expected lowercase substitution in import path, got:\n%s", got)
+	}
+}
+
+func TestIDLTemplatePath_SubstitutesBaseOnly(t *testing.T) {
+	tests := []struct {
+		name string
+		rel  string
+		svc  string
+		want string
+	}{
+		{
+			name: "hertz default app dir stays literal even when it equals service name",
+			rel:  "idl/app/app.proto",
+			svc:  "app",
+			want: "idl/app/{{ToLower .ServiceName}}.proto",
+		},
+		{
+			name: "hertz standard userapi",
+			rel:  "idl/app/userapi.proto",
+			svc:  "UserApi",
+			want: "idl/app/{{ToLower .ServiceName}}.proto",
+		},
+		{
+			name: "kitex root idl",
+			rel:  "idl/userapi.proto",
+			svc:  "UserApi",
+			want: "idl/{{ToLower .ServiceName}}.proto",
+		},
+		{
+			name: "parent dir not rewritten",
+			rel:  "idl/userapi/userapi.proto",
+			svc:  "UserApi",
+			want: "idl/userapi/{{ToLower .ServiceName}}.proto",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			if got := idlTemplatePath(tt.rel, ExportOptions{ServiceName: tt.svc}); got != tt.want {
+				t.Errorf("idlTemplatePath(%q, %q) = %q, want %q", tt.rel, tt.svc, got, tt.want)
+			}
+		})
 	}
 }
 
@@ -130,6 +174,78 @@ func TestServiceNameLower(t *testing.T) {
 		if got := serviceNameLower(tt.in); got != tt.want {
 			t.Errorf("serviceNameLower(%q) = %q, want %q", tt.in, got, tt.want)
 		}
+	}
+}
+
+func TestReplaceServiceName_LowercaseSegments(t *testing.T) {
+	body := "import \"{{.Module}}/internal/handler/userrpc\"\n" +
+		"package userrpc\n" +
+		"_ = userrpc.Ping()\n"
+	got := replaceServiceName(body, "UserRpc")
+	if strings.Contains(got, "userrpc") {
+		t.Errorf("lowercase service name should be replaced:\n%s", got)
+	}
+	if strings.Count(got, "{{ToLower .ServiceName}}") != 3 {
+		t.Errorf("expected 3 lowercase substitutions, got:\n%s", got)
+	}
+}
+
+func TestReplaceServiceName_LowercaseNoFalsePositive(t *testing.T) {
+	body := "userrpc2 := 1\nmyuserrpc := 2\nUserRpcExtra := 3"
+	got := replaceServiceName(body, "UserRpc")
+	if !strings.Contains(got, "userrpc2") || !strings.Contains(got, "myuserrpc") {
+		t.Errorf("non-boundary lowercase occurrences must be kept:\n%s", got)
+	}
+	if !strings.Contains(got, "{{.ServiceName}}Extra") {
+		t.Errorf("PascalCase substitution must still work:\n%s", got)
+	}
+}
+
+func writeFileExport(t *testing.T, root, rel, content string) {
+	t.Helper()
+	abs := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(abs), err)
+	}
+	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", rel, err)
+	}
+}
+
+func TestExport_IDL(t *testing.T) {
+	dir := t.TempDir()
+	writeFileExport(t, dir, "main.go", "package main\n")
+	writeFileExport(t, dir, "idl/app/userapi.proto",
+		"syntax = \"proto3\";\npackage app;\n"+
+			"option go_package = \"github.com/acme/test/kitex_gen/userapi\";\n"+
+			"service UserApi {\n  rpc Ping(PingReq) returns (PingResp);\n}\n")
+	writeFileExport(t, dir, "idl/openapi/openapi.proto", "syntax = \"proto3\";\n")
+	writeFileExport(t, dir, "idl/validate/validate.proto", "syntax = \"proto3\";\n")
+
+	result, err := Export(ExportOptions{Root: dir, Kind: "hertz",
+		Module: "github.com/acme/test", ServiceName: "UserApi"})
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if len(result.IDLs) != 1 || result.IDLs[0] != "idl/app/{{ToLower .ServiceName}}.proto" {
+		t.Fatalf("IDLs = %v", result.IDLs)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "template", "idl", "app", "{{ToLower .ServiceName}}.proto"))
+	if err != nil {
+		t.Fatalf("exported idl missing: %v", err)
+	}
+	s := string(body)
+	if !strings.Contains(s, "service {{.ServiceName}} {") {
+		t.Errorf("service name not variabilized:\n%s", s)
+	}
+	if !strings.Contains(s, "{{.Module}}/kitex_gen/{{ToLower .ServiceName}}") {
+		t.Errorf("go_package not variabilized:\n%s", s)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "template", "idl", "openapi")); !os.IsNotExist(err) {
+		t.Error("idl/openapi must be excluded from export")
+	}
+	if _, err := os.Stat(filepath.Join(dir, "template", "idl", "validate")); !os.IsNotExist(err) {
+		t.Error("idl/validate must be excluded from export")
 	}
 }
 

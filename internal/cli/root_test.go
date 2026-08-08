@@ -3,6 +3,8 @@ package cli
 import (
 	"context"
 	"fmt"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -67,6 +69,99 @@ func TestResolveBuildInfoKeepsInjectedValues(t *testing.T) {
 	})
 	if buildVersion != "release-build" || buildTime != "2026-05-06T13:00:00Z" {
 		t.Fatalf("resolveBuildInfo kept = (%q, %q)", buildVersion, buildTime)
+	}
+}
+
+func TestNewCmdHasTemplateDirFlag(t *testing.T) {
+	cmd := newNewCmd()
+	f := cmd.Flags().Lookup("template-dir")
+	if f == nil {
+		t.Fatal("--template-dir flag not registered on ncgo new")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--template-dir default = %q, want empty", f.DefValue)
+	}
+}
+
+func TestNewCmdHasTemplateFlag(t *testing.T) {
+	cmd := newNewCmd()
+	f := cmd.Flags().Lookup("template")
+	if f == nil {
+		t.Fatal("--template flag not registered on ncgo new")
+	}
+	if f.DefValue != "" {
+		t.Errorf("--template default = %q, want empty", f.DefValue)
+	}
+}
+
+func TestRunNewMonoTemplateAndTemplateDirMutuallyExclusive(t *testing.T) {
+	cmd := newNewCmd()
+	cmd.SetOut(new(strings.Builder))
+	opts := &newOptions{
+		module:       "github.com/acme/demo",
+		kind:         manifest.KindKitex,
+		db:           "none",
+		dir:          filepath.Join(t.TempDir(), "demo"),
+		noGenerate:   true,
+		templateDir:  t.TempDir(),
+		templateName: "base-kitex",
+	}
+	err := runNewMono(cmd, "demo", opts)
+	if err == nil || !strings.Contains(err.Error(), "mutually exclusive") {
+		t.Errorf("want mutually exclusive error, got %v", err)
+	}
+}
+
+func TestRunNewMonoTemplateNotCachedError(t *testing.T) {
+	cmd := newNewCmd()
+	cmd.SetOut(new(strings.Builder))
+	opts := &newOptions{
+		module:       "github.com/acme/demo",
+		kind:         manifest.KindKitex,
+		db:           "none",
+		dir:          filepath.Join(t.TempDir(), "demo"),
+		noGenerate:   true,
+		templateName: "not-in-cache-xyz-98765",
+	}
+	err := runNewMono(cmd, "demo", opts)
+	if err == nil || !strings.Contains(err.Error(), "ncgo template pull") {
+		t.Errorf("want cache-miss error mentioning 'ncgo template pull', got %v", err)
+	}
+}
+
+func TestRunNewMonoPrintsTemplateIDLFallbackNotice(t *testing.T) {
+	const notice = "(template package has no idl/; used built-in IDL placeholder)"
+	run := func(templateDir string) string {
+		t.Helper()
+		var out strings.Builder
+		cmd := newNewCmd()
+		cmd.SetOut(&out)
+		opts := &newOptions{
+			module:      "github.com/acme/demo",
+			kind:        manifest.KindKitex,
+			db:          "none",
+			dir:         filepath.Join(t.TempDir(), "demo"),
+			noGenerate:  true,
+			templateDir: templateDir,
+		}
+		if err := runNewMono(cmd, "demo", opts); err != nil {
+			t.Fatalf("runNewMono: %v", err)
+		}
+		return out.String()
+	}
+
+	// Package with a kitex-template dir but no idl/ → fallback notice prints.
+	pkg := t.TempDir()
+	os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0o755)
+	os.WriteFile(filepath.Join(pkg, "kitex-template", "main_go.yaml"),
+		[]byte("path: main.go\nbody: |\n  package main\n"), 0o644)
+	if got := run(pkg); !strings.Contains(got, notice) {
+		t.Errorf("fallback notice missing for no-idl package:\n%s", got)
+	}
+
+	// No template package → no fallback notice.
+	if got := run(""); strings.Contains(got, notice) {
+		t.Errorf("fallback notice should not print without --template-dir:\n%s", got)
 	}
 }
 

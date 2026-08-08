@@ -12,6 +12,7 @@ import (
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
+	scaffoldtemplate "github.com/byx-darwin/ncgo/internal/scaffold/template"
 	"gopkg.in/yaml.v3"
 )
 
@@ -451,6 +452,111 @@ func copyHertzTemplateYAML(dir string, srcFS fs.FS) error {
 		}
 	}
 	return nil
+}
+
+// overlayTemplatePackage replaces the embedded <kind>-template YAML and the
+// IDL placeholder with the contents of an external template package. It
+// reports true when the package carries no IDL and the built-in placeholder
+// still applies (backward compatibility with pre-IDL exports).
+func overlayTemplatePackage(dir string, opts Options) (bool, error) {
+	kind := defaultKind(opts.Kind)
+	pkg, err := scaffoldtemplate.LoadPackage(opts.TemplateDir, kind)
+	if err != nil {
+		return false, err
+	}
+	// Replace (not merge) the embedded per-file template set with the
+	// package's <kind>-template yamls.
+	tplTarget := filepath.Join(dir, "template", kind+"-template")
+	if err := os.RemoveAll(tplTarget); err != nil {
+		return false, fmt.Errorf("scaffold: remove %s: %w", tplTarget, err)
+	}
+	if err := os.MkdirAll(tplTarget, 0o755); err != nil {
+		return false, fmt.Errorf("scaffold: mkdir %s: %w", tplTarget, err)
+	}
+	for _, src := range pkg.Templates {
+		b, err := os.ReadFile(src)
+		if err != nil {
+			return false, fmt.Errorf("scaffold: read template package %s: %w", src, err)
+		}
+		if err := os.WriteFile(filepath.Join(tplTarget, filepath.Base(src)), b, 0o644); err != nil {
+			return false, fmt.Errorf("scaffold: write %s: %w", filepath.Base(src), err)
+		}
+	}
+	// Hertz root-level templates (path with no "/", e.g. Makefile, main.go)
+	// are written by writeHertzRootTemplates before this overlay runs. A
+	// package's custom root templates must win over the embedded ones, so
+	// render them (module/service-name variables) onto the project root here,
+	// overwriting the embedded copy.
+	if kind == manifest.KindHertz {
+		for _, src := range pkg.Templates {
+			b, err := os.ReadFile(src)
+			if err != nil {
+				return false, fmt.Errorf("scaffold: read template package %s: %w", src, err)
+			}
+			var tpl scaffoldtemplate.TemplateFile
+			if err := yaml.Unmarshal(b, &tpl); err != nil {
+				return false, fmt.Errorf("scaffold: parse template package %s: %w", src, err)
+			}
+			if tpl.Path == "" || strings.Contains(tpl.Path, "/") {
+				continue
+			}
+			rendered, err := scaffoldtemplate.Render(tpl.Body, scaffoldtemplate.RenderData{
+				Module:      opts.Module,
+				ServiceName: opts.Name,
+			})
+			if err != nil {
+				return false, fmt.Errorf("scaffold: render package root template %s: %w", tpl.Path, err)
+			}
+			full := filepath.Join(dir, filepath.FromSlash(tpl.Path))
+			if err := os.WriteFile(full, []byte(rendered), 0o644); err != nil {
+				return false, fmt.Errorf("scaffold: write %s: %w", tpl.Path, err)
+			}
+		}
+	}
+	// Render the package IDLs onto the kind's default IDL path. A package with
+	// no idl/ directory falls back to the built-in placeholder.
+	if len(pkg.IDLs) == 0 {
+		return true, nil
+	}
+	token := idlNameToken(opts)
+	for _, idl := range pkg.IDLs {
+		rel, err := filepath.Rel(pkg.IDLDir, idl)
+		if err != nil {
+			return false, fmt.Errorf("scaffold: idl rel %s: %w", idl, err)
+		}
+		rel = filepath.ToSlash(rel)
+		rel = strings.ReplaceAll(rel, "{{ToLower .ServiceName}}", token)
+		b, err := os.ReadFile(idl)
+		if err != nil {
+			return false, fmt.Errorf("scaffold: read package idl %s: %w", idl, err)
+		}
+		rendered, err := scaffoldtemplate.Render(string(b), scaffoldtemplate.RenderData{
+			Module:      opts.Module,
+			ServiceName: opts.Name,
+		})
+		if err != nil {
+			return false, fmt.Errorf("scaffold: render package idl %s: %w", rel, err)
+		}
+		full := filepath.Join(dir, "idl", filepath.FromSlash(rel))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return false, fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(full), err)
+		}
+		if err := os.WriteFile(full, []byte(rendered), 0o644); err != nil {
+			return false, fmt.Errorf("scaffold: write %s: %w", full, err)
+		}
+	}
+	return false, nil
+}
+
+// idlNameToken is the per-kind service-name token that replaces
+// `{{ToLower .ServiceName}}` in a template package's relative IDL paths,
+// mirroring defaultIDL so the rendered file lands on the generator's default
+// IDL path. Hertz uses the dashed lowercase name; Kitex the dash-stripped one.
+func idlNameToken(opts Options) string {
+	if defaultKind(opts.Kind) == manifest.KindKitex {
+		return kitexIDLBase(opts)
+	}
+	return strings.ToLower(opts.Name)
 }
 
 // writeIDLPlaceholder drops the starter IDL files into the scaffold.

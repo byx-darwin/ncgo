@@ -3,6 +3,7 @@ package template
 import (
 	"fmt"
 	"os"
+	"path"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -71,6 +72,7 @@ type ExportOptions struct {
 type ExportResult struct {
 	OutputDir string
 	Templates []string
+	IDLs      []string // relative idl/... paths with service name parameterized
 }
 
 // Export extracts code templates from an existing ncgo project.
@@ -128,10 +130,74 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 		templates = append(templates, mk.Path)
 	}
 
+	idls, err := exportIDLs(absRoot, opts)
+	if err != nil {
+		return nil, fmt.Errorf("export idl: %w", err)
+	}
+
 	return &ExportResult{
 		OutputDir: relPath(absRoot, outDir),
 		Templates: templates,
+		IDLs:      idls,
 	}, nil
+}
+
+// exportIDLs variabilizes the project's service IDL into template/idl/.
+// hz standard support files (openapi/, validate/) stay embedded and are
+// excluded. A missing idl/ dir is not an error.
+func exportIDLs(root string, opts ExportOptions) ([]string, error) {
+	idlRoot := filepath.Join(root, "idl")
+	if fi, err := os.Stat(idlRoot); err != nil || !fi.IsDir() {
+		return nil, nil
+	}
+	var exported []string
+	err := filepath.Walk(idlRoot, func(path string, info os.FileInfo, err error) error {
+		if err != nil {
+			return err
+		}
+		if info.IsDir() || !strings.HasSuffix(path, ".proto") {
+			return nil
+		}
+		rel := relPath(idlRoot, path)
+		if strings.HasPrefix(rel, "openapi/") || strings.HasPrefix(rel, "validate/") {
+			return nil
+		}
+		content, err := os.ReadFile(path)
+		if err != nil {
+			return fmt.Errorf("read %s: %w", rel, err)
+		}
+		body := regexp.MustCompile(regexp.QuoteMeta(opts.Module)).ReplaceAllString(string(content), "{{.Module}}")
+		body = replaceServiceName(body, opts.ServiceName)
+		tplRel := idlTemplatePath(rel, opts)
+		out := filepath.Join(root, "template", "idl", filepath.FromSlash(tplRel))
+		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(out, []byte(body), 0o644); err != nil {
+			return err
+		}
+		exported = append(exported, "idl/"+tplRel)
+		return nil
+	})
+	return exported, err
+}
+
+// idlTemplatePath parameterizes the service name inside IDL file names so
+// consumers render them onto their own default IDL paths (hertz
+// idl/app/<name>.proto, kitex idl/<name>.proto). Substitution is scoped to the
+// file base only: parent directories (e.g. the fixed "app" dir for hertz) are
+// left literal even when they happen to equal the lowercase service name.
+func idlTemplatePath(rel string, opts ExportOptions) string {
+	dashed := strings.ToLower(opts.ServiceName) // "user-rpc"
+	lower := serviceNameLower(opts.ServiceName) // "userrpc"
+	dir, base := path.Split(rel)
+	if dashed != "" {
+		base = strings.ReplaceAll(base, dashed, "{{ToLower .ServiceName}}")
+	}
+	if lower != "" && lower != dashed {
+		base = strings.ReplaceAll(base, lower, "{{ToLower .ServiceName}}")
+	}
+	return dir + base
 }
 
 func matchFiles(root, pattern string) ([]string, error) {
@@ -220,6 +286,16 @@ func replaceServiceName(body, serviceName string) string {
 			suffix := s[len(export):]
 			return "{{.ServiceName}}" + suffix
 		})
+	}
+
+	// Replace lowercase service name occurrences that appear as bounded
+	// tokens: path segments, package declarations, package qualifiers,
+	// and quoted import paths. Non-boundary occurrences (userrpc2,
+	// myuserrpc) are left untouched.
+	lower := serviceNameLower(serviceName)
+	if lower != "" {
+		segRE := regexp.MustCompile(`(^|[\s/."'])` + regexp.QuoteMeta(lower) + `($|[\s/."'])`)
+		body = segRE.ReplaceAllString(body, "${1}{{ToLower .ServiceName}}${2}")
 	}
 
 	return body

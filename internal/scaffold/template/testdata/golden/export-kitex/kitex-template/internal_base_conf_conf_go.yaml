@@ -1,0 +1,10 @@
+# ncgo exported template — internal/base/conf/conf.go
+path: internal/base/conf/conf.go
+update_behavior:
+    type: cover
+body: |
+    package conf
+
+    type Config struct {
+    	Port int
+    }
