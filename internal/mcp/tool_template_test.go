@@ -35,6 +35,10 @@ func registryFixture(t *testing.T, files map[string]string) string {
 		t.Helper()
 		cmd := osexec.Command("git", args...)
 		cmd.Dir = repo
+		// pre-commit injects its hook wrapper into child git processes (via
+		// GIT_CONFIG* env) when tests run under pre-commit / pre-push; the
+		// fixture repo has no .pre-commit-config.yaml, so silence that check.
+		cmd.Env = append(os.Environ(), "PRE_COMMIT_ALLOW_NO_CONFIG=1")
 		if out, err := cmd.CombinedOutput(); err != nil {
 			t.Fatalf("git %v: %v: %s", args, err, out)
 		}
