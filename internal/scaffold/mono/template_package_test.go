@@ -494,6 +494,62 @@ func TestGenerateTemplateRuleCenterEquivalentToPreset(t *testing.T) {
 	}
 }
 
+// TestGenerateTemplatePackageIDLNameCoupling proves that a template package whose
+// IDL has a FIXED filename (rule-center ships idl/rulecenter.proto) defines the
+// project IDL path even when the service name lowercases to something else. Without
+// the coupling, Generate would set the project IDL to the default <name>.proto path
+// (idl/mysvc.proto for a service named my-svc), write a stale empty placeholder there,
+// and point the manifest and kitex command at it while the overlay writes the real
+// proto to idl/rulecenter.proto — a broken, miswired scaffold.
+func TestGenerateTemplatePackageIDLNameCoupling(t *testing.T) {
+	opts := templatePkgOptions(t, seedRuleCenterTemplatePackage(t))
+	opts.Name = "my-svc"
+	opts.Module = "github.com/acme/my-svc"
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	// 1. The package's real proto lands at idl/rulecenter.proto (overlay write).
+	idl := readTreeFile(t, opts.Dir, "idl/rulecenter.proto")
+	for _, marker := range []string{"service RuleService", "rpc GetRule"} {
+		if !strings.Contains(string(idl), marker) {
+			t.Errorf("idl/rulecenter.proto missing %q:\n%s", marker, idl)
+		}
+	}
+
+	// 2. No stale empty placeholder at the default <name>.proto path.
+	if _, err := os.Stat(filepath.Join(opts.Dir, "idl", "mysvc.proto")); err == nil {
+		t.Error("idl/mysvc.proto placeholder should not exist")
+	}
+
+	// 3. The manifest records the package IDL path, not the default <name>.proto.
+	m, err := manifest.Load(opts.Dir)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	if want, got := "idl/rulecenter.proto", m.Service.IDL; got != want {
+		t.Errorf("manifest Service.IDL = %q, want %q", got, want)
+	}
+
+	// 4. nextSteps (the user-facing kitex command) targets the package IDL only.
+	foundReal, foundStale := false, false
+	for _, step := range res.NextSteps {
+		if strings.Contains(step, "idl/rulecenter.proto") {
+			foundReal = true
+		}
+		if strings.Contains(step, "idl/mysvc.proto") {
+			foundStale = true
+		}
+	}
+	if !foundReal {
+		t.Errorf("nextSteps missing idl/rulecenter.proto: %v", res.NextSteps)
+	}
+	if foundStale {
+		t.Errorf("nextSteps references stale idl/mysvc.proto: %v", res.NextSteps)
+	}
+}
+
 // sortedTemplateNames returns the sorted basenames of a template directory.
 func sortedTemplateNames(t *testing.T, dir string) []string {
 	t.Helper()

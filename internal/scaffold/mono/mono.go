@@ -105,6 +105,22 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 			return nil, err
 		}
 		opts.SkipDefaultTemplates = pkg.Meta.SkipDefaultTemplates
+		// A template package's IDL defines the project IDL path: the manifest,
+		// generator command, and placeholder all target the package's real proto.
+		// This matches defaultIDL for variable-named packages
+		// ({{ToLower .ServiceName}}.proto) and fixes fixed-named packages (e.g.
+		// rule-center's idl/rulecenter.proto) whose filename would otherwise diverge
+		// from the default <name>.proto path, leaving a stale empty placeholder.
+		// writeIDLPlaceholder never clobbers an existing IDL, so the overlay-written
+		// real proto wins.
+		if len(pkg.IDLs) > 0 {
+			rel, err := filepath.Rel(pkg.IDLDir, pkg.IDLs[0])
+			if err == nil {
+				rel = filepath.ToSlash(rel)
+				rel = strings.ReplaceAll(rel, "{{ToLower .ServiceName}}", idlNameToken(opts))
+				idl = filepath.ToSlash(filepath.Join("idl", rel))
+			}
+		}
 	}
 	if err := writeTemplate(dir, opts); err != nil {
 		return nil, err
