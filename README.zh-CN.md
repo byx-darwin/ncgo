@@ -163,8 +163,9 @@ make dev
 `ncgo new --template <name>` 会从已由 `ncgo template pull <name>` 缓存的模板包
 生成项目；`--template-dir <dir>` 则指向任意本地模板包（即 `ncgo export templates`
 生成的目录结构）。这两个 flag 互斥，且都不与 `--preset` 组合使用。registry URL
-默认指向官方仓库，可通过 `--registry <url>` 或 `NCGO_REGISTRY` 覆盖。完整 registry
-工作流见 [docs/examples.zh-CN.md](#9-从官方模板生成基础项目)。
+默认指向官方仓库；可在 `ncgo template list`/`pull` 上用 `--registry <url>` 覆盖，
+或设置 `NCGO_REGISTRY`。完整 registry 工作流见
+[docs/examples.zh-CN.md](docs/examples.zh-CN.md#9-从官方模板生成基础项目)。
 
 ## 典型使用路径
 

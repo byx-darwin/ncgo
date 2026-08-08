@@ -191,9 +191,9 @@ below.
 `ncgo template pull <name>`; `--template-dir <dir>` points at any local template
 package (the layout `ncgo export templates` produces). The two flags are mutually
 exclusive, and neither is combined with `--preset`. The registry URL defaults to
-the official repository; override it with `--registry <url>` or `NCGO_REGISTRY`.
-See the full registry workflow in
-[docs/examples.md](#9-generate-base-projects-from-official-templates).
+the official repository; override it with `--registry <url>` on `ncgo template
+list`/`pull`, or set `NCGO_REGISTRY`. See the full registry workflow in
+[docs/examples.md](docs/examples.md#9-generate-base-projects-from-official-templates).
 
 ## Typical Workflows
 
