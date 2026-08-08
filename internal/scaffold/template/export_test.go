@@ -157,6 +157,50 @@ func TestReplaceServiceName_LowercaseNoFalsePositive(t *testing.T) {
 	}
 }
 
+func writeFileExport(t *testing.T, root, rel, content string) {
+	t.Helper()
+	abs := filepath.Join(root, filepath.FromSlash(rel))
+	if err := os.MkdirAll(filepath.Dir(abs), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(abs), err)
+	}
+	if err := os.WriteFile(abs, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", rel, err)
+	}
+}
+
+func TestExport_IDL(t *testing.T) {
+	dir := t.TempDir()
+	writeFileExport(t, dir, "main.go", "package main\n")
+	writeFileExport(t, dir, "idl/app/userapi.proto",
+		"syntax = \"proto3\";\npackage app;\n"+
+			"option go_package = \"github.com/acme/test/kitex_gen/userapi\";\n"+
+			"service UserApi {\n  rpc Ping(PingReq) returns (PingResp);\n}\n")
+	writeFileExport(t, dir, "idl/openapi/openapi.proto", "syntax = \"proto3\";\n")
+
+	result, err := Export(ExportOptions{Root: dir, Kind: "hertz",
+		Module: "github.com/acme/test", ServiceName: "UserApi"})
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if len(result.IDLs) != 1 || result.IDLs[0] != "idl/app/{{ToLower .ServiceName}}.proto" {
+		t.Fatalf("IDLs = %v", result.IDLs)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "template", "idl", "app", "{{ToLower .ServiceName}}.proto"))
+	if err != nil {
+		t.Fatalf("exported idl missing: %v", err)
+	}
+	s := string(body)
+	if !strings.Contains(s, "service {{.ServiceName}} {") {
+		t.Errorf("service name not variabilized:\n%s", s)
+	}
+	if !strings.Contains(s, "{{.Module}}/kitex_gen/{{ToLower .ServiceName}}") {
+		t.Errorf("go_package not variabilized:\n%s", s)
+	}
+	if _, err := os.Stat(filepath.Join(dir, "template", "idl", "openapi")); !os.IsNotExist(err) {
+		t.Error("idl/openapi must be excluded from export")
+	}
+}
+
 func TestExport_MinimalHertz(t *testing.T) {
 	dir := t.TempDir()
 

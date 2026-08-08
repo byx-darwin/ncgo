@@ -44,6 +44,7 @@ func seedExportProject(t *testing.T, kind string) string {
 		writeFile(t, root, "internal/router/demo/router.go", "package router\n")
 		writeFile(t, root, "internal/pkg/utils/helper.go", "package utils\n")
 		writeFile(t, root, "internal/base/logging/log.go", "package logging\n")
+		writeFile(t, root, "idl/app/demo.proto", "syntax = \"proto3\";\nservice Demo {}\n")
 	case manifest.KindKitex:
 		writeFile(t, root, "main.go", "package main\n")
 		writeFile(t, root, "conf/dev/conf.yaml", "server:\n  host: localhost\n")
@@ -54,6 +55,7 @@ func seedExportProject(t *testing.T, kind string) string {
 		writeFile(t, root, "internal/base/middleware/mw.go", "package middleware\n")
 		writeFile(t, root, "internal/base/release/release.go", "package release\n")
 		writeFile(t, root, "internal/base/logging/log.go", "package logging\n")
+		writeFile(t, root, "idl/demo.proto", "syntax = \"proto3\";\nservice Demo {}\n")
 	}
 
 	return root
@@ -88,6 +90,15 @@ func TestRunExportTemplatesHertz(t *testing.T) {
 	}
 	if !strings.Contains(text, "template/hertz-template") {
 		t.Fatalf("text missing 'template/hertz-template': %s", text)
+	}
+	if !strings.Contains(text, "IDL files") {
+		t.Fatalf("text missing 'IDL files': %s", text)
+	}
+
+	// Verify the exported IDL template was written under template/idl/.
+	idlPath := filepath.Join(root, "template", "idl", "app", "{{ToLower .ServiceName}}.proto")
+	if _, err := os.Stat(idlPath); err != nil {
+		t.Fatalf("exported idl not found at %s: %v", idlPath, err)
 	}
 
 	// Verify output directory was created.
