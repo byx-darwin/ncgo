@@ -115,13 +115,15 @@ func TestGenerateTemplatePackageParseError(t *testing.T) {
 
 // seedRuleCenterLikePackage builds a kitex template package that mirrors the
 // rule-center preset: it skips the default per-layer templates, carries its own
-// schema/*.sql files and a custom layout.yaml.
+// schema/*.sql files, a custom layout.yaml, and a ratelimit_shared_* fragment
+// (as the preset would provide).
 func seedRuleCenterLikePackage(t *testing.T) string {
 	t.Helper()
 	pkg := t.TempDir()
 	os.WriteFile(filepath.Join(pkg, "template.yaml"), []byte("name: rule-center-like\nkind: kitex\nskip_default_templates:\n  - handler.yaml\n  - server.yaml\n  - usecase.yaml\n  - repository.yaml\n"), 0644)
 	os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0755)
 	os.WriteFile(filepath.Join(pkg, "kitex-template", "test.yaml"), []byte("path: main.go\nupdate_behavior:\n  type: cover\nbody: |\n  package main\n"), 0644)
+	os.WriteFile(filepath.Join(pkg, "kitex-template", "ratelimit_shared_resolver.yaml"), []byte("path: internal/service/ratelimit/resolver.go\nupdate_behavior:\n  type: cover\nbody: |\n  package ratelimit\n"), 0644)
 	os.MkdirAll(filepath.Join(pkg, "schema"), 0755)
 	os.WriteFile(filepath.Join(pkg, "schema", "000002_rate_limit_rules.sql"), []byte("-- {{.Module}}\nCREATE TABLE rate_limit_rules (id bigint);"), 0644)
 	os.WriteFile(filepath.Join(pkg, "layout.yaml"), []byte("templates:\n  - path: main.go\n"), 0644)
@@ -135,17 +137,34 @@ func TestGenerateTemplatePackageRuleCenterLike(t *testing.T) {
 	if _, err := Generate(context.Background(), opts); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
-	// The package's test.yaml replaces the embedded template set, and the
-	// default per-layer templates are skipped.
+	// With a non-empty skip_default_templates the overlay MERGES: the package's
+	// own templates land in the template dir, retained non-skipped embedded
+	// defaults stay, and the skipped per-layer defaults are dropped.
 	kitexTpl := filepath.Join(opts.Dir, "template", "kitex-template")
 	if _, err := os.Stat(filepath.Join(kitexTpl, "test.yaml")); err != nil {
 		t.Errorf("package template test.yaml missing: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(kitexTpl, "ratelimit_shared_resolver.yaml")); err != nil {
+		t.Errorf("package template ratelimit_shared_resolver.yaml missing: %v", err)
+	}
+	// Non-skipped embedded defaults must be retained by the merge, proving
+	// preset equivalence (the preset path keeps these too).
+	for _, kept := range []string{"main.yaml", "client.yaml", "conf.yaml", "data.yaml", "interceptor.yaml", "makefile.yaml", "migration_init.yaml", "rpcerror.yaml", "ratelimit_middleware.yaml"} {
+		if _, err := os.Stat(filepath.Join(kitexTpl, kept)); err != nil {
+			t.Errorf("retained embedded default %s missing after merge: %v", kept, err)
+		}
 	}
 	if _, err := os.Stat(filepath.Join(kitexTpl, "handler.yaml")); err == nil {
 		t.Error("default handler.yaml should be skipped")
 	}
 	if _, err := os.Stat(filepath.Join(kitexTpl, "server.yaml")); err == nil {
 		t.Error("default server.yaml should be skipped")
+	}
+	if _, err := os.Stat(filepath.Join(kitexTpl, "usecase.yaml")); err == nil {
+		t.Error("default usecase.yaml should be skipped")
+	}
+	if _, err := os.Stat(filepath.Join(kitexTpl, "repository.yaml")); err == nil {
+		t.Error("default repository.yaml should be skipped")
 	}
 	// Package schema is copied and rendered with the module variable.
 	schema, err := os.ReadFile(filepath.Join(opts.Dir, "internal", "db", "schema", "000002_rate_limit_rules.sql"))

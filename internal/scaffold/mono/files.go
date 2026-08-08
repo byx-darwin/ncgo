@@ -471,14 +471,44 @@ func copyHertzTemplateYAML(dir string, srcFS fs.FS) error {
 // effect before writeTemplate runs.
 func overlayTemplatePackage(dir string, opts Options, pkg *scaffoldtemplate.Package) (bool, error) {
 	kind := defaultKind(opts.Kind)
-	// Replace (not merge) the embedded per-file template set with the
-	// package's <kind>-template yamls.
 	tplTarget := filepath.Join(dir, "template", kind+"-template")
 	if err := os.RemoveAll(tplTarget); err != nil {
 		return false, fmt.Errorf("scaffold: remove %s: %w", tplTarget, err)
 	}
 	if err := os.MkdirAll(tplTarget, 0o755); err != nil {
 		return false, fmt.Errorf("scaffold: mkdir %s: %w", tplTarget, err)
+	}
+	// A preset-like package (non-empty skip_default_templates, e.g. rule-center)
+	// MERGES: it retains the embedded default templates that are NOT in the skip
+	// list, then overlays the package's own templates on top (package wins on
+	// filename conflict). This keeps main.yaml/client.yaml/conf.yaml/data.yaml/
+	// interceptor.yaml/makefile.yaml/migration_*.yaml/rpcerror*.yaml and the
+	// embedded ratelimit_* files that the equivalent preset would retain. A
+	// package without a skip list fully REPLACES the embedded set (backward
+	// compatible).
+	if len(pkg.Meta.SkipDefaultTemplates) > 0 {
+		srcFS := assets.FS()
+		assetDir := kind + "/" + kind + "-template"
+		entries, err := fs.ReadDir(srcFS, assetDir)
+		if err != nil {
+			return false, fmt.Errorf("scaffold: read embedded %s: %w", assetDir, err)
+		}
+		for _, e := range entries {
+			if e.IsDir() {
+				continue
+			}
+			name := e.Name()
+			if slices.Contains(pkg.Meta.SkipDefaultTemplates, name) {
+				continue
+			}
+			b, err := fs.ReadFile(srcFS, assetDir+"/"+name)
+			if err != nil {
+				return false, fmt.Errorf("scaffold: read embedded %s/%s: %w", assetDir, name, err)
+			}
+			if err := os.WriteFile(filepath.Join(tplTarget, name), b, 0o644); err != nil {
+				return false, fmt.Errorf("scaffold: write %s: %w", name, err)
+			}
+		}
 	}
 	for _, src := range pkg.Templates {
 		b, err := os.ReadFile(src)
