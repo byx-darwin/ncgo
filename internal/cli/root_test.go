@@ -253,3 +253,21 @@ func TestRequiredToolsUsesInstallHint(t *testing.T) {
 		t.Errorf("installCmd %q should equal InstallHint(%q)", need[0].installCmd, "hz")
 	}
 }
+
+func TestAddRPCCmdHasTemplateFlags(t *testing.T) {
+	cmd := newAddRPCCmd()
+	for _, name := range []string{"template", "template-dir"} {
+		if f := cmd.Flags().Lookup(name); f == nil {
+			t.Errorf("add rpc missing --%s flag", name)
+		}
+	}
+}
+
+func TestAddBFFCmdHasPresetAndTemplateFlags(t *testing.T) {
+	cmd := newAddBFFCmd()
+	for _, name := range []string{"preset", "template", "template-dir"} {
+		if f := cmd.Flags().Lookup(name); f == nil {
+			t.Errorf("add bff missing --%s flag", name)
+		}
+	}
+}
