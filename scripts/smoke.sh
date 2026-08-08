@@ -120,6 +120,36 @@ grep -q 'all checks passed' "$TMP_DIR/check-ok.out"
 log "ncgo check exits 2 on a non-project root"
 "$BIN" check --root "$TMP_DIR" >"$TMP_DIR/check-err.out" 2>&1 && { echo "check should have failed"; exit 1; } || true
 
+log "generated project passes ncgo check (dogfooding)"
+GEN_ROOT="$TMP_DIR/gen-check"
+"$BIN" new gen-check --module github.com/x/gen-check --kind hertz --no-generate --dir "$GEN_ROOT" >/dev/null
+"$BIN" check --root "$GEN_ROOT" >"$TMP_DIR/gen-check.out"
+grep -q 'all checks passed' "$TMP_DIR/gen-check.out"
+
+log "broken anchor fails ncgo check (negative)"
+# A fresh `ncgo new --no-generate` project writes no internal/usecase files,
+# so add one with paired anchors to the generated project before breaking it.
+cat >>"$GEN_ROOT/.ncgo/manifest.yaml" <<'YAML'
+domains:
+  - demo
+YAML
+mkdir -p "$GEN_ROOT/internal/usecase/demo"
+cat >"$GEN_ROOT/internal/usecase/demo/demo.go" <<'GO'
+package demo
+
+type UseCase struct{}
+
+// ncgo:methods:start
+// ncgo:methods:end
+GO
+USE_CASE=$(find "$GEN_ROOT/internal/usecase" -name '*.go' | head -1)
+test -n "$USE_CASE"
+grep -q 'ncgo:methods:start' "$USE_CASE"
+"$BIN" check --root "$GEN_ROOT" >/dev/null 2>&1 || { echo "healthy generated project failed ncgo check"; exit 1; }
+# Remove the start anchor (portable grep+mv; works on GNU and BSD sed hosts).
+grep -v 'ncgo:methods:start' "$USE_CASE" >"$USE_CASE.tmp" && mv "$USE_CASE.tmp" "$USE_CASE"
+"$BIN" check --root "$GEN_ROOT" >/dev/null 2>&1 && { echo "check should have failed"; exit 1; } || true
+
 log "add infra redis generates Redis data helper (hertz)"
 REDIS_ROOT="$TMP_DIR/add-redis"
 write_manifest "$REDIS_ROOT/.ncgo/manifest.yaml" github.com/acme/demo hertz demo
