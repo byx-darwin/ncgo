@@ -2,7 +2,7 @@
 
 - **Date**: 2026-08-09
 - **Workflow**: wf-2026-08-09-057（gf-workflow full mode）
-- **Status**: Pending user review（brainstorming 阶段各 section 已批准；spec 文件待用户最终确认）
+- **Status**: Approved
 - **Related specs**: `docs/superpowers/specs/2026-08-08-template-registry-closed-loop-design.md`
 - **Issue**: #57
 
