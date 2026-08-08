@@ -56,6 +56,37 @@ func isolateCache(t *testing.T) {
 	t.Setenv("HOME", t.TempDir())
 }
 
+// scrubGitEnv unsets git environment variables that the outer pre-push hook
+// leaks into the test process (git sets GIT_DIR and friends when running a
+// hook, and pre-commit forwards them into `go test`). Left in place, fixture
+// git commands resolve against the outer repository instead of t.TempDir().
+// Original values are restored when the test finishes.
+func scrubGitEnv(t *testing.T) {
+	t.Helper()
+	unset := func(key string) {
+		if v, ok := os.LookupEnv(key); ok {
+			os.Unsetenv(key)
+			key, value := key, v
+			t.Cleanup(func() { os.Setenv(key, value) })
+		}
+	}
+	for _, key := range []string{
+		"GIT_DIR", "GIT_WORK_TREE", "GIT_INDEX_FILE", "GIT_COMMON_DIR",
+		"GIT_OBJECT_DIRECTORY", "GIT_CEILING_DIRECTORIES",
+		"GIT_CONFIG_COUNT", "GIT_CONFIG_GLOBAL", "GIT_CONFIG_SYSTEM",
+	} {
+		unset(key)
+	}
+	// pre-commit forwards GIT_CONFIG_KEY_*/GIT_CONFIG_VALUE_* entries; scrub
+	// any remaining GIT_CONFIG-prefixed variable.
+	for _, kv := range os.Environ() {
+		key, _, _ := strings.Cut(kv, "=")
+		if strings.HasPrefix(key, "GIT_CONFIG") {
+			unset(key)
+		}
+	}
+}
+
 // toolText extracts content[0].text from a result produced by a direct
 // handler call (before JSON round-trip, where content is []map[string]string).
 func toolText(result map[string]any) string {
@@ -67,6 +98,7 @@ func toolText(result map[string]any) string {
 }
 
 func TestCallTemplateListFixture(t *testing.T) {
+	scrubGitEnv(t)
 	repo := registryFixture(t, map[string]string{
 		"base-kitex/template.yaml": "name: base-kitex\nkind: kitex\ndescription: base kitex\n",
 	})
@@ -96,6 +128,7 @@ func TestCallTemplateListFixture(t *testing.T) {
 }
 
 func TestCallTemplateListRegistryUnavailable(t *testing.T) {
+	scrubGitEnv(t)
 	if _, err := goexec.LookPath("git"); err != nil {
 		t.Skip("git not available on PATH")
 	}
@@ -114,6 +147,7 @@ func TestCallTemplateListRegistryUnavailable(t *testing.T) {
 }
 
 func TestCallTemplatePullMissing(t *testing.T) {
+	scrubGitEnv(t)
 	repo := registryFixture(t, map[string]string{
 		"base-hertz/template.yaml": "name: base-hertz\nkind: hertz\ndescription: base hertz\n",
 	})
@@ -132,6 +166,7 @@ func TestCallTemplatePullMissing(t *testing.T) {
 }
 
 func TestCallTemplatePullFixture(t *testing.T) {
+	scrubGitEnv(t)
 	repo := registryFixture(t, map[string]string{
 		"base-kitex/template.yaml": "name: base-kitex\nkind: kitex\ndescription: base kitex\n",
 	})
@@ -208,6 +243,7 @@ func TestTemplateToolsSchema(t *testing.T) {
 // ncgo_template_list, verifying the tools/call switch dispatch and the
 // JSON round-trip shape of the structured templates field.
 func TestServeTemplateListDispatch(t *testing.T) {
+	scrubGitEnv(t)
 	repo := registryFixture(t, map[string]string{
 		"base-kitex/template.yaml": "name: base-kitex\nkind: kitex\ndescription: base kitex\n",
 	})
