@@ -512,6 +512,72 @@ and `defer provider.Shutdown()` before `server.Run` exits.
 > is unified on Polaris. The legacy `otel` / `registry_etcd` kinds now
 > return invalid kind.
 
+#### Rate Limit (`middleware/ratelimit.go` + `pkg/ratelimit/`, kitex-only)
+
+`ncgo add infra rate_limit` (alias: `rate-limit`) adds dynamic rate-limit
+enforcement to the generated Kitex service. It is a kitex-only add-on;
+the Hertz counterpart is wired through the Hertz middleware pipeline
+and documented separately.
+
+- **Files added:**
+  - `internal/base/middleware/ratelimit.go` — kitex `endpoint.Middleware`
+    that resolves a rule per RPC and calls `store.Allow`. Shadow mode
+    (default) counts denials via `expvar` and structured logs but never
+    rejects; `mode: enforce` flips the same code path to return
+    `rpcerror.RateLimited`.
+  - `internal/pkg/ratelimit/resolver.go` (+ `_test.go`) — framework-agnostic
+    rule resolver. Sources: `config` (static YAML rules), `database`
+    (Postgres via sqlc-generated queries), `rule_center` (remote gRPC),
+    `grpc` (inline gRPC client).
+  - `internal/pkg/ratelimit/store.go` (+ `_test.go`) — counter backend.
+    `backend: memory` uses an in-process sliding window; `backend: redis`
+    delegates to `go-redis` for distributed counting.
+
+- **Config (`conf/dev/conf.yaml`):**
+  ```yaml
+  rate_limit:
+    enabled: true
+    mode: shadow            # shadow | enforce
+    backend: memory         # memory | redis
+    fail_open: true
+    source:
+      type: config          # config | database | rule_center | grpc
+      cache_ttl_seconds: 60s
+      fallback_on_error: true
+    static:
+      max_qps: 0            # global safety-net QPS cap (0 = disabled)
+      max_connections: 0
+  ```
+  `ncgo add infra rate_limit` appends this block if absent, or flips
+  `enabled: true` + `mode: shadow` inside the existing `rate_limit:`
+  scope (other keys are left untouched).
+
+- **Shadow → enforce rollout** (from `setupSteps`):
+  1. Review the generated `rate_limit` block; choose `source.type`
+     (`config` for static rules, `database` for sqlc-managed rules,
+     `rule_center` for remote rule service).
+  2. Deploy with `mode: shadow`. Observe shadow denials:
+     `grep 'ratelimit shadow denied'` in structured logs, or read the
+     `ratelimit_shadow_denied` expvar map.
+  3. When shadow decisions match expectations, set `mode: enforce`.
+  4. Optional: set `static.max_qps` / `static.max_connections` for a
+     coarse global safety net.
+
+- **Wiring** (in `server.go`):
+  ```go
+  import "my-api/internal/base/middleware"
+
+  // Add to the kitex server middleware chain:
+  svr := service.New(..., server.WithMiddleware(middleware.RateLimit(cfg.RateLimit)))
+  ```
+  The middleware reads `cfg.RateLimit` (type `conf.RateLimitConfig`);
+  the rule-center gRPC client, when `source.type: rule_center`, is
+  constructed lazily from the same config block — no manual wiring.
+
+- **Dependencies:** `github.com/redis/go-redis/v9` (when `backend: redis`
+  or `source.type: database`); rule-center source also pulls
+  `google.golang.org/grpc`.
+
 ## 4. Files
 
 | File | Purpose |
@@ -530,6 +596,8 @@ and `defer provider.Shutdown()` before `server.Run` exits.
 | `kitex/kitex-template/makefile.yaml` | Makefile targets (`make dev`, `make sqlc`, ...) |
 | `kitex/sqlc.yaml` | sqlc config, structurally identical to the Hertz version |
 | `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris,observability_logging,release_canary,polaris_canary_adapter,polaris_canary_observer_otel}.go` | `add infra` snippets for the kitex family |
+| `kitex/kitex-template/ratelimit_middleware.yaml` | Kitex rate-limit middleware (`internal/base/middleware/ratelimit.go`) |
+| `ratelimit/{resolver,resolver_test,store,store_test}.yaml` | Shared rate-limit resolver + store fragments (`internal/pkg/ratelimit/`) |
 | `optional/{observability_logging,release_canary}.go` | Shared add-ons (logging helpers, SDK-neutral canary model) |
 | `optional/release_ops.go` | Production-hardening decorators for canary seam |
 
@@ -582,9 +650,10 @@ Currently shipped: `redis`, `kafka`, `es`, `clickhouse`,
 `observability_logging` (structured logging interceptors),
 `release_canary` (SDK-neutral canary model + Hertz/Kitex traffic
 adapters), and Kitex-only `registry_polaris` (service registry),
-`polaris_adapter` (Polaris canary routing adapter). Observability tracing
-is provided by the kitex base template (go-framework OTLP) and no longer
-ships as a standalone add-on.
+`polaris_adapter` (Polaris canary routing adapter),
+`rate_limit` (dynamic rate-limit middleware + resolver + store).
+Observability tracing is provided by the kitex base template
+(go-framework OTLP) and no longer ships as a standalone add-on.
 
 ## 7. Differences from Hertz
 
