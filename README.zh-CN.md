@@ -300,6 +300,30 @@ ncgo new user-api --module github.com/acme/user-api --kind kitex --no-generate
 以及 `scripts/run-go-module-checks.sh`，方便协作者启用 `pre-commit` /
 `pre-push` 对一个或多个 Go module 执行统一检查。
 
+### 自动后处理步骤
+
+`ncgo new` 成功生成项目后，会自动执行：
+- `go mod tidy` — 解析 Go 模块依赖
+- `ncgo ai sync --target claude` — 渲染 AI 上下文文件（CLAUDE.md 等）
+
+这些步骤使生成的项目可立即被 AI agent 使用。
+
+**Flags:**
+- `--ai-target <target>` — AI sync 目标：`claude`（默认）| `all` | `agents` | `cursor` | `none`
+- `--no-auto-steps` — 跳过自动后处理步骤
+
+**示例：**
+```bash
+# 默认：自动运行 go mod tidy + ai sync（target=claude）
+ncgo new user-api --module github.com/acme/user-api
+
+# 跳过自动步骤
+ncgo new user-api --module github.com/acme/user-api --no-auto-steps
+
+# 渲染所有 AI 目标（agents + claude + cursor）
+ncgo new user-api --module github.com/acme/user-api --ai-target all
+```
+
 ## AI 上下文
 
 如需先初始化 hand-authored 的 `.claude` starter files，可先运行：

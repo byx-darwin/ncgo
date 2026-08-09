@@ -9,6 +9,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/postgenerate"
 	"github.com/byx-darwin/ncgo/internal/registry"
 	"github.com/byx-darwin/ncgo/internal/scaffold/micro"
 	"github.com/byx-darwin/ncgo/internal/scaffold/mono"
@@ -27,6 +28,9 @@ var newMCPTool = structuredMCPTool[*newResult]{
 		if res.RanGenerate != nil {
 			out["ranGenerate"] = *res.RanGenerate
 		}
+		if len(res.AutoSteps) > 0 {
+			out["autoSteps"] = res.AutoSteps
+		}
 		return out
 	},
 	isError: func(*newResult) bool { return false },
@@ -37,7 +41,8 @@ type newResult struct {
 	Dir         string
 	NextSteps   []string
 	Mode        string
-	RanGenerate *bool // only set for mono mode
+	RanGenerate *bool                     // only set for mono mode
+	AutoSteps   []postgenerate.StepResult `json:",omitempty"`
 }
 
 func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersion string) (map[string]any, error) {
@@ -55,6 +60,8 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 		Template       string   `json:"template"`
 		TemplateDir    string   `json:"templateDir"`
 		Output         string   `json:"output"`
+		AITarget       string   `json:"aiTarget"`
+		NoAutoSteps    bool     `json:"noAutoSteps"`
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
@@ -81,7 +88,7 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 	}
 	switch args.Mode {
 	case manifest.ModeMono:
-		res, err = runNewMono(ctx, args.Name, args.Module, dir, args.Kind, args.DB, args.Infra, args.NoGenerate, args.Preset, args.RuleCenterAddr, ncgoVersion, assetsVersion)
+		res, err = runNewMono(ctx, args.Name, args.Module, dir, args.Kind, args.DB, args.Infra, args.NoGenerate, args.Preset, args.RuleCenterAddr, args.AITarget, args.NoAutoSteps, ncgoVersion, assetsVersion)
 	case manifest.ModeMicro:
 		var templateDir string
 		templateDir, err = registry.ResolveTemplateDir(args.Template, args.TemplateDir)
@@ -106,7 +113,7 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 	return out, nil
 }
 
-func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra []string, noGenerate bool, preset, ruleCenterAddr, ncgoVersion, assetsVersion string) (*newResult, error) {
+func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra []string, noGenerate bool, preset, ruleCenterAddr, aiTarget string, noAutoSteps bool, ncgoVersion, assetsVersion string) (*newResult, error) {
 	if kind == "" {
 		kind = manifest.KindHertz
 	}
@@ -129,12 +136,30 @@ func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra [
 	if err != nil {
 		return nil, err
 	}
+
+	// Run auto post-generation steps
+	var autoSteps []postgenerate.StepResult
+	nextSteps := res.NextSteps
+	if res.RanGenerate {
+		pgResult := postgenerate.Run(postgenerate.Options{
+			Dir:         res.Dir,
+			AITarget:    aiTarget,
+			NoAutoSteps: noAutoSteps,
+			RanGenerate: res.RanGenerate,
+			Stdout:      io.Discard, // MCP doesn't print progress
+		})
+		autoSteps = pgResult.Steps
+		// Remove auto-executed steps from NextSteps (parity with CLI).
+		nextSteps = pgResult.FilterNextSteps(nextSteps)
+	}
+
 	ran := res.RanGenerate
 	return &newResult{
 		Dir:         res.Dir,
-		NextSteps:   res.NextSteps,
+		NextSteps:   nextSteps,
 		Mode:        manifest.ModeMono,
 		RanGenerate: &ran,
+		AutoSteps:   autoSteps,
 	}, nil
 }
 
@@ -169,10 +194,20 @@ func formatMCPNewOutput(res *newResult, output string) (string, error) {
 					return err
 				}
 			}
+			if len(res.AutoSteps) > 0 {
+				if _, err := fmt.Fprintf(w, "\nauto steps:\n"); err != nil {
+					return err
+				}
+				for _, s := range res.AutoSteps {
+					if _, err := fmt.Fprintf(w, "  %s: %s %s\n", s.Name, s.Status, s.Detail); err != nil {
+						return err
+					}
+				}
+			}
 			return nil
 		},
 		mcpOutputJSON: func(w io.Writer) error {
-			return writeJSONOutput(w, map[string]any{
+			out := map[string]any{
 				"dir":       res.Dir,
 				"nextSteps": res.NextSteps,
 				"mode":      res.Mode,
@@ -182,7 +217,11 @@ func formatMCPNewOutput(res *newResult, output string) (string, error) {
 					}
 					return nil
 				}(),
-			})
+			}
+			if len(res.AutoSteps) > 0 {
+				out["autoSteps"] = res.AutoSteps
+			}
+			return writeJSONOutput(w, out)
 		},
 	})
 }

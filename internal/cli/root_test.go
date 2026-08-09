@@ -10,6 +10,7 @@ import (
 
 	goexec "github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/postgenerate"
 )
 
 func TestRootCmdIncludesProtolintCommand(t *testing.T) {
@@ -91,6 +92,70 @@ func TestNewCmdHasTemplateFlag(t *testing.T) {
 	}
 	if f.DefValue != "" {
 		t.Errorf("--template default = %q, want empty", f.DefValue)
+	}
+}
+
+func TestNewCmdHasAITargetFlag(t *testing.T) {
+	cmd := newNewCmd()
+	f := cmd.Flags().Lookup("ai-target")
+	if f == nil {
+		t.Fatal("--ai-target flag not registered on ncgo new")
+	}
+	if f.DefValue != "claude" {
+		t.Errorf("--ai-target default = %q, want claude", f.DefValue)
+	}
+}
+
+func TestNewCmdHasNoAutoStepsFlag(t *testing.T) {
+	cmd := newNewCmd()
+	f := cmd.Flags().Lookup("no-auto-steps")
+	if f == nil {
+		t.Fatal("--no-auto-steps flag not registered on ncgo new")
+	}
+	if f.DefValue != "false" {
+		t.Errorf("--no-auto-steps default = %q, want false", f.DefValue)
+	}
+}
+
+func TestFilterAutoSteps(t *testing.T) {
+	succeeded := &postgenerate.Result{
+		Steps: []postgenerate.StepResult{
+			{Name: "go mod tidy", Status: "succeeded"},
+			{Name: "ai sync", Status: "succeeded"},
+		},
+	}
+	steps := []string{"go mod tidy", "ncgo ai sync --target all --root .", "hz update", "make lint"}
+	got := filterAutoSteps(steps, succeeded)
+	want := []string{"hz update", "make lint"}
+	if len(got) != len(want) {
+		t.Fatalf("filterAutoSteps len = %d, want %d (got %v)", len(got), len(want), got)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("filterAutoSteps[%d] = %q, want %q", i, got[i], want[i])
+		}
+	}
+}
+
+func TestFilterAutoStepsKeepsFailedAndSkipped(t *testing.T) {
+	failed := &postgenerate.Result{
+		Steps: []postgenerate.StepResult{
+			{Name: "go mod tidy", Status: "failed"},
+			{Name: "ai sync", Status: "skipped"},
+		},
+	}
+	steps := []string{"go mod tidy", "ncgo ai sync --target all --root ."}
+	got := filterAutoSteps(steps, failed)
+	if len(got) != 2 {
+		t.Errorf("filterAutoSteps should keep steps when not succeeded, got %v", got)
+	}
+}
+
+func TestFilterAutoStepsNilResult(t *testing.T) {
+	steps := []string{"go mod tidy", "ncgo ai sync --target all --root ."}
+	got := filterAutoSteps(steps, nil)
+	if len(got) != 2 {
+		t.Errorf("filterAutoSteps(nil) should keep all steps, got %v", got)
 	}
 }
 

@@ -356,6 +356,30 @@ modules.
 These files make future IDL updates reproducible (`make update` in generated
 Kitex projects, equivalent generator command for Hertz).
 
+### Auto Post-Generation Steps
+
+After `ncgo new` successfully generates a project, it automatically runs:
+- `go mod tidy` — resolves Go module dependencies
+- `ncgo ai sync --target claude` — renders AI context files (CLAUDE.md, etc.)
+
+These steps make the generated project immediately usable by AI agents.
+
+**Flags:**
+- `--ai-target <target>` — AI sync target: `claude` (default) | `all` | `agents` | `cursor` | `none`
+- `--no-auto-steps` — skip automatic post-generation steps
+
+**Examples:**
+```bash
+# Default: auto-run go mod tidy + ai sync (target=claude)
+ncgo new user-api --module github.com/acme/user-api
+
+# Skip auto steps
+ncgo new user-api --module github.com/acme/user-api --no-auto-steps
+
+# Render all AI targets (agents + claude + cursor)
+ncgo new user-api --module github.com/acme/user-api --ai-target all
+```
+
 ## AI Context
 
 Optionally bootstrap hand-authored `.claude` starter files once:

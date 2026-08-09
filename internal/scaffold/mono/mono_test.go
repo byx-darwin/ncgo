@@ -3,6 +3,7 @@ package mono
 import (
 	"context"
 	"encoding/json"
+	"io"
 	"os"
 	osexec "os/exec"
 	"path/filepath"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/postgenerate"
 )
 
 type fakeRunner struct {
@@ -1489,6 +1491,61 @@ func TestValidateRejectsBadInputs(t *testing.T) {
 				t.Errorf("expected error")
 			}
 		})
+	}
+}
+
+// TestGenerate_AutoSteps_Default verifies that postgenerate.Run correctly
+// executes auto post-generation steps (go mod tidy + ai sync) after a
+// successful mono.Generate with the real hz generator. It is skipped in
+// -short mode or when hz is not on PATH.
+func TestGenerate_AutoSteps_Default(t *testing.T) {
+	if testing.Short() {
+		t.Skip("skipping integration test in short mode")
+	}
+	if _, err := exec.LookPath("hz"); err != nil {
+		t.Skip("hz not on PATH")
+	}
+
+	opts := baseOpts(t)
+	opts.NoGenerate = false // use real runner to actually generate with hz
+
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !res.RanGenerate {
+		t.Fatal("expected RanGenerate=true")
+	}
+
+	// Simulate what the CLI does: run post-generation auto steps
+	pgResult := postgenerate.Run(postgenerate.Options{
+		Dir:         res.Dir,
+		AITarget:    "claude",
+		RanGenerate: res.RanGenerate,
+		Stdout:      io.Discard,
+	})
+
+	// Verify both auto steps succeeded
+	var tidyOk, aiSyncOk bool
+	for _, step := range pgResult.Steps {
+		if step.Name == "go mod tidy" && step.Status == "succeeded" {
+			tidyOk = true
+		}
+		if step.Name == "ai sync" && step.Status == "succeeded" {
+			aiSyncOk = true
+		}
+	}
+	if !tidyOk {
+		t.Errorf("go mod tidy did not succeed, steps: %+v", pgResult.Steps)
+	}
+	if !aiSyncOk {
+		t.Errorf("ai sync did not succeed, steps: %+v", pgResult.Steps)
+	}
+
+	// After ai sync runs, CLAUDE.md should exist at the project root
+	claudePath := filepath.Join(res.Dir, "CLAUDE.md")
+	if _, err := os.Stat(claudePath); err != nil {
+		t.Errorf("expected %s to exist after auto steps: %v", claudePath, err)
 	}
 }
 
