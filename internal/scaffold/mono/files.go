@@ -1087,8 +1087,10 @@ func reapplyTemplateFiles(dir string, opts Options) error {
 			}
 		}
 		rendered, err := scaffoldtemplate.Render(tpl.Body, scaffoldtemplate.RenderData{
-			Module:      opts.Module,
-			ServiceName: serviceNameForFiles,
+			Module:       opts.Module,
+			ServiceName:  serviceNameForFiles,
+			WithDatabase: opts.WithDatabase,
+			Infra:        opts.Infra,
 		})
 		if err != nil {
 			// Log the error but continue with other templates
