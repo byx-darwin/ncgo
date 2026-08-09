@@ -1059,6 +1059,11 @@ func reapplyTemplateFiles(dir string, opts Options) error {
 		if tpl.Path == "" {
 			continue
 		}
+		// Skip templates with conditions that are not met
+		// Currently only "WithDatabase" is supported
+		if tpl.Condition == "WithDatabase" && !opts.WithDatabase {
+			continue
+		}
 		// Render the path to replace template variables like {{ToLower .ServiceName}}
 		// Use the hz-compatible service name (with underscores)
 		renderedPath, err := scaffoldtemplate.Render(tpl.Path, scaffoldtemplate.RenderData{
