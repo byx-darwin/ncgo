@@ -1096,7 +1096,11 @@ func reapplyTemplateFiles(dir string, opts Options) error {
 	for _, f := range hyphenatedFiles {
 		if _, err := os.Stat(f); err == nil {
 			// Check if the correctly-named file exists
-			correctName := strings.ReplaceAll(f, opts.Name, serviceNameForFiles)
+			// Only replace in the filename, not the entire path
+			dir := filepath.Dir(f)
+			base := filepath.Base(f)
+			correctBase := strings.ReplaceAll(base, opts.Name, serviceNameForFiles)
+			correctName := filepath.Join(dir, correctBase)
 			if _, err := os.Stat(correctName); err == nil {
 				// Both files exist, delete the hyphenated one
 				if err := os.Remove(f); err != nil {
