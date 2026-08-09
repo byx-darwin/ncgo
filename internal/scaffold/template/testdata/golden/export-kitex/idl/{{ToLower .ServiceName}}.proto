@@ -1,5 +1,5 @@
 syntax = "proto3";
-package userrpc;
+package {{ToLower .ServiceName}};
 
 option go_package = "{{.Module}}/kitex_gen/{{ToLower .ServiceName}}";
 

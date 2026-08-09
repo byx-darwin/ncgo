@@ -70,7 +70,7 @@ func TestGenerateTemplatePackageKitex(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rendered idl missing: %v", err)
 	}
-	if !strings.Contains(string(body), "service demo {}") {
+	if !strings.Contains(string(body), "service Demo {}") {
 		t.Errorf("service name not rendered:\n%s", body)
 	}
 }
@@ -197,7 +197,7 @@ func TestGenerateTemplatePackageRuleCenterLike(t *testing.T) {
 	if err != nil {
 		t.Fatalf("rendered idl missing: %v", err)
 	}
-	if !strings.Contains(string(idlBody), "service demo {}") {
+	if !strings.Contains(string(idlBody), "service Demo {}") {
 		t.Errorf("service name not rendered:\n%s", idlBody)
 	}
 }

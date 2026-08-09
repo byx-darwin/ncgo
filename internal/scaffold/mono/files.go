@@ -610,7 +610,7 @@ func overlayTemplatePackage(dir string, opts Options, pkg *scaffoldtemplate.Pack
 		}
 		rendered, err := scaffoldtemplate.Render(string(b), scaffoldtemplate.RenderData{
 			Module:      opts.Module,
-			ServiceName: opts.Name,
+			ServiceName: exportName(opts.Name),
 		})
 		if err != nil {
 			return false, fmt.Errorf("scaffold: render package idl %s: %w", rel, err)
@@ -1024,6 +1024,47 @@ func updateManifestDomainsFromUsecases(dir string) error {
 	m.Domains = domains
 	if err := manifest.Save(dir, m); err != nil {
 		return fmt.Errorf("scaffold: save manifest: %w", err)
+	}
+	return nil
+}
+
+// reapplyTemplateRootFiles re-applies root-level templates (main.go, Makefile)
+// from an external template package after hz has run. hz regenerates files
+// based on layout.yaml, which may have empty bodies for root-level files,
+// overwriting the content that overlayTemplatePackage wrote earlier.
+func reapplyTemplateRootFiles(dir string, opts Options) error {
+	tplDir := filepath.Join(dir, "template", "hertz-template")
+	entries, err := os.ReadDir(tplDir)
+	if err != nil {
+		return nil // no template dir, nothing to reapply
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		b, err := os.ReadFile(filepath.Join(tplDir, e.Name()))
+		if err != nil {
+			continue
+		}
+		var tpl scaffoldtemplate.TemplateFile
+		if err := yaml.Unmarshal(b, &tpl); err != nil {
+			continue
+		}
+		// Only reapply root-level files (no "/" in path)
+		if tpl.Path == "" || strings.Contains(tpl.Path, "/") {
+			continue
+		}
+		rendered, err := scaffoldtemplate.Render(tpl.Body, scaffoldtemplate.RenderData{
+			Module:      opts.Module,
+			ServiceName: opts.Name,
+		})
+		if err != nil {
+			continue
+		}
+		full := filepath.Join(dir, filepath.FromSlash(tpl.Path))
+		if err := os.WriteFile(full, []byte(rendered), 0o644); err != nil {
+			return fmt.Errorf("scaffold: reapply %s: %w", tpl.Path, err)
+		}
 	}
 	return nil
 }

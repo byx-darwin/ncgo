@@ -204,6 +204,13 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 			Infra:        opts.Infra,
 			Services:     services,
 		})
+		// Re-apply external template package's root-level files (main.go, Makefile)
+		// that hz may have overwritten based on layout.yaml (which often has empty bodies).
+		if opts.TemplateDir != "" {
+			if err := reapplyTemplateRootFiles(dir, opts); err != nil {
+				return res, err
+			}
+		}
 	}
 
 	if err := addSelectedInfra(dir, opts.Infra); err != nil {

@@ -162,6 +162,12 @@ func exportIDLs(root string, opts ExportOptions) ([]string, error) {
 		if strings.HasPrefix(rel, "openapi/") || strings.HasPrefix(rel, "validate/") {
 			return nil
 		}
+		// Skip api.proto for Hertz: it's a standard hz support file that ncgo
+		// writes via writeHertzProtoSupportFiles. Exporting it would cause
+		// "Input is shadowed" errors when the template is consumed.
+		if opts.Kind == "hertz" && rel == "api.proto" {
+			return nil
+		}
 		content, err := os.ReadFile(path)
 		if err != nil {
 			return fmt.Errorf("read %s: %w", rel, err)
@@ -261,6 +267,11 @@ func fileToTemplate(_ string, absPath, relPath string, opts ExportOptions, rule 
 	// Replace service name identifiers
 	body = replaceServiceName(body, opts.ServiceName)
 
+	// Note: Go code containing {{ or }} (e.g., composite literals followed by
+	// closing braces like `map[T]V{}}`) may cause template parse errors when
+	// the exported template is applied. Users may need to manually edit such
+	// templates to escape these patterns.
+
 	// Compute template path
 	tplPath := templatePath(relPath, rule, svcNameLower)
 
@@ -294,8 +305,14 @@ func replaceServiceName(body, serviceName string) string {
 	// myuserrpc) are left untouched.
 	lower := serviceNameLower(serviceName)
 	if lower != "" {
-		segRE := regexp.MustCompile(`(^|[\s/."'])` + regexp.QuoteMeta(lower) + `($|[\s/."'])`)
-		body = segRE.ReplaceAllString(body, "${1}{{ToLower .ServiceName}}${2}")
+		// Boundary chars include common delimiters in proto/Go files: whitespace,
+		// slash, dot, quotes, semicolon (proto statement terminator), comma.
+		// We run the replacement twice to handle adjacent tokens like ";lower;lower"
+		// where the shared boundary would otherwise be consumed by the first match.
+		segRE := regexp.MustCompile(`(^|[\s/."';,])` + regexp.QuoteMeta(lower) + `($|[\s/."';,])`)
+		for i := 0; i < 2; i++ {
+			body = segRE.ReplaceAllString(body, "${1}{{ToLower .ServiceName}}${2}")
+		}
 	}
 
 	return body

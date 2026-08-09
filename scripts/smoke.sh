@@ -287,7 +287,7 @@ test -f "$EXPORT_SRC/template/idl/app/"'{{ToLower .ServiceName}}'".proto"
   --dir "$TMP_DIR/export-tgt" --template-dir "$EXPORT_SRC/template" >"$TMP_DIR/new.out"
 grep -q 'scaffolded exporttgt' "$TMP_DIR/new.out"
 test -f "$TMP_DIR/export-tgt/idl/app/exporttgt.proto"
-grep -q 'service exporttgt' "$TMP_DIR/export-tgt/idl/app/exporttgt.proto"
+grep -q 'service Exporttgt' "$TMP_DIR/export-tgt/idl/app/exporttgt.proto"
 # The rendered proto must still be valid proto (risk mitigation: variabilizing
 # must not break syntax). The --file flag matches the CLI (singular).
 "$BIN" protolint --root "$TMP_DIR/export-tgt" --file idl/app/exporttgt.proto >"$TMP_DIR/protolint.out" 2>&1 || {
