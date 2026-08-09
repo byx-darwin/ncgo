@@ -420,8 +420,7 @@ structured logging middleware under `internal/base/logging/`.
 
   logging.InitFromConf(cfg.Logging, goclog.ReleaseInfo{
       ServiceName: "my-api",
-      ServiceKind: "hertz",
-      Version:     release.Version,
+      Environment: cfg.Env,
   })
   ```
 
@@ -430,7 +429,7 @@ structured logging middleware under `internal/base/logging/`.
   logging:
     level: info          # debug | info | warn | error
     format: json         # json | text
-    mode: production     # production | development
+    mode: console        # console | file | both
     add_source: false
     file:
       dir: logs
@@ -445,7 +444,7 @@ structured logging middleware under `internal/base/logging/`.
   ```go
   func (h *Handler) GetUser(ctx context.Context, c *app.RequestContext) {
       reqID := logging.HertzRequestIDFromContext(c)
-      goclog.Biz(ctx).InfoContext(ctx, "getting user", "request_id", reqID)
+      goclog.App(ctx).InfoContext(ctx, "getting user", "request_id", reqID)
       // ...
   }
   ```
@@ -461,7 +460,10 @@ structured logging middleware under `internal/base/logging/`.
 | `hertz/package.yaml` | Custom `hz` package template: handler.go uses a `Handler` struct that delegates to a `useCase` interface, plus a usecase stub | `hz new --customize_package` |
 | `hertz/data.json` | Render-time variables for `layout.yaml` (`GoModule`, `ServiceName`, `WithDatabase`) | `hz new --customize_layout_data_path` |
 | `hertz/sqlc.yaml` | Reference sqlc config copied into projects with `--db postgres` | `mono` scaffolder |
-| `hertz/optional/{redis,kafka,es,clickhouse}.go` | Drop-in Go files for `ncgo add infra <kind>` | `internal/scaffold/infra` |
+| `hertz/optional/{redis,kafka,es,clickhouse,observability_logging,release_canary}.go` | Drop-in Go files for `ncgo add infra <kind>` | `internal/scaffold/infra` |
+| `optional/observability_logging.go` | Shared logging helpers (category constants, `WithRequestID`, `SinceMS`) | `internal/scaffold/infra` |
+| `optional/release_canary.go` | SDK-neutral canary model (`Traffic`, `RuleSet`, `Selector`, `Instance`) | `internal/scaffold/infra` |
+| `hertz/optional/redis_shared.go` | Shared Redis client for middleware + data reuse | `internal/scaffold/infra` |
 | `hertz/optional/rule_center_client.go` | gRPC client for rule-center rate-limit rule queries; generated when `--rule-center-addr` is set | `internal/scaffold/rulecenter`, `mono` |
 
 ## 5. `data.json` Contract

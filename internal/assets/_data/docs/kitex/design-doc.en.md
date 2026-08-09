@@ -333,7 +333,7 @@ structured logging interceptors under `internal/base/logging/`.
   `metainfo.WithPersistentValue`. Also propagates `x-traffic-lane`.
 - **`KitexAccessLog()`** — emits `goclog.RPC` with `rpc.system`,
   `rpc.service`, `rpc.method`, and `latency_ms`. Logs at ERROR level on
-  failure (with `rpcerror.FormatBiz(err)`), INFO on success.
+  failure (passes `err` directly to `ErrorContext`), INFO on success.
 - **`KitexRecovery()`** — catches panics, logs via
   `goclog.L().WithCategory(CategoryPanic)` with the panic value.
 - **`KitexMetaValue(ctx, key)`** — reads a metainfo value (persistent or
@@ -345,8 +345,7 @@ structured logging interceptors under `internal/base/logging/`.
 
   logging.InitFromConf(cfg.Log, goclog.ReleaseInfo{
       ServiceName: "my-rpc",
-      ServiceKind: "kitex",
-      Version:     release.Version,
+      Environment: cfg.Env,
   })
   ```
 
@@ -355,7 +354,7 @@ structured logging interceptors under `internal/base/logging/`.
   log:
     level: info          # debug | info | warn | error
     format: json         # json | text
-    mode: production     # production | development
+    mode: console        # console | file | both
   ```
 
 - **Deps:** `github.com/byx-darwin/go-tools/go-common` (log, error packages),
@@ -392,17 +391,25 @@ structured logging interceptors under `internal/base/logging/`.
 #### Polaris Canary Adapter (`polaris_adapter.go`, kitex-only)
 
 `ncgo add infra polaris_adapter` wires the real polaris-go SDK into the
-SDK-neutral canary seams defined in `release_canary.go` (same package).
-This is the **only** file that imports polaris-go — ncgo itself never
-depends on the SDK directly.
+SDK-neutral canary seams defined in `canary.go` (output from
+`optional/release_canary.go`, same package). `polaris_adapter.go` is
+the only file that imports polaris-go — ncgo itself never depends on the
+SDK directly.
+
+- **Files added:**
+  - `internal/base/release/polaris_adapter.go` — Polaris SDK adapter
+    (the only file that imports polaris-go).
+  - `internal/base/release/polaris_observer_otel.go` — OTel metrics
+    observer (reuses the go-framework OTLP meter already wired into the
+    kitex base).
 
 - **Provides:**
-  - `NewPolarisInstanceLister(cfg PolarisDiscoveryConfig)` — returns a
+  - `NewPolarisInstanceLister(cfg PolarisDiscoveryConfig) (PolarisInstanceLister, error)` — returns a
     `PolarisInstanceLister` backed by `polaris.ConsumerAPI.GetAllInstances`.
-  - `NewPolarisRuleLoader(cfg PolarisRuleConfig)` — returns a
+  - `NewPolarisRuleLoader(cfg PolarisRuleConfig) (PolarisRuleLoader, error)` — returns a
     `PolarisRuleLoader` that reads a canary `RuleSet` (YAML) from Polaris
     config via `polaris.ConfigAPI.GetConfigFile`.
-  - `NewPolarisSelector(discoveryCfg, ruleCfg)` — convenience constructor
+  - `NewPolarisSelector(discoveryCfg, ruleCfg) (Selector, error)` — convenience constructor
     that assembles a `release.Selector` wired to both Polaris discovery
     and rule loading.
 
@@ -415,6 +422,8 @@ depends on the SDK directly.
   go get github.com/polarismesh/polaris-go
   go get gopkg.in/yaml.v3
   ```
+  `go.opentelemetry.io/otel` and `go.opentelemetry.io/otel/metric` are
+  already present in generated kitex projects via go-framework OTLP.
 
 - **Usage:**
   ```go
@@ -436,10 +445,11 @@ depends on the SDK directly.
 - **Deps:** `github.com/polarismesh/polaris-go`, `gopkg.in/yaml.v3`,
   `go-tools/go-common` (goerror). Tested with polaris-go v1.7.1.
 
-#### Release Canary GA Hardening (`release_ops.go`, SDK-neutral)
+#### Release Canary GA Hardening (`ops.go`, from `release_ops.go`, SDK-neutral)
 
-`ncgo add infra release_canary` emits `release_ops.go` (stdlib-only) with
-production-hardening decorators over the canonical `release_canary.go` seam:
+`ncgo add infra release_canary` emits `ops.go` (from `optional/release_ops.go`,
+stdlib-only) with production-hardening decorators over the canonical
+`canary.go` seam:
 
 - **TTL cache** (`CacheOptions`): defaults TTL 30s / stale-while-revalidate
   window 5m / refresh jitter ±20% (`Jitter=0.2`); `StaleTTL=0` disables the
@@ -519,7 +529,9 @@ and `defer provider.Shutdown()` before `server.Run` exits.
 | `kitex/kitex-template/migration_init.yaml` / `migration_keep.yaml` | sqlc/atlas migration placeholders |
 | `kitex/kitex-template/makefile.yaml` | Makefile targets (`make dev`, `make sqlc`, ...) |
 | `kitex/sqlc.yaml` | sqlc config, structurally identical to the Hertz version |
-| `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris}.go` | `add infra` snippets for the kitex family (`registry_polaris` also drops `polaris.yaml` at the project root) |
+| `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris,observability_logging,release_canary,polaris_canary_adapter,polaris_canary_observer_otel}.go` | `add infra` snippets for the kitex family |
+| `optional/{observability_logging,release_canary}.go` | Shared add-ons (logging helpers, SDK-neutral canary model) |
+| `optional/release_ops.go` | Production-hardening decorators for canary seam |
 
 ## 5. `kitex-template/*.yaml` Semantics
 
@@ -567,10 +579,12 @@ Constraints for new optional files:
 - Top-of-file comment must list required dependencies and wiring notes.
 
 Currently shipped: `redis`, `kafka`, `es`, `clickhouse`,
-`observability_logging` (structured logging interceptors), and Kitex-only
-`registry_polaris` (service registry), `polaris_adapter` (Polaris canary
-routing adapter). Observability tracing is provided by the kitex base
-template (go-framework OTLP) and no longer ships as a standalone add-on.
+`observability_logging` (structured logging interceptors),
+`release_canary` (SDK-neutral canary model + Hertz/Kitex traffic
+adapters), and Kitex-only `registry_polaris` (service registry),
+`polaris_adapter` (Polaris canary routing adapter). Observability tracing
+is provided by the kitex base template (go-framework OTLP) and no longer
+ships as a standalone add-on.
 
 ## 7. Differences from Hertz
 

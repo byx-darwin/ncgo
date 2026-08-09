@@ -428,8 +428,7 @@ query 文件。
 
   logging.InitFromConf(cfg.Logging, goclog.ReleaseInfo{
       ServiceName: "my-api",
-      ServiceKind: "hertz",
-      Version:     release.Version,
+      Environment: cfg.Env,
   })
   ```
 
@@ -438,7 +437,7 @@ query 文件。
   logging:
     level: info          # debug | info | warn | error
     format: json         # json | text
-    mode: production     # production | development
+    mode: console        # console | file | both
     add_source: false
     file:
       dir: logs
@@ -453,7 +452,7 @@ query 文件。
   ```go
   func (h *Handler) GetUser(ctx context.Context, c *app.RequestContext) {
       reqID := logging.HertzRequestIDFromContext(c)
-      goclog.Biz(ctx).InfoContext(ctx, "getting user", "request_id", reqID)
+      goclog.App(ctx).InfoContext(ctx, "getting user", "request_id", reqID)
       // ...
   }
   ```
@@ -469,7 +468,10 @@ query 文件。
 | `hertz/package.yaml` | 自定义 `hz` package 模板:handler.go 用 `Handler` struct 委托给 `useCase` 接口,并附带 usecase 桩 | `hz new --customize_package` |
 | `hertz/data.json` | `layout.yaml` 渲染时变量(`GoModule`、`ServiceName`、`WithDatabase`) | `hz new --customize_layout_data_path` |
 | `hertz/sqlc.yaml` | `--db postgres` 时复制到项目里的 sqlc 配置参考 | `mono` 脚手架 |
-| `hertz/optional/{redis,kafka,es,clickhouse}.go` | `ncgo add infra <kind>` 的 drop-in 文件 | `internal/scaffold/infra` |
+| `hertz/optional/{redis,kafka,es,clickhouse,observability_logging,release_canary}.go` | `ncgo add infra <kind>` 的 drop-in 文件 | `internal/scaffold/infra` |
+| `optional/observability_logging.go` | 共享日志工具(分类常量、`WithRequestID`、`SinceMS`) | `internal/scaffold/infra` |
+| `optional/release_canary.go` | SDK 中性金丝雀模型(`Traffic`、`RuleSet`、`Selector`、`Instance`) | `internal/scaffold/infra` |
+| `hertz/optional/redis_shared.go` | 中间件 + data 复用的共享 Redis 客户端 | `internal/scaffold/infra` |
 | `hertz/optional/rule_center_client.go` | `--rule-center-addr` 或 `ncgo add rule-center` 生成的 gRPC 客户端 | `mono` 脚手架 |
 
 ## 5. `data.json` 契约

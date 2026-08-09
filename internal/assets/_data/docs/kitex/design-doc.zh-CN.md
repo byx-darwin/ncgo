@@ -315,7 +315,7 @@ client option 接入,不走 `do`)。Kitex 侧 add-on 的
   `metainfo.WithPersistentValue` 向下游传递。同时传递 `x-traffic-lane`。
 - **`KitexAccessLog()`** — 输出 `goclog.RPC` 日志,包含 `rpc.system`、
   `rpc.service`、`rpc.method` 和 `latency_ms`。失败时以 ERROR 级别
-  记录(含 `rpcerror.FormatBiz(err)`),成功时 INFO 级别。
+  记录(直接传 `err` 给 `ErrorContext`),成功时 INFO 级别。
 - **`KitexRecovery()`** — 捕获 panic,通过
   `goclog.L().WithCategory(CategoryPanic)` 记录 panic 值。
 - **`KitexMetaValue(ctx, key)`** — 读取 metainfo 值(persistent 或
@@ -327,8 +327,7 @@ client option 接入,不走 `do`)。Kitex 侧 add-on 的
 
   logging.InitFromConf(cfg.Log, goclog.ReleaseInfo{
       ServiceName: "my-rpc",
-      ServiceKind: "kitex",
-      Version:     release.Version,
+      Environment: cfg.Env,
   })
   ```
 
@@ -337,7 +336,7 @@ client option 接入,不走 `do`)。Kitex 侧 add-on 的
   log:
     level: info          # debug | info | warn | error
     format: json         # json | text
-    mode: production     # production | development
+    mode: console        # console | file | both
   ```
 
 - **依赖:`github.com/byx-darwin/go-tools/go-common`(log、error 包)、
@@ -371,16 +370,23 @@ client option 接入,不走 `do`)。Kitex 侧 add-on 的
 #### Polaris 金丝雀适配器(`polaris_adapter.go`,kitex 专属)
 
 `ncgo add infra polaris_adapter` 将真实的 polaris-go SDK 接入
-`release_canary.go`(同包)中定义的 SDK 中性金丝雀接口。这是**唯一**引入
-polaris-go 的文件 — ncgo 本身不直接依赖该 SDK。
+`canary.go`(由 `optional/release_canary.go` 落盘,同包)中定义的 SDK
+中性金丝雀接口。`polaris_adapter.go` 是唯一引入 polaris-go 的文件 —
+ncgo 本身不直接依赖 polaris-go SDK。
+
+- **生成的文件:**
+  - `internal/base/release/polaris_adapter.go` — Polaris SDK 适配器
+    (唯一引入 polaris-go 的文件)。
+  - `internal/base/release/polaris_observer_otel.go` — OTel metrics
+    observer(复用 kitex 基础模板已接入的 go-framework OTLP meter)。
 
 - **暴露:**
-  - `NewPolarisInstanceLister(cfg PolarisDiscoveryConfig)` — 返回
+  - `NewPolarisInstanceLister(cfg PolarisDiscoveryConfig) (PolarisInstanceLister, error)` — 返回
     `PolarisInstanceLister`,底层调用 `polaris.ConsumerAPI.GetAllInstances`。
-  - `NewPolarisRuleLoader(cfg PolarisRuleConfig)` — 返回 `PolarisRuleLoader`,
+  - `NewPolarisRuleLoader(cfg PolarisRuleConfig) (PolarisRuleLoader, error)` — 返回 `PolarisRuleLoader`,
     通过 `polaris.ConfigAPI.GetConfigFile` 从 Polaris 配置中心读取金丝雀
     `RuleSet`(YAML)。
-  - `NewPolarisSelector(discoveryCfg, ruleCfg)` — 便捷构造函数,组装一个
+  - `NewPolarisSelector(discoveryCfg, ruleCfg) (Selector, error)` — 便捷构造函数,组装一个
     完整接入 Polaris 发现和规则加载的 `release.Selector`。
 
 - **凭证(仅从环境变量读取,禁止硬编码):**
@@ -392,6 +398,8 @@ polaris-go 的文件 — ncgo 本身不直接依赖该 SDK。
   go get github.com/polarismesh/polaris-go
   go get gopkg.in/yaml.v3
   ```
+  `go.opentelemetry.io/otel` 和 `go.opentelemetry.io/otel/metric` 已由
+  生成项目的 go-framework OTLP 提供。
 
 - **使用:**
   ```go
@@ -413,10 +421,10 @@ polaris-go 的文件 — ncgo 本身不直接依赖该 SDK。
 - **依赖:`github.com/polarismesh/polaris-go`、`gopkg.in/yaml.v3`、
   `go-tools/go-common`(goerror)。已在 polaris-go v1.7.1 上验证。
 
-#### Release 金丝雀 GA 加固(`release_ops.go`,SDK-neutral)
+#### Release 金丝雀 GA 加固(`ops.go`,源自 `release_ops.go`,SDK-neutral)
 
-`ncgo add infra release_canary` 产出 `release_ops.go`(仅 stdlib),在 canonical
-`release_canary.go` seam 之上叠加生产级加固装饰器:
+`ncgo add infra release_canary` 产出 `ops.go`(源自 `optional/release_ops.go`,
+仅 stdlib),在 `canary.go` seam 之上叠加生产级加固装饰器:
 
 - **TTL 缓存**(`CacheOptions`):默认 TTL 30s / stale-while-revalidate 窗口
   5m / 刷新抖动 ±20%(`Jitter=0.2`);`StaleTTL=0` 关闭 stale 窗口,负值回落到
@@ -490,7 +498,9 @@ ServiceName})`,把 `provider.ServerSuite()` 挂到 kitex server option,并在
 | `kitex/kitex-template/migration_init.yaml` / `migration_keep.yaml` | sqlc/atlas 迁移占位 |
 | `kitex/kitex-template/makefile.yaml` | Makefile 目标(`make dev`、`make sqlc` 等) |
 | `kitex/sqlc.yaml` | sqlc 配置,结构与 Hertz 版相同 |
-| `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris}.go` | kitex 族的 `add infra` 素材(`registry_polaris` 同时产出 `polaris.yaml` 到项目根) |
+| `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris,observability_logging,release_canary,polaris_canary_adapter,polaris_canary_observer_otel}.go` | kitex 族的 `add infra` 素材 |
+| `optional/{observability_logging,release_canary}.go` | 共享 add-on(日志工具、SDK 中性金丝雀模型) |
+| `optional/release_ops.go` | 金丝雀接缝的生产加固装饰器 |
 
 ## 5. `kitex-template/*.yaml` 语义
 
@@ -536,10 +546,12 @@ kitex 工具通过 `--template-extension` 读取这些记录,然后把每条按 
 - 文件顶部注释必须列出依赖和接线说明。
 
 当前已发布:`redis`、`kafka`、`es`、`clickhouse`、
-`observability_logging`(结构化日志拦截器),以及 Kitex 专属
-`registry_polaris`(服务注册)、`polaris_adapter`(Polaris 金丝雀路由
-适配器)。observability 追踪已由 kitex 基础模板(go-framework OTLP)
-直接提供,不再以独立 add-on 形态存在。
+`observability_logging`(结构化日志拦截器)、
+`release_canary`(SDK 中性金丝雀模型 + Hertz/Kitex 流量适配器),
+以及 Kitex 专属 `registry_polaris`(服务注册)、
+`polaris_adapter`(Polaris 金丝雀路由适配器)。observability 追踪
+已由 kitex 基础模板(go-framework OTLP)直接提供,不再以独立 add-on
+形态存在。
 
 ## 7. 与 Hertz 的差异
 
