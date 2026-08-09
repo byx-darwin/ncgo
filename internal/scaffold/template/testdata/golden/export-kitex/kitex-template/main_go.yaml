@@ -9,6 +9,6 @@ body: |
     	"{{.Module}}/internal/handler/{{ToLower .ServiceName}}"
     )
 
-    func main() {
+    func main() {{ "{" }}
     	_ = {{ToLower .ServiceName}}.Ping()
-    }
+    {{ "}" }}

@@ -267,13 +267,12 @@ func fileToTemplate(_ string, absPath, relPath string, opts ExportOptions, rule 
 	// Replace service name identifiers
 	body = replaceServiceName(body, opts.ServiceName)
 
-	// Note: Go code containing {{ or }} (e.g., composite literals followed by
-	// closing braces like `map[T]V{}}`) may cause template parse errors when
-	// the exported template is applied. Users may need to manually edit such
-	// templates to escape these patterns.
+	// Escape {{ and }} that are not ncgo template variables.
+	// These come from Go composite literals like {{MatchKind: "exact"}}.
+	body = escapeNonTemplateBraces(body)
 
 	// Compute template path
-	tplPath := templatePath(relPath, rule, svcNameLower)
+	tplPath := templatePath(relPath, rule, svcNameLower, opts.ServiceName)
 
 	return &TemplateFile{
 		Path:           tplPath,
@@ -281,6 +280,56 @@ func fileToTemplate(_ string, absPath, relPath string, opts ExportOptions, rule 
 		LoopService:    rule.LoopService,
 		Body:           body,
 	}, nil
+}
+
+// escapeNonTemplateBraces escapes {{ and }} that are not ncgo template variables.
+// It uses a placeholder approach to avoid conflicts during replacement.
+func escapeNonTemplateBraces(body string) string {
+	// Known ncgo template variables that should NOT be escaped
+	knownVars := []string{
+		"{{.Module}}",
+		"{{.ServiceName}}",
+		"{{ToLower .ServiceName}}",
+		"{{exportName .ServiceName}}",
+	}
+
+	// Step 1: Replace known variables with unique placeholders
+	placeholderMap := make(map[string]string)
+	for i, v := range knownVars {
+		placeholder := fmt.Sprintf("\x00NCGO_VAR_%d\x00", i)
+		placeholderMap[v] = placeholder
+		body = strings.ReplaceAll(body, v, placeholder)
+	}
+
+	// Step 2: Escape all braces to prevent template parsing issues
+	// Order matters: escape single braces first, then double braces
+	// Use unique placeholders that won't appear in the code
+	singleOpenPlaceholder := "\x00SINGLE_OPEN\x00"
+	singleClosePlaceholder := "\x00SINGLE_CLOSE\x00"
+	openBracePlaceholder := "\x00OPEN_BRACE\x00"
+	closeBracePlaceholder := "\x00CLOSE_BRACE\x00"
+
+	// Replace {{ and }} first (double braces)
+	body = strings.ReplaceAll(body, "{{", openBracePlaceholder)
+	body = strings.ReplaceAll(body, "}}", closeBracePlaceholder)
+
+	// Then replace remaining { and } (single braces)
+	body = strings.ReplaceAll(body, "{", singleOpenPlaceholder)
+	body = strings.ReplaceAll(body, "}", singleClosePlaceholder)
+
+	// Step 3: Replace placeholders with escaped template expressions
+	// Use spaces to ensure proper parsing
+	body = strings.ReplaceAll(body, openBracePlaceholder, `{{ "{{" }}`)
+	body = strings.ReplaceAll(body, closeBracePlaceholder, `{{ "}}" }}`)
+	body = strings.ReplaceAll(body, singleOpenPlaceholder, `{{ "{" }}`)
+	body = strings.ReplaceAll(body, singleClosePlaceholder, `{{ "}" }}`)
+
+	// Step 4: Restore known variables
+	for original, placeholder := range placeholderMap {
+		body = strings.ReplaceAll(body, placeholder, original)
+	}
+
+	return body
 }
 
 // replaceServiceName replaces service name identifiers with template variables.
@@ -318,9 +367,34 @@ func replaceServiceName(body, serviceName string) string {
 	return body
 }
 
-func templatePath(rel string, rule FileRule, svcNameLower string) string {
+func templatePath(rel string, rule FileRule, svcNameLower string, originalServiceName string) string {
 	if rule.LoopService && svcNameLower != "" {
-		return strings.Replace(rel, "/"+svcNameLower+"/", "/{{ToLower .ServiceName}}/", 1)
+		// Replace service name in directory path
+		result := strings.Replace(rel, "/"+svcNameLower+"/", "/{{ToLower .ServiceName}}/", 1)
+
+		// Also replace service name in filename
+		dir := filepath.Dir(result)
+		base := filepath.Base(result)
+
+		// Generate variants of the service name
+		underscoreVariant := strings.ReplaceAll(originalServiceName, "-", "_")
+
+		// Try to replace all variants: original (with hyphens), underscore, and lowercase
+		// Order matters: try more specific patterns first
+		base = strings.Replace(base, originalServiceName+"_", "{{ToLower .ServiceName}}_", 1)
+		base = strings.Replace(base, originalServiceName+"-", "{{ToLower .ServiceName}}-", 1)
+		base = strings.Replace(base, originalServiceName+".", "{{ToLower .ServiceName}}.", 1)
+
+		base = strings.Replace(base, underscoreVariant+"_", "{{ToLower .ServiceName}}_", 1)
+		base = strings.Replace(base, underscoreVariant+"-", "{{ToLower .ServiceName}}-", 1)
+		base = strings.Replace(base, underscoreVariant+".", "{{ToLower .ServiceName}}.", 1)
+
+		base = strings.Replace(base, svcNameLower+"_", "{{ToLower .ServiceName}}_", 1)
+		base = strings.Replace(base, svcNameLower+"-", "{{ToLower .ServiceName}}-", 1)
+		base = strings.Replace(base, svcNameLower+".", "{{ToLower .ServiceName}}.", 1)
+
+		result = filepath.Join(dir, base)
+		return result
 	}
 	return rel
 }

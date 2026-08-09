@@ -5,6 +5,6 @@ update_behavior:
 body: |
     package conf
 
-    type Config struct {
+    type Config struct {{ "{" }}
     	Port int
-    }
+    {{ "}" }}

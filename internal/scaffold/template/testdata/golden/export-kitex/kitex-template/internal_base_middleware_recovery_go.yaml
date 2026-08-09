@@ -5,4 +5,4 @@ update_behavior:
 body: |
     package middleware
 
-    func Recovery() {}
+    func Recovery() {{ "{" }}{{ "}" }}

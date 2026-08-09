@@ -1028,16 +1028,21 @@ func updateManifestDomainsFromUsecases(dir string) error {
 	return nil
 }
 
-// reapplyTemplateRootFiles re-applies root-level templates (main.go, Makefile)
-// from an external template package after hz has run. hz regenerates files
-// based on layout.yaml, which may have empty bodies for root-level files,
-// overwriting the content that overlayTemplatePackage wrote earlier.
-func reapplyTemplateRootFiles(dir string, opts Options) error {
+// reapplyTemplateFiles re-applies all templates from an external template package
+// after hz has run. hz regenerates files based on layout.yaml, which may have
+// empty bodies for some files, overwriting the content that overlayTemplatePackage
+// wrote earlier. This function re-applies all templates to restore their content.
+func reapplyTemplateFiles(dir string, opts Options) error {
 	tplDir := filepath.Join(dir, "template", "hertz-template")
 	entries, err := os.ReadDir(tplDir)
 	if err != nil {
 		return nil // no template dir, nothing to reapply
 	}
+
+	// Convert service name to the format hz uses (hyphens to underscores)
+	// This matches hz's behavior for file naming
+	serviceNameForFiles := strings.ReplaceAll(opts.Name, "-", "_")
+
 	for _, e := range entries {
 		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
 			continue
@@ -1050,21 +1055,56 @@ func reapplyTemplateRootFiles(dir string, opts Options) error {
 		if err := yaml.Unmarshal(b, &tpl); err != nil {
 			continue
 		}
-		// Only reapply root-level files (no "/" in path)
-		if tpl.Path == "" || strings.Contains(tpl.Path, "/") {
+		// Skip templates with no path
+		if tpl.Path == "" {
+			continue
+		}
+		// Render the path to replace template variables like {{ToLower .ServiceName}}
+		// Use the hz-compatible service name (with underscores)
+		renderedPath, err := scaffoldtemplate.Render(tpl.Path, scaffoldtemplate.RenderData{
+			Module:      opts.Module,
+			ServiceName: serviceNameForFiles,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "warning: failed to render path %s: %v\n", tpl.Path, err)
 			continue
 		}
 		rendered, err := scaffoldtemplate.Render(tpl.Body, scaffoldtemplate.RenderData{
 			Module:      opts.Module,
-			ServiceName: opts.Name,
+			ServiceName: serviceNameForFiles,
 		})
 		if err != nil {
+			// Log the error but continue with other templates
+			fmt.Fprintf(os.Stderr, "warning: failed to render template %s: %v\n", tpl.Path, err)
 			continue
 		}
-		full := filepath.Join(dir, filepath.FromSlash(tpl.Path))
+		full := filepath.Join(dir, filepath.FromSlash(renderedPath))
+		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
+			return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(full), err)
+		}
 		if err := os.WriteFile(full, []byte(rendered), 0o644); err != nil {
-			return fmt.Errorf("scaffold: reapply %s: %w", tpl.Path, err)
+			return fmt.Errorf("scaffold: reapply %s: %w", renderedPath, err)
 		}
 	}
+
+	// After applying templates, clean up any hyphenated files that hz created
+	// These are duplicates with incorrect naming
+	hyphenatedFiles := []string{
+		filepath.Join(dir, "internal", "router", "pb", opts.Name+".go"),
+		filepath.Join(dir, "internal", "handler", "pb", opts.Name+"_service.go"),
+	}
+	for _, f := range hyphenatedFiles {
+		if _, err := os.Stat(f); err == nil {
+			// Check if the correctly-named file exists
+			correctName := strings.ReplaceAll(f, opts.Name, serviceNameForFiles)
+			if _, err := os.Stat(correctName); err == nil {
+				// Both files exist, delete the hyphenated one
+				if err := os.Remove(f); err != nil {
+					fmt.Fprintf(os.Stderr, "warning: failed to remove hyphenated file %s: %v\n", f, err)
+				}
+			}
+		}
+	}
+
 	return nil
 }

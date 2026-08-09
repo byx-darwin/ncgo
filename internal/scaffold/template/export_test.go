@@ -132,7 +132,7 @@ func TestIDLTemplatePath_SubstitutesBaseOnly(t *testing.T) {
 }
 
 func TestTemplatePath_LoopService(t *testing.T) {
-	got := templatePath("internal/handler/userapi/handler.go", FileRule{LoopService: true}, "userapi")
+	got := templatePath("internal/handler/userapi/handler.go", FileRule{LoopService: true}, "userapi", "userapi")
 	want := "internal/handler/{{ToLower .ServiceName}}/handler.go"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
@@ -140,7 +140,7 @@ func TestTemplatePath_LoopService(t *testing.T) {
 }
 
 func TestTemplatePath_NoLoop(t *testing.T) {
-	got := templatePath("main.go", FileRule{LoopService: false}, "userapi")
+	got := templatePath("main.go", FileRule{LoopService: false}, "userapi", "userapi")
 	want := "main.go"
 	if got != want {
 		t.Errorf("got %q, want %q", got, want)
