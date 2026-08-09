@@ -1,0 +1,57 @@
+{
+  "version": "1.1",
+  "workflow_id": "wf-2026-07-31-002",
+  "title": "feat(release): polaris canary adapter GA 加固 — 缓存TTL/降级语义/可观测性/dry-run/运行时验证",
+  "mode": "full",
+  "created_at": "2026-07-31T18:55:00Z",
+  "updated_at": "2026-07-31T13:55:00Z",
+  "current_phase": 4,
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "started_at": "2026-07-31T18:55:00Z",
+      "completed_at": "2026-07-31T12:35:00Z",
+      "executor": "orchestrator",
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/34",
+        "comment_id": "5142903741",
+        "design_doc_path": "docs/superpowers/specs/2026-07-31-polaris-adapter-ga-design.md"
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "complete",
+      "started_at": "2026-07-31T12:35:00Z",
+      "completed_at": "2026-07-31T12:52:00Z",
+      "executor": "orchestrator",
+      "evidence": {
+        "spec_path": "docs/superpowers/plans/2026-07-31-polaris-adapter-ga.md",
+        "user_approved": true
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "started_at": "2026-07-31T12:52:00Z",
+      "completed_at": "2026-07-31T13:40:00Z",
+      "executor": "orchestrator",
+      "evidence": {
+        "branch": "feat/34-polaris-adapter-ga",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/36",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "started_at": "2026-07-31T13:40:00Z",
+      "completed_at": "2026-07-31T13:55:00Z",
+      "executor": "orchestrator",
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": "docs/superpowers/reviews/2026-07-31-pr36-review.md"
+      }
+    }
+  }
+}

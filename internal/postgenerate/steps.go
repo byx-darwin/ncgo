@@ -9,6 +9,39 @@ import (
 	"github.com/byx-darwin/ncgo/internal/exec"
 )
 
+// sqlc runs `make sqlc` in opts.Dir to generate database code.
+// This must run before go mod tidy for Kitex or Hertz-with-db scaffolds.
+func sqlc(ctx context.Context, opts Options) StepResult {
+	start := time.Now()
+	r := opts.Runner
+	if r == nil {
+		r = exec.NewDefault()
+	}
+	_, err := r.Run(ctx, exec.Cmd{Name: "make", Args: []string{"sqlc"}, Dir: opts.Dir})
+	elapsed := time.Since(start)
+
+	if err != nil {
+		result := StepResult{
+			Name:   "sqlc",
+			Status: "failed",
+			Detail: fmt.Sprintf("%v (non-blocking)", err),
+		}
+		if opts.Stdout != nil {
+			fmt.Fprintf(opts.Stdout, "✗ sqlc failed: %v (non-blocking)\n", err)
+		}
+		return result
+	}
+	result := StepResult{
+		Name:   "sqlc",
+		Status: "succeeded",
+		Detail: fmt.Sprintf("(%.1fs)", elapsed.Seconds()),
+	}
+	if opts.Stdout != nil {
+		fmt.Fprintf(opts.Stdout, "✓ sqlc (%.1fs)\n", elapsed.Seconds())
+	}
+	return result
+}
+
 // goModTidy runs `go mod tidy` in opts.Dir.
 func goModTidy(ctx context.Context, opts Options) StepResult {
 	start := time.Now()

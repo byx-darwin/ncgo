@@ -1,0 +1,57 @@
+{
+  "version": "1.1",
+  "workflow_id": "wf-2026-07-22-001",
+  "title": "全面适配 go-tools v0.1.0（三库拆分）",
+  "mode": "full",
+  "created_at": "2026-07-22T11:54:11Z",
+  "updated_at": "2026-07-23T02:26:21Z",
+  "current_phase": 4,
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "started_at": "2026-07-22T11:54:11Z",
+      "completed_at": "2026-07-22T12:23:49Z",
+      "executor": null,
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/6",
+        "comment_id": "5045721334",
+        "design_doc_path": "specs/017-go-tools-v0.1.0-adaptation.md"
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "complete",
+      "started_at": "2026-07-22T16:32:27Z",
+      "completed_at": "2026-07-22T17:10:49Z",
+      "executor": null,
+      "evidence": {
+        "spec_path": "specs/017-go-tools-v0.1.0-adaptation-pr1-plan.md",
+        "user_approved": true
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "started_at": "2026-07-22T17:10:49Z",
+      "completed_at": "2026-07-23T02:18:00Z",
+      "executor": null,
+      "evidence": {
+        "branch": "feat/6-go-tools-adapt",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/11",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "started_at": "2026-07-23T02:18:00Z",
+      "completed_at": "2026-07-23T02:26:21Z",
+      "executor": null,
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": ".superpowers/sdd/final-review-v2.md"
+      }
+    }
+  }
+}

@@ -1,0 +1,57 @@
+{
+  "version": "1.1",
+  "workflow_id": "wf-2026-07-29-001",
+  "title": "ncgo 项目官网",
+  "mode": "full",
+  "created_at": "2026-07-29T23:54:42Z",
+  "updated_at": "2026-07-30T02:59:38Z",
+  "current_phase": 4,
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "started_at": "2026-07-29T23:54:42Z",
+      "completed_at": "2026-07-30T00:13:19Z",
+      "executor": null,
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/26",
+        "comment_id": "5124718898",
+        "design_doc_path": "docs/superpowers/specs/2026-07-30-ncgo-website-design.md"
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "complete",
+      "started_at": "2026-07-30T00:13:19Z",
+      "completed_at": "2026-07-30T00:50:41Z",
+      "executor": null,
+      "evidence": {
+        "spec_path": "docs/superpowers/plans/2026-07-30-ncgo-website.md",
+        "user_approved": true
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "started_at": "2026-07-30T00:50:41Z",
+      "completed_at": "2026-07-30T02:52:01Z",
+      "executor": null,
+      "evidence": {
+        "branch": "feat/26-project-website",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/27",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "started_at": "2026-07-30T02:52:01Z",
+      "completed_at": "2026-07-30T02:59:38Z",
+      "executor": null,
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": "docs/superpowers/reviews/2026-07-30-pr27-review.md"
+      }
+    }
+  }
+}

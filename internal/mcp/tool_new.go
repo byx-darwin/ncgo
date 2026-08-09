@@ -142,11 +142,13 @@ func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra [
 	nextSteps := res.NextSteps
 	if res.RanGenerate {
 		pgResult := postgenerate.Run(postgenerate.Options{
-			Dir:         res.Dir,
-			AITarget:    aiTarget,
-			NoAutoSteps: noAutoSteps,
-			RanGenerate: res.RanGenerate,
-			Stdout:      io.Discard, // MCP doesn't print progress
+			Dir:          res.Dir,
+			AITarget:     aiTarget,
+			NoAutoSteps:  noAutoSteps,
+			RanGenerate:  res.RanGenerate,
+			Stdout:       io.Discard, // MCP doesn't print progress
+			Kind:         kind,
+			WithDatabase: db == "postgres",
 		})
 		autoSteps = pgResult.Steps
 		// Remove auto-executed steps from NextSteps (parity with CLI).

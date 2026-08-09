@@ -11,12 +11,14 @@ import (
 
 // Options configures post-generation auto-step execution.
 type Options struct {
-	Dir         string      // absolute project root
-	AITarget    string      // "claude" (default) | "all" | "agents" | "cursor" | "none"
-	NoAutoSteps bool        // skip all auto steps
-	RanGenerate bool        // whether generator (hz/kitex) ran successfully
-	Runner      exec.Runner // injected exec; nil = exec.NewDefault()
-	Stdout      io.Writer   // progress and warning output
+	Dir          string      // absolute project root
+	AITarget     string      // "claude" (default) | "all" | "agents" | "cursor" | "none"
+	NoAutoSteps  bool        // skip all auto steps
+	RanGenerate  bool        // whether generator (hz/kitex) ran successfully
+	Runner       exec.Runner // injected exec; nil = exec.NewDefault()
+	Stdout       io.Writer   // progress and warning output
+	Kind         string      // service kind: "hertz" | "kitex" (for sqlc ordering)
+	WithDatabase bool        // whether database scaffolding is enabled (for sqlc ordering)
 }
 
 // Result reports the outcome of each auto step.
@@ -53,6 +55,12 @@ func Run(opts Options) *Result {
 
 	ctx := context.Background()
 
+	// Step 0 (conditional): sqlc - must run before go mod tidy for Kitex or Hertz-with-db
+	if requiresSQLCBeforeTidy(opts) {
+		sqlcResult := sqlc(ctx, opts)
+		res.Steps = append(res.Steps, sqlcResult)
+	}
+
 	// Step 1: go mod tidy
 	goModTidyResult := goModTidy(ctx, opts)
 	res.Steps = append(res.Steps, goModTidyResult)
@@ -62,6 +70,14 @@ func Run(opts Options) *Result {
 	res.Steps = append(res.Steps, aiSyncResult)
 
 	return res
+}
+
+// requiresSQLCBeforeTidy reports whether the scaffolded code references
+// internal/db/gen before the user has had a chance to run `go mod tidy`.
+// Kitex always wires base/data + repository placeholders, while Hertz only
+// needs sqlc first when the database scaffold is enabled.
+func requiresSQLCBeforeTidy(opts Options) bool {
+	return opts.Kind == "kitex" || opts.WithDatabase
 }
 
 // FilterNextSteps removes NextSteps that were auto-executed successfully.

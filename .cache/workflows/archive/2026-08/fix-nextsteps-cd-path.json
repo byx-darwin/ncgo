@@ -1,0 +1,53 @@
+{
+  "workflow_id": "fix-nextsteps-cd-path",
+  "mode": "fast",
+  "title": "Fix ncgo new next steps cd path when run in target dir",
+  "status": "complete",
+  "current_phase": 4,
+  "created_at": "2026-08-07T16:40:00Z",
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/41",
+        "comment_id": "5214804938",
+        "design_doc_path": ""
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "skipped",
+      "evidence": {
+        "spec_path": "",
+        "user_approved": false
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "evidence": {
+        "branch": "fix/41-nextsteps-cd-path",
+        "base_branch": "main",
+        "worktree_path": "",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/42",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": "",
+        "dogfooding_passed": false,
+        "branch_cleaned": true,
+        "phase4_steps_executed": [
+          "pipeline_analysis",
+          "branch_finish"
+        ]
+      }
+    }
+  },
+  "completed_at": "2026-08-07T08:54:13Z"
+}

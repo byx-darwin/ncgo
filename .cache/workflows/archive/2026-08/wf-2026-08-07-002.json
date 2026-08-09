@@ -1,0 +1,72 @@
+{
+  "version": "1.1",
+  "workflow_id": "wf-2026-08-07-002",
+  "title": "feat(ai): AI agent 端到端用 ncgo 做功能开发（静态工作流 + 命令契约 + 运行时上下文）",
+  "mode": "full",
+  "created_at": "2026-08-07T10:53:14Z",
+  "updated_at": "2026-08-07T13:01:21Z",
+  "current_phase": 4,
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "started_at": "2026-08-07T10:53:14Z",
+      "completed_at": "2026-08-07T11:13:36Z",
+      "executor": null,
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/45",
+        "comment_id": "5216309565",
+        "design_doc_path": "docs/superpowers/specs/2026-08-07-issue-45-ai-agent-ncgo-dev-design.md"
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "complete",
+      "started_at": "2026-08-07T11:13:36Z",
+      "completed_at": "2026-08-07T11:23:43Z",
+      "executor": null,
+      "evidence": {
+        "spec_path": "docs/superpowers/plans/2026-08-07-issue-45-ai-agent-ncgo-dev-plan.md",
+        "user_approved": true
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "started_at": "2026-08-07T11:23:43Z",
+      "completed_at": "2026-08-07T12:51:22Z",
+      "executor": null,
+      "evidence": {
+        "branch": "feat/45-ai-agent-ncgo-dev",
+        "base_branch": "main",
+        "worktree_path": "/Volumes/SSD/workspace/github.com/byx-darwin/ncgo/.claude/worktrees/feat-45-ai-agent-ncgo-dev",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/47",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "started_at": "2026-08-07T12:51:22Z",
+      "completed_at": "2026-08-07T12:59:04Z",
+      "executor": null,
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": "https://github.com/byx-darwin/ncgo/pull/47#pullrequestreview-1 (6-dim report comment)",
+        "dogfooding_passed": true,
+        "branch_cleaned": true,
+        "branch_cleanup_note": "PR #47 merged (327994f); Issue #45 closed; branch + worktree removed, remote pruned",
+        "phase4_steps_executed": [
+          "pipeline",
+          "issue_triage",
+          "review",
+          "dogfooding",
+          "branch_finish"
+        ],
+        "merged_at": "2026-08-07T13:00:24Z"
+      }
+    }
+  },
+  "status": "complete",
+  "completed_at": "2026-08-07T12:59:09Z"
+}

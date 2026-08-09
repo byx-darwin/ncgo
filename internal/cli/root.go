@@ -296,11 +296,13 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 	var pgResult *postgenerate.Result
 	if res.RanGenerate {
 		pgResult = postgenerate.Run(postgenerate.Options{
-			Dir:         res.Dir,
-			AITarget:    opts.aiTarget,
-			NoAutoSteps: opts.noAutoSteps,
-			RanGenerate: res.RanGenerate,
-			Stdout:      out,
+			Dir:          res.Dir,
+			AITarget:     opts.aiTarget,
+			NoAutoSteps:  opts.noAutoSteps,
+			RanGenerate:  res.RanGenerate,
+			Stdout:       out,
+			Kind:         opts.kind,
+			WithDatabase: opts.db == "postgres",
 		})
 	}
 	// Filter NextSteps: remove auto-executed steps

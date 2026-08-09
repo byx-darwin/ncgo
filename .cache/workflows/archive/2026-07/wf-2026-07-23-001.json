@@ -1,0 +1,60 @@
+{
+  "version": "1.0",
+  "workflow_id": "wf-2026-07-23-001",
+  "title": "feat(scaffold): 生成项目适配 go-tools v0.1.0（PR3）— logging + redis 接入 go-common/log 与 go-middleware/redis",
+  "issue_number": 8,
+  "mode": "full",
+  "created_at": "2026-07-23T20:18:51Z",
+  "updated_at": "2026-07-24T00:47:12Z",
+  "current_phase": 4,
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "started_at": "2026-07-23T20:18:51Z",
+      "completed_at": "2026-07-24T00:10:21Z",
+      "executor": null,
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/8",
+        "comment_id": "5064770869",
+        "design_doc_path": "docs/superpowers/specs/2026-07-24-pr3-logging-redis-design.md"
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "complete",
+      "started_at": "2026-07-24T00:10:21Z",
+      "completed_at": "2026-07-24T00:17:46Z",
+      "executor": null,
+      "evidence": {
+        "spec_path": "docs/superpowers/plans/2026-07-24-pr3-logging-redis.md",
+        "user_approved": true
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "started_at": "2026-07-24T00:17:46Z",
+      "completed_at": "2026-07-24T00:45:14Z",
+      "executor": null,
+      "evidence": {
+        "branch": "feat/8-logging-redis",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/13",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "started_at": "2026-07-24T00:45:14Z",
+      "completed_at": "2026-07-24T00:47:12Z",
+      "executor": null,
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": "https://github.com/byx-darwin/ncgo/pull/13#review",
+        "dogfooding_passed": true
+      }
+    }
+  },
+  "status": "complete"
+}

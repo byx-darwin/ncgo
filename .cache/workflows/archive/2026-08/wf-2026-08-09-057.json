@@ -1,0 +1,62 @@
+{
+  "version": "1.1",
+  "workflow_id": "wf-2026-08-09-057",
+  "title": "feat(cli): ncgo add rpc/add bff 支持 --template/--template-dir（micro 模版可消费）",
+  "mode": "full",
+  "created_at": "2026-08-09T00:00:00+08:00",
+  "updated_at": "2026-08-09T02:00:00+08:00",
+  "current_phase": 4,
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "started_at": "2026-08-09T00:00:00+08:00",
+      "completed_at": "2026-08-09T00:20:00+08:00",
+      "executor": "claude",
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/57",
+        "comment_id": "5227115108",
+        "design_doc_path": "docs/superpowers/specs/2026-08-09-micro-template-consumption-design.md"
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "complete",
+      "started_at": "2026-08-09T00:20:00+08:00",
+      "completed_at": "2026-08-09T00:45:00+08:00",
+      "executor": "claude",
+      "evidence": {
+        "spec_path": "docs/superpowers/plans/2026-08-09-micro-template-consumption.md",
+        "user_approved": true
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "started_at": "2026-08-09T00:45:00+08:00",
+      "completed_at": "2026-08-09T01:30:00+08:00",
+      "executor": "claude",
+      "evidence": {
+        "branch": "feat/57-micro-template-consumption",
+        "base_branch": "main",
+        "worktree_path": "/Volumes/SSD/workspace/github.com/byx-darwin/ncgo-feat-57",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/60",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "started_at": "2026-08-09T01:30:00+08:00",
+      "completed_at": "2026-08-09T02:00:00+08:00",
+      "executor": "claude",
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": "inline (6-dim review: approve)",
+        "dogfooding_passed": true,
+        "branch_cleaned": false,
+        "phase4_steps_executed": ["pipeline-analysis", "issue-triage", "code-review", "dogfooding", "branch-finish"]
+      }
+    }
+  }
+}

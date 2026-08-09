@@ -1,0 +1,62 @@
+{
+  "version": "1.1",
+  "workflow_id": "wf-2026-08-08-056",
+  "title": "feat(template): rule-center 模版包消费补齐到与 --preset 等价",
+  "mode": "full",
+  "created_at": "2026-08-08T00:00:00+08:00",
+  "updated_at": "2026-08-08T03:00:00+08:00",
+  "current_phase": 4,
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "started_at": "2026-08-08T00:00:00+08:00",
+      "completed_at": "2026-08-08T01:00:00+08:00",
+      "executor": null,
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/56",
+        "comment_id": "5226542905",
+        "design_doc_path": "docs/superpowers/specs/2026-08-08-rule-center-template-package-self-contained-design.md"
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "complete",
+      "started_at": "2026-08-08T01:00:00+08:00",
+      "completed_at": "2026-08-08T02:00:00+08:00",
+      "executor": null,
+      "evidence": {
+        "spec_path": "docs/superpowers/plans/2026-08-08-rule-center-template-self-contained.md",
+        "user_approved": true
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "started_at": "2026-08-08T02:00:00+08:00",
+      "completed_at": "2026-08-08T03:00:00+08:00",
+      "executor": null,
+      "evidence": {
+        "branch": "feat/56-rule-center-template",
+        "base_branch": "main",
+        "worktree_path": "/Volumes/SSD/workspace/github.com/byx-darwin/ncgo-feat-56-rule-center-template",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/59",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "started_at": "2026-08-08T03:00:00+08:00",
+      "completed_at": "2026-08-09T00:30:00+08:00",
+      "executor": null,
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": "docs/superpowers/reviews/pr-59-review.md",
+        "dogfooding_passed": true,
+        "branch_cleaned": true,
+        "phase4_steps_executed": ["pipeline-analysis", "issue-triage", "code-review", "dogfooding", "branch-finish"]
+      }
+    }
+  }
+}

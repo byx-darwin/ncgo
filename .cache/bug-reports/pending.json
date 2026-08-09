@@ -1,0 +1,10 @@
+{
+  "id": "000000000000e96dac1d36fac23737ca",
+  "source": "cli",
+  "command": "review",
+  "platform": "github",
+  "exit_code": 1,
+  "error_code": "CLI_ERROR",
+  "error_message": "Failed to approve PR #61: GitHub CLI 执行失败\n\n🔧 修复建议：运行 `gh auth login` 完成登录\n📖 文档：https://cli.github.com/manual/",
+  "timestamp": "2026-08-08T23:52:29Z"
+}

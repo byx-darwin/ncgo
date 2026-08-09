@@ -1,0 +1,72 @@
+{
+  "version": "1.1",
+  "workflow_id": "wf-2026-08-07-003",
+  "title": "feat(ai): Issue #45 Phase 2 动态层——ncgo_ai_context MCP 工具 + ncgo check 校验命令",
+  "mode": "full",
+  "created_at": "2026-08-07T13:35:09Z",
+  "updated_at": "2026-08-08T01:40:00Z",
+  "current_phase": 4,
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "started_at": "2026-08-07T13:35:09Z",
+      "completed_at": "2026-08-07T13:58:00Z",
+      "executor": null,
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/48",
+        "comment_id": "5217969415",
+        "design_doc_path": "docs/superpowers/specs/2026-08-07-issue-45-phase2-dynamic-layer-design.md"
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "complete",
+      "started_at": "2026-08-07T13:58:00Z",
+      "completed_at": "2026-08-07T14:05:00Z",
+      "executor": null,
+      "evidence": {
+        "spec_path": "docs/superpowers/plans/2026-08-07-issue-45-phase2-dynamic-layer-plan.md",
+        "user_approved": true
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "started_at": "2026-08-07T14:07:00Z",
+      "completed_at": "2026-08-08T01:28:32Z",
+      "executor": null,
+      "evidence": {
+        "branch": "feat/48-ai-agent-phase2-dynamic-layer",
+        "base_branch": "main",
+        "worktree_path": "/Volumes/SSD/workspace/github.com/byx-darwin/ncgo/.claude/worktrees/feat-48-ai-agent-phase2-dynamic-layer",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/49",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "started_at": "2026-08-08T01:28:32Z",
+      "completed_at": "2026-08-08T01:40:00Z",
+      "executor": null,
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": "https://github.com/byx-darwin/ncgo/pull/49 (Phase 4 review report comment)",
+        "dogfooding_passed": true,
+        "branch_cleaned": true,
+        "branch_cleanup_note": "PR #49 merged (5aac84b); Issue #48 closed; feat/48 branch + worktree removed, remote pruned",
+        "phase4_steps_executed": [
+          "pipeline",
+          "issue_triage",
+          "review",
+          "dogfooding",
+          "branch_finish"
+        ],
+        "merged_at": "2026-08-08T01:37:32Z"
+      }
+    }
+  },
+  "status": "complete",
+  "completed_at": "2026-08-08T01:40:00Z"
+}

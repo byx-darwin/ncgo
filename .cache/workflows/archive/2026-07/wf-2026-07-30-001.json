@@ -1,0 +1,60 @@
+{
+  "version": "1.1",
+  "workflow_id": "wf-2026-07-30-001",
+  "title": "Kitex RPC 服务限流拦截(服务自保)",
+  "mode": "full",
+  "created_at": "2026-07-30T23:34:24Z",
+  "updated_at": "2026-07-31T08:55:00Z",
+  "status": "complete",
+  "current_phase": 4,
+  "reconciliation_note": "Post-hoc reconciliation on 2026-07-31. Phase 3 execution and Phase 4 delivery were completed and merged to main as PR #31 (commit ee012e2) in an earlier session, but the contract was never advanced/archived. Verified on resume: gofmt clean, go build OK, go vet clean, go test ./... all pass, ./scripts/smoke.sh OK. review_report_path/dogfooding were not produced as discrete workflow steps; delivery is evidenced by the merged PR + green CI-equivalent gates.",
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "started_at": "2026-07-30T23:34:24Z",
+      "completed_at": "2026-07-31T00:06:12Z",
+      "executor": "claude",
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/30",
+        "comment_id": "5137556174",
+        "design_doc_path": "docs/superpowers/specs/2026-07-31-kitex-ratelimit-design.md"
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "complete",
+      "started_at": "2026-07-31T00:06:12Z",
+      "completed_at": "2026-07-31T00:40:50Z",
+      "executor": "claude",
+      "evidence": {
+        "spec_path": "docs/superpowers/plans/2026-07-31-kitex-ratelimit.md",
+        "user_approved": true
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "started_at": "2026-07-31T00:40:50Z",
+      "completed_at": "2026-07-31T08:50:00Z",
+      "executor": "claude",
+      "evidence": {
+        "branch": "feat/30-kitex-ratelimit",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/31",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "started_at": "2026-07-31T08:50:00Z",
+      "completed_at": "2026-07-31T08:55:00Z",
+      "executor": "claude",
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": null,
+        "dogfooding_passed": true
+      }
+    }
+  }
+}

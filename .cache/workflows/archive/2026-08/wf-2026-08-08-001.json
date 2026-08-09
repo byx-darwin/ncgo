@@ -1,0 +1,67 @@
+{
+  "version": "1.1",
+  "workflow_id": "wf-2026-08-08-001",
+  "title": "feat(cli): ncgo new 生成后自动 ai sync（默认 target=claude，agent 即用）",
+  "mode": "full",
+  "issue_number": 58,
+  "created_at": "2026-08-08T21:51:24Z",
+  "updated_at": "2026-08-08T23:53:04Z",
+  "current_phase": 4,
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "started_at": "2026-08-08T21:51:24Z",
+      "completed_at": "2026-08-08T23:02:04Z",
+      "executor": null,
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/58",
+        "comment_id": "5228620612",
+        "design_doc_path": "docs/superpowers/specs/2026-08-09-ncgo-new-auto-ai-sync-design.md"
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "complete",
+      "started_at": "2026-08-08T23:03:57Z",
+      "completed_at": "2026-08-08T23:11:09Z",
+      "executor": null,
+      "evidence": {
+        "spec_path": "docs/superpowers/plans/2026-08-09-ncgo-new-auto-ai-sync.md",
+        "user_approved": true
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "started_at": "2026-08-08T23:11:09Z",
+      "completed_at": "2026-08-08T23:47:10Z",
+      "executor": null,
+      "evidence": {
+        "branch": "feat/58-auto-ai-sync",
+        "base_branch": "main",
+        "worktree_path": "/tmp/ncgo-worktree-58",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/61",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "started_at": "2026-08-08T23:47:10Z",
+      "completed_at": "2026-08-08T23:53:04Z",
+      "executor": null,
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": "N/A (self-review skipped)",
+        "dogfooding_passed": true,
+        "branch_cleaned": false,
+        "phase4_steps_executed": [
+          "pipeline-analysis",
+          "issue-triage",
+          "branch-finish-preserved"
+        ]
+      }
+    }
+  }
+}

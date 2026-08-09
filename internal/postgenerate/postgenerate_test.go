@@ -150,6 +150,75 @@ module: example.com/test
 	}
 }
 
+func TestRun_SQLCBeforeTidy_Kitex(t *testing.T) {
+	var buf bytes.Buffer
+	opts := Options{
+		Dir:         t.TempDir(),
+		Kind:        "kitex",
+		RanGenerate: true,
+		Runner:      &fakeRunner{success: true},
+		Stdout:      &buf,
+	}
+	res := Run(opts)
+	// Should have 3 steps: sqlc, go mod tidy, ai sync
+	if len(res.Steps) != 3 {
+		t.Fatalf("expected 3 steps for kitex, got %d", len(res.Steps))
+	}
+	// Verify order: sqlc first
+	if res.Steps[0].Name != "sqlc" {
+		t.Errorf("expected first step to be 'sqlc', got %q", res.Steps[0].Name)
+	}
+	if res.Steps[1].Name != "go mod tidy" {
+		t.Errorf("expected second step to be 'go mod tidy', got %q", res.Steps[1].Name)
+	}
+	if res.Steps[2].Name != "ai sync" {
+		t.Errorf("expected third step to be 'ai sync', got %q", res.Steps[2].Name)
+	}
+}
+
+func TestRun_SQLCBeforeTidy_HertzWithDB(t *testing.T) {
+	var buf bytes.Buffer
+	opts := Options{
+		Dir:          t.TempDir(),
+		Kind:         "hertz",
+		WithDatabase: true,
+		RanGenerate:  true,
+		Runner:       &fakeRunner{success: true},
+		Stdout:       &buf,
+	}
+	res := Run(opts)
+	// Should have 3 steps: sqlc, go mod tidy, ai sync
+	if len(res.Steps) != 3 {
+		t.Fatalf("expected 3 steps for hertz-with-db, got %d", len(res.Steps))
+	}
+	// Verify order: sqlc first
+	if res.Steps[0].Name != "sqlc" {
+		t.Errorf("expected first step to be 'sqlc', got %q", res.Steps[0].Name)
+	}
+}
+
+func TestRun_NoSQLC_HertzNoDB(t *testing.T) {
+	var buf bytes.Buffer
+	opts := Options{
+		Dir:         t.TempDir(),
+		Kind:        "hertz",
+		RanGenerate: true,
+		Runner:      &fakeRunner{success: true},
+		Stdout:      &buf,
+	}
+	res := Run(opts)
+	// Should have 2 steps: go mod tidy, ai sync (no sqlc)
+	if len(res.Steps) != 2 {
+		t.Fatalf("expected 2 steps for hertz-no-db, got %d", len(res.Steps))
+	}
+	// Verify no sqlc step
+	for _, step := range res.Steps {
+		if step.Name == "sqlc" {
+			t.Error("sqlc step should not be present for hertz without db")
+		}
+	}
+}
+
 type fakeRunner struct {
 	success bool
 }

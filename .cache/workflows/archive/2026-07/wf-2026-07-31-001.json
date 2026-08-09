@@ -1,0 +1,62 @@
+{
+  "version": "1.1",
+  "workflow_id": "wf-2026-07-31-001",
+  "title": "多角色分析:真实 SDK adapter(Polaris-first)接入 — 未来发展方向1",
+  "mode": "full",
+  "created_at": "2026-07-31T09:00:00Z",
+  "updated_at": "2026-07-31T11:30:00Z",
+  "status": "complete",
+  "current_phase": 4,
+  "phases": {
+    "1": {
+      "name": "Clarification",
+      "status": "complete",
+      "started_at": "2026-07-31T09:00:00Z",
+      "completed_at": "2026-07-31T09:26:00Z",
+      "executor": "claude",
+      "evidence": {
+        "issue_url": "https://github.com/byx-darwin/ncgo/issues/32",
+        "comment_id": "5141382257",
+        "design_doc_path": "docs/superpowers/specs/2026-07-31-real-sdk-adapter-multirole-analysis.md"
+      }
+    },
+    "2": {
+      "name": "Planning",
+      "status": "complete",
+      "started_at": "2026-07-31T09:26:00Z",
+      "completed_at": "2026-07-31T09:50:00Z",
+      "executor": "claude",
+      "evidence": {
+        "spec_path": "docs/superpowers/plans/2026-07-31-polaris-adapter.md",
+        "user_approved": true,
+        "quality_gate": "passed (build/test/format/static OK; coverage N/A docs-only; pre-commit skipped for planning)"
+      }
+    },
+    "3": {
+      "name": "Execution",
+      "status": "complete",
+      "started_at": "2026-07-31T09:50:00Z",
+      "completed_at": "2026-07-31T11:10:00Z",
+      "executor": "claude",
+      "evidence": {
+        "branch": "feat/32-polaris-adapter",
+        "pr_url": "https://github.com/byx-darwin/ncgo/pull/33",
+        "tests_passed": true
+      }
+    },
+    "4": {
+      "name": "Delivery",
+      "status": "complete",
+      "started_at": "2026-07-31T11:10:00Z",
+      "completed_at": "2026-07-31T11:30:00Z",
+      "executor": "claude",
+      "evidence": {
+        "pipeline_ok": true,
+        "review_report_path": "docs/superpowers/reviews/2026-07-31-pr33-review.md",
+        "dogfooding_passed": true,
+        "issue_triage": "type:feature, priority:medium, triage:done",
+        "notes": "CI 2/2 success on feat/32-polaris-adapter (~79s avg). Dogfooding: real CLI add infra polaris_adapter exercised (kitex --plan + real write + hertz rejection). phase4-dogfooding-checklist.md absent in repo; substituted direct end-to-end CLI exercise."
+      }
+    }
+  }
+}
