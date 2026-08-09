@@ -183,6 +183,16 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 		return res, err
 	}
 
+	// After the generator runs, scan internal/usecase/ to discover domains
+	// and update the manifest. Kitex templates generate per-service usecase
+	// directories that must be reflected in manifest.domains for ncgo check
+	// consistency.
+	if defaultKind(opts.Kind) == manifest.KindKitex {
+		if err := updateManifestDomainsFromUsecases(dir); err != nil {
+			return res, err
+		}
+	}
+
 	// Apply custom Hertz templates if they exist (post-hz overlay)
 	if defaultKind(opts.Kind) == manifest.KindHertz {
 		services, _ := scaffoldtemplate.ParseAllServices(ctx, filepath.Join(dir, idl), opts.Module)

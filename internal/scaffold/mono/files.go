@@ -990,3 +990,40 @@ func dedentBody(s string) string {
 	}
 	return strings.Join(lines, "\n")
 }
+
+// updateManifestDomainsFromUsecases scans internal/usecase/ after the Kitex
+// generator runs and updates the manifest's domains field to match. This
+// keeps ncgo check's manifest.consistency check passing when templates
+// generate per-service usecase directories.
+func updateManifestDomainsFromUsecases(dir string) error {
+	usecaseDir := filepath.Join(dir, "internal", "usecase")
+	entries, err := os.ReadDir(usecaseDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return nil // no usecase directory, nothing to update
+		}
+		return fmt.Errorf("scaffold: read usecase dir: %w", err)
+	}
+
+	var domains []string
+	for _, e := range entries {
+		if e.IsDir() {
+			domains = append(domains, e.Name())
+		}
+	}
+
+	if len(domains) == 0 {
+		return nil
+	}
+
+	// Load existing manifest, add domains, and save
+	m, err := manifest.Load(dir)
+	if err != nil {
+		return fmt.Errorf("scaffold: load manifest: %w", err)
+	}
+	m.Domains = domains
+	if err := manifest.Save(dir, m); err != nil {
+		return fmt.Errorf("scaffold: save manifest: %w", err)
+	}
+	return nil
+}
