@@ -460,6 +460,58 @@ query 文件。
 - **依赖:`github.com/byx-darwin/go-tools/go-common`(log、error 包)、
   `go.opentelemetry.io/otel`(trace context,用于 request ID 回退)。
 
+#### Release Canary(`release_canary.go`)
+
+`ncgo add infra release_canary` 生成
+`internal/base/release/hertz.go`(来自 `hertz/optional/release_canary.go`,
+仅依赖 stdlib)—— 一个基于 SDK 中立金丝雀模型(`Traffic`、`RuleSet`、
+`Selector`、`Instance`、`Decision`,定义于 `optional/release_canary.go`)
+的 Hertz 适配器。它从 Hertz 请求头中提取流量维度并写入 `context`,
+使下游 handler 与 RPC 中间件可通过
+`release.TrafficFromContext(ctx)` / `release.HertzDecision(ctx, rules)`
+读取。
+
+- **生成的文件:**
+  - `internal/base/release/hertz.go` — Hertz 流量适配器(包名
+    `release`,与共享模型同包)。
+
+- **中间件(在 `server.go` 中注册):**
+  ```go
+  import "my-api/internal/base/release"
+
+  h.Use(release.HertzTraffic())   // 从请求头提取流量维度 → context
+  ```
+
+- **`HertzTraffic()`** — `app.HandlerFunc` 中间件。每个请求调用
+  `TrafficFromHertz(c)` 构建 `Traffic`,随后通过
+  `WithTraffic(ctx, traffic)` 写入 `context`。后续 handler / RPC
+  中间件通过 `release.TrafficFromContext(ctx)` 读取。
+
+- **流量维度提取(`TrafficFromHertz`):**
+
+  | Header | 字段 | 说明 |
+  |---|---|---|
+  | `X-Traffic-Lane` | `Traffic.Lane` | 逻辑流量通道(如 `canary`、`beta`) |
+  | `X-User-ID` | `Traffic.UserID` | 终端用户标识 |
+  | `X-Tenant-ID` | `Traffic.TenantID` | 多租户标识 |
+
+  `StickyKey` 取 `UserID`、`TenantID`、`Lane` 中第一个非空值,
+  用于 selector 的一致性路由。
+
+- **`HertzDecision(ctx, rules)`** — 便利封装:从 `ctx` 读取 `Traffic`,
+  调用 `Decide(traffic, rules)` 产生 `Decision`(stable / canary 轨道)。
+  规则集为 `RuleSet`(lane 匹配器 + 轨道 selector)。
+
+- **与 Kitex 的差异。** Kitex 的适配器
+  (`kitex/optional/release_canary.go`) 是 `endpoint.Middleware`,
+  除 header 外还会查询 kitex `metainfo` 层,并通过
+  `InjectKitexTraffic` 回写。Hertz 直接从 `app.RequestContext` 读取
+  header,无 metainfo 往返。Kitex 还在 `release_ops.go` 中提供金丝雀
+  感知负载均衡器(`KitexCanaryLoadBalancer`)与发现缓存;Hertz 依赖
+  上游网关进行轨道选择,不自带 LB —— 适配器只暴露流量上下文。
+
+- **依赖:** 除 Hertz SDK 外无额外依赖(`github.com/cloudwego/hertz`)。
+
 ## 4. 文件清单
 
 | 文件 | 作用 | 消费方 |

@@ -452,6 +452,60 @@ structured logging middleware under `internal/base/logging/`.
 - **Deps:** `github.com/byx-darwin/go-tools/go-common` (log, error packages),
   `go.opentelemetry.io/otel` (trace context for request ID fallback).
 
+#### Release Canary (`release_canary.go`)
+
+`ncgo add infra release_canary` emits
+`internal/base/release/hertz.go` (from `hertz/optional/release_canary.go`,
+stdlib-only) — a Hertz adapter over the SDK-neutral canary model defined in
+`optional/release_canary.go` (`Traffic`, `RuleSet`, `Selector`, `Instance`,
+`Decision`). It extracts traffic dimensions from Hertz request headers and
+injects them into `context`, so downstream handlers and RPC middleware can
+call `release.TrafficFromContext(ctx)` / `release.HertzDecision(ctx, rules)`.
+
+- **Files added:**
+  - `internal/base/release/hertz.go` — Hertz traffic adapter (package
+    `release`, same package as the shared model).
+
+- **Middleware (register in `server.go`):**
+  ```go
+  import "my-api/internal/base/release"
+
+  h.Use(release.HertzTraffic())   // extract traffic headers → context
+  ```
+
+- **`HertzTraffic()`** — `app.HandlerFunc` middleware. For each request it
+  calls `TrafficFromHertz(c)` to build a `Traffic`, then stores it in
+  `context` via `WithTraffic(ctx, traffic)`. Subsequent handlers / RPC
+  middleware read it with `release.TrafficFromContext(ctx)`.
+
+- **Traffic dimension extraction (`TrafficFromHertz`):**
+
+  | Header | Field | Notes |
+  |---|---|---|
+  | `X-Traffic-Lane` | `Traffic.Lane` | logical traffic lane (e.g. `canary`, `beta`) |
+  | `X-User-ID` | `Traffic.UserID` | end-user identifier |
+  | `X-Tenant-ID` | `Traffic.TenantID` | multi-tenant identifier |
+
+  `StickyKey` is derived as the first non-empty value among
+  `UserID`, `TenantID`, `Lane` — used by selectors for consistent routing.
+
+- **`HertzDecision(ctx, rules)`** — convenience wrapper: reads `Traffic`
+  from `ctx` and calls `Decide(traffic, rules)` to produce a `Decision`
+  (stable vs canary track). Rules are a `RuleSet` (lane matchers + track
+  selector).
+
+- **Contrast with Kitex.** Kitex's adapter (`kitex/optional/release_canary.go`)
+  is an `endpoint.Middleware` and also consults the kitex `metainfo` layer
+  (in addition to headers) before writing back via `InjectKitexTraffic`.
+  Hertz reads headers directly from `app.RequestContext` and has no
+  metainfo round-trip. Kitex additionally ships a canary-aware load
+  balancer (`KitexCanaryLoadBalancer`) and discovery caching in
+  `release_ops.go`; Hertz relies on the upstream gateway for track
+  selection and does not ship its own LB — the adapter only exposes the
+  traffic context.
+
+- **Deps:** none beyond the Hertz SDK (`github.com/cloudwego/hertz`).
+
 ## 4. Files
 
 | File | Purpose | Consumer |
