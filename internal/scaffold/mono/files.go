@@ -1069,6 +1069,18 @@ func reapplyTemplateFiles(dir string, opts Options) error {
 			fmt.Fprintf(os.Stderr, "warning: failed to render path %s: %v\n", tpl.Path, err)
 			continue
 		}
+		// Check if the rendered path would create a file that Go treats as a test file
+		// This happens when service name contains "test" (e.g., "test-final" -> "test_final.go")
+		// Go treats files ending with _test.go as test files, so we need to rename router files
+		// that would have this pattern to avoid compilation issues
+		baseName := filepath.Base(renderedPath)
+		if strings.HasSuffix(baseName, ".go") && strings.Contains(renderedPath, "/router/pb/") {
+			nameWithoutExt := strings.TrimSuffix(baseName, ".go")
+			if strings.HasSuffix(nameWithoutExt, "_test") {
+				// Rename to _routes.go to avoid Go treating it as a test file
+				renderedPath = filepath.Join(filepath.Dir(renderedPath), nameWithoutExt+"_routes.go")
+			}
+		}
 		rendered, err := scaffoldtemplate.Render(tpl.Body, scaffoldtemplate.RenderData{
 			Module:      opts.Module,
 			ServiceName: serviceNameForFiles,
@@ -1097,10 +1109,31 @@ func reapplyTemplateFiles(dir string, opts Options) error {
 		if _, err := os.Stat(f); err == nil {
 			// Check if the correctly-named file exists
 			// Only replace in the filename, not the entire path
-			dir := filepath.Dir(f)
+			fileDir := filepath.Dir(f)
 			base := filepath.Base(f)
 			correctBase := strings.ReplaceAll(base, opts.Name, serviceNameForFiles)
-			correctName := filepath.Join(dir, correctBase)
+
+			// For router files, we also need to check for the _routes.go variant
+			// This happens when the service name ends with "test" (e.g., "final-test" -> "final_test" -> "final_test_routes.go")
+			if strings.Contains(f, "/router/pb/") {
+				// Check if the file would end with _test.go after conversion
+				if strings.HasSuffix(correctBase, "_test.go") {
+					// The file was renamed by replacing .go with _routes.go
+					// e.g., "final_test.go" -> "final_test_routes.go"
+					routesBase := strings.TrimSuffix(correctBase, ".go") + "_routes.go"
+					routesName := filepath.Join(fileDir, routesBase)
+					if _, err := os.Stat(routesName); err == nil {
+						// The _routes.go file exists, delete the hyphenated one
+						if err := os.Remove(f); err != nil {
+							fmt.Fprintf(os.Stderr, "warning: failed to remove hyphenated file %s: %v\n", f, err)
+						}
+						continue
+					}
+				}
+			}
+
+			// Standard cleanup: check if the correctly-named file exists
+			correctName := filepath.Join(fileDir, correctBase)
 			if _, err := os.Stat(correctName); err == nil {
 				// Both files exist, delete the hyphenated one
 				if err := os.Remove(f); err != nil {
