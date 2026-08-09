@@ -481,6 +481,70 @@ ServiceName})`,把 `provider.ServerSuite()` 挂到 kitex server option,并在
 > go-framework OTLP;注册/发现统一切换到 Polaris。既有的 `otel` /
 > `registry_etcd` kind 现在返回 invalid kind。
 
+#### 速率限制(`middleware/ratelimit.go` + `pkg/ratelimit/`,kitex 专属)
+
+`ncgo add infra rate_limit`(别名:`rate-limit`)为生成的 Kitex 服务
+添加动态限流。这是 Kitex 专属 add-on;Hertz 侧通过 Hertz 中间件管线
+接入,在另一份设计文档中记录。
+
+- **生成文件:**
+  - `internal/base/middleware/ratelimit.go` — kitex `endpoint.Middleware`,
+    每次 RPC 解析一条 rule 后调用 `store.Allow`。默认 shadow 模式只
+    通过 `expvar` 与结构化日志计数拒绝,不真正拦截;`mode: enforce`
+    在同一条代码路径上改为返回 `rpcerror.RateLimited`。
+  - `internal/pkg/ratelimit/resolver.go`(含 `_test.go`)— 框架中性的
+    rule 解析器。source 类型:`config`(静态 YAML)、`database`
+    (Postgres,sqlc 生成的查询)、`rule_center`(远端 gRPC)、`grpc`
+    (内联 gRPC 客户端)。
+  - `internal/pkg/ratelimit/store.go`(含 `_test.go`)— 计数器后端。
+    `backend: memory` 使用进程内滑动窗口;`backend: redis` 委托
+    `go-redis` 进行分布式计数。
+
+- **配置(`conf/dev/conf.yaml`):**
+  ```yaml
+  rate_limit:
+    enabled: true
+    mode: shadow            # shadow | enforce
+    backend: memory         # memory | redis
+    fail_open: true
+    source:
+      type: config          # config | database | rule_center | grpc
+      cache_ttl_seconds: 60s
+      fallback_on_error: true
+    static:
+      max_qps: 0            # 全局安全阈值 QPS 上限(0 = 不启用)
+      max_connections: 0
+  ```
+  `ncgo add infra rate_limit` 若 `rate_limit:` 不存在则追加默认块;
+  若已存在,则**仅在 `rate_limit:` 作用域内**将 `enabled: true` +
+  `mode: shadow` 翻转,其他 key 保持不变。
+
+- **Shadow → enforce 上线流程**(来自 `setupSteps`):
+  1. 检查生成的 `rate_limit` 配置块;选择 `source.type`(`config`
+     用于静态规则,`database` 用于 sqlc 管理规则,`rule_center`
+     用于远端 rule service)。
+  2. 以 `mode: shadow` 部署。观察 shadow 拒绝:结构化日志中
+     `grep 'ratelimit shadow denied'`,或读取
+     `ratelimit_shadow_denied` expvar map。
+  3. shadow 决策符合预期后,设置 `mode: enforce`。
+  4. 可选:设置 `static.max_qps` / `static.max_connections` 作为粗粒度
+     全局安全阈值。
+
+- **接线**(`server.go` 中):
+  ```go
+  import "my-api/internal/base/middleware"
+
+  // 加到 kitex server 中间件链:
+  svr := service.New(..., server.WithMiddleware(middleware.RateLimit(cfg.RateLimit)))
+  ```
+  中间件读取 `cfg.RateLimit`(类型 `conf.RateLimitConfig`);当
+  `source.type: rule_center` 时,rule-center gRPC 客户端从同一配置块
+  延迟构造,无需手工接线。
+
+- **依赖**:`backend: redis` 或 `source.type: database` 时需
+  `github.com/redis/go-redis/v9`;rule_center source 还需
+  `google.golang.org/grpc`。
+
 ## 4. 文件清单
 
 | 文件 | 作用 |
@@ -499,6 +563,8 @@ ServiceName})`,把 `provider.ServerSuite()` 挂到 kitex server option,并在
 | `kitex/kitex-template/makefile.yaml` | Makefile 目标(`make dev`、`make sqlc` 等) |
 | `kitex/sqlc.yaml` | sqlc 配置,结构与 Hertz 版相同 |
 | `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris,observability_logging,release_canary,polaris_canary_adapter,polaris_canary_observer_otel}.go` | kitex 族的 `add infra` 素材 |
+| `kitex/kitex-template/ratelimit_middleware.yaml` | Kitex 限流中间件(`internal/base/middleware/ratelimit.go`) |
+| `ratelimit/{resolver,resolver_test,store,store_test}.yaml` | 共享限流解析器 + 计数器片段(`internal/pkg/ratelimit/`) |
 | `optional/{observability_logging,release_canary}.go` | 共享 add-on(日志工具、SDK 中性金丝雀模型) |
 | `optional/release_ops.go` | 金丝雀接缝的生产加固装饰器 |
 
@@ -549,7 +615,8 @@ kitex 工具通过 `--template-extension` 读取这些记录,然后把每条按 
 `observability_logging`(结构化日志拦截器)、
 `release_canary`(SDK 中性金丝雀模型 + Hertz/Kitex 流量适配器),
 以及 Kitex 专属 `registry_polaris`(服务注册)、
-`polaris_adapter`(Polaris 金丝雀路由适配器)。observability 追踪
+`polaris_adapter`(Polaris 金丝雀路由适配器)、
+`rate_limit`(动态限流中间件 + 解析器 + 计数器)。observability 追踪
 已由 kitex 基础模板(go-framework OTLP)直接提供,不再以独立 add-on
 形态存在。
 
