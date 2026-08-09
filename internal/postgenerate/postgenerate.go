@@ -2,6 +2,7 @@ package postgenerate
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"strings"
 
@@ -43,6 +44,11 @@ func Run(opts Options) *Result {
 			{Name: "ai sync", Status: "skipped", Detail: "auto steps disabled or generator did not run"},
 		}
 		return res
+	}
+
+	// Print header
+	if opts.Stdout != nil {
+		fmt.Fprintln(opts.Stdout, "auto steps:")
 	}
 
 	ctx := context.Background()

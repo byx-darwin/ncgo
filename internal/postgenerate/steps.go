@@ -20,27 +20,39 @@ func goModTidy(ctx context.Context, opts Options) StepResult {
 	elapsed := time.Since(start)
 
 	if err != nil {
-		return StepResult{
+		result := StepResult{
 			Name:   "go mod tidy",
 			Status: "failed",
 			Detail: fmt.Sprintf("%v (non-blocking)", err),
 		}
+		if opts.Stdout != nil {
+			fmt.Fprintf(opts.Stdout, "✗ go mod tidy failed: %v (non-blocking)\n", err)
+		}
+		return result
 	}
-	return StepResult{
+	result := StepResult{
 		Name:   "go mod tidy",
 		Status: "succeeded",
 		Detail: fmt.Sprintf("(%.1fs)", elapsed.Seconds()),
 	}
+	if opts.Stdout != nil {
+		fmt.Fprintf(opts.Stdout, "✓ go mod tidy (%.1fs)\n", elapsed.Seconds())
+	}
+	return result
 }
 
 // aiSync calls ai.Sync to render AI context files.
 func aiSync(ctx context.Context, opts Options) StepResult {
 	if opts.AITarget == "none" {
-		return StepResult{
+		result := StepResult{
 			Name:   "ai sync",
 			Status: "skipped",
 			Detail: "target=none",
 		}
+		if opts.Stdout != nil {
+			fmt.Fprintln(opts.Stdout, "- ai sync skipped (target=none)")
+		}
+		return result
 	}
 
 	target := opts.AITarget
@@ -56,15 +68,23 @@ func aiSync(ctx context.Context, opts Options) StepResult {
 	elapsed := time.Since(start)
 
 	if err != nil {
-		return StepResult{
+		result := StepResult{
 			Name:   "ai sync",
 			Status: "failed",
 			Detail: fmt.Sprintf("%v (non-blocking)", err),
 		}
+		if opts.Stdout != nil {
+			fmt.Fprintf(opts.Stdout, "✗ ai sync failed: %v (non-blocking)\n", err)
+		}
+		return result
 	}
-	return StepResult{
+	result := StepResult{
 		Name:   "ai sync",
 		Status: "succeeded",
 		Detail: fmt.Sprintf("--target %s (%.1fs)", target, elapsed.Seconds()),
 	}
+	if opts.Stdout != nil {
+		fmt.Fprintf(opts.Stdout, "✓ ai sync --target %s (%.1fs)\n", target, elapsed.Seconds())
+	}
+	return result
 }
