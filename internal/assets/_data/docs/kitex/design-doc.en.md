@@ -305,6 +305,62 @@ longer exists as a standalone add-on.
 - Failures: `clickhouse_config_missing`, `clickhouse_addresses_missing`,
   `clickhouse_open_failed`, `clickhouse_ping_failed`.
 
+#### Structured Logging (`observability_logging.go` + `kitex.go`)
+
+`ncgo add infra observability_logging` (alias: `logging`) adds category-based
+structured logging interceptors under `internal/base/logging/`.
+
+- **Files added:**
+  - `internal/base/logging/logging.go` — shared helpers (same as Hertz copy):
+    `WithRequestID`, `WithTrafficLane`, `SinceMS`, and category constants.
+  - `internal/base/logging/kitex.go` — Kitex-specific interceptors.
+
+- **Interceptors (register in `server.go` and client constructors):**
+  ```go
+  import "my-api/internal/base/logging"
+
+  // Server side:
+  svr := service.New(..., server.WithMiddleware(logging.KitexRequestID()))
+  // or add to the middleware chain:
+  //   logging.KitexRequestID()  — extract/generate x-request-id via metainfo
+  //   logging.KitexAccessLog()  — structured RPC log (service, method, latency)
+  //   logging.KitexRecovery()   — panic recovery + CategoryPanic log
+  ```
+
+- **`KitexRequestID()`** — reads `x-request-id` from Kitex metainfo; falls
+  back to the OTel span trace ID; generates a 16-byte hex ID when neither
+  is present. Persists the ID downstream via
+  `metainfo.WithPersistentValue`. Also propagates `x-traffic-lane`.
+- **`KitexAccessLog()`** — emits `goclog.RPC` with `rpc.system`,
+  `rpc.service`, `rpc.method`, and `latency_ms`. Logs at ERROR level on
+  failure (passes `err` directly to `ErrorContext`), INFO on success.
+- **`KitexRecovery()`** — catches panics, logs via
+  `goclog.L().WithCategory(CategoryPanic)` with the panic value.
+- **`KitexMetaValue(ctx, key)`** — reads a metainfo value (persistent or
+  transient), useful for extracting request ID / traffic lane in handlers.
+
+- **Initialization (in `main.go` or `server.go`):**
+  ```go
+  import goclog "github.com/byx-darwin/go-tools/go-common/log"
+
+  logging.InitFromConf(cfg.Log, goclog.ReleaseInfo{
+      ServiceName: "my-rpc",
+      Environment: cfg.Env,
+  })
+  ```
+
+- **Configuration (`conf.yaml`):**
+  ```yaml
+  log:
+    level: info          # debug | info | warn | error
+    format: json         # json | text
+    mode: console        # console | file | both
+  ```
+
+- **Deps:** `github.com/byx-darwin/go-tools/go-common` (log, error packages),
+  `github.com/bytedance/gopkg` (metainfo, for request ID propagation across
+  Kitex RPC calls), `go.opentelemetry.io/otel` (trace context fallback).
+
 #### Polaris Registry / Discovery (`registry/polaris.go`, kitex-only)
 
 - Provides: `NewRegistry(cfg)` returning `kitexregistry.Registry` and
@@ -332,10 +388,68 @@ longer exists as a standalone add-on.
   `polaris.go` and `polaris.yaml` are emitted and the base server/client
   are untouched.
 
-#### Release Canary GA Hardening (`release_ops.go`, SDK-neutral)
+#### Polaris Canary Adapter (`polaris_adapter.go`, kitex-only)
 
-`ncgo add infra release_canary` emits `release_ops.go` (stdlib-only) with
-production-hardening decorators over the canonical `release_canary.go` seam:
+`ncgo add infra polaris_adapter` wires the real polaris-go SDK into the
+SDK-neutral canary seams defined in `canary.go` (output from
+`optional/release_canary.go`, same package). `polaris_adapter.go` is
+the only file that imports polaris-go — ncgo itself never depends on the
+SDK directly.
+
+- **Files added:**
+  - `internal/base/release/polaris_adapter.go` — Polaris SDK adapter
+    (the only file that imports polaris-go).
+  - `internal/base/release/polaris_observer_otel.go` — OTel metrics
+    observer (reuses the go-framework OTLP meter already wired into the
+    kitex base).
+
+- **Provides:**
+  - `NewPolarisInstanceLister(cfg PolarisDiscoveryConfig) (PolarisInstanceLister, error)` — returns a
+    `PolarisInstanceLister` backed by `polaris.ConsumerAPI.GetAllInstances`.
+  - `NewPolarisRuleLoader(cfg PolarisRuleConfig) (PolarisRuleLoader, error)` — returns a
+    `PolarisRuleLoader` that reads a canary `RuleSet` (YAML) from Polaris
+    config via `polaris.ConfigAPI.GetConfigFile`.
+  - `NewPolarisSelector(discoveryCfg, ruleCfg) (Selector, error)` — convenience constructor
+    that assembles a `release.Selector` wired to both Polaris discovery
+    and rule loading.
+
+- **Credentials (environment only — never hardcode):**
+  - `POLARIS_TOKEN` — Polaris auth token (empty = no auth)
+  - `POLARIS_NAMESPACE` — default namespace when `cfg.Namespace` is empty
+
+- **Enable:**
+  ```bash
+  go get github.com/polarismesh/polaris-go
+  go get gopkg.in/yaml.v3
+  ```
+  `go.opentelemetry.io/otel` and `go.opentelemetry.io/otel/metric` are
+  already present in generated kitex projects via go-framework OTLP.
+
+- **Usage:**
+  ```go
+  sel, err := release.NewPolarisSelector(
+      release.PolarisDiscoveryConfig{
+          Addresses: []string{"polaris.example.com:8091"},
+          Namespace: "production",
+          Service:   "my-rpc",
+      },
+      release.PolarisRuleConfig{
+          Addresses: []string{"polaris.example.com:8091"},
+          Namespace: "production",
+          Group:     "ncgo-canary",
+          FileName:  "my-rpc.canary.yaml",
+      },
+  )
+  ```
+
+- **Deps:** `github.com/polarismesh/polaris-go`, `gopkg.in/yaml.v3`,
+  `go-tools/go-common` (goerror). Tested with polaris-go v1.7.1.
+
+#### Release Canary GA Hardening (`ops.go`, from `release_ops.go`, SDK-neutral)
+
+`ncgo add infra release_canary` emits `ops.go` (from `optional/release_ops.go`,
+stdlib-only) with production-hardening decorators over the canonical
+`canary.go` seam:
 
 - **TTL cache** (`CacheOptions`): defaults TTL 30s / stale-while-revalidate
   window 5m / refresh jitter ±20% (`Jitter=0.2`); `StaleTTL=0` disables the
@@ -415,7 +529,9 @@ and `defer provider.Shutdown()` before `server.Run` exits.
 | `kitex/kitex-template/migration_init.yaml` / `migration_keep.yaml` | sqlc/atlas migration placeholders |
 | `kitex/kitex-template/makefile.yaml` | Makefile targets (`make dev`, `make sqlc`, ...) |
 | `kitex/sqlc.yaml` | sqlc config, structurally identical to the Hertz version |
-| `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris}.go` | `add infra` snippets for the kitex family (`registry_polaris` also drops `polaris.yaml` at the project root) |
+| `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris,observability_logging,release_canary,polaris_canary_adapter,polaris_canary_observer_otel}.go` | `add infra` snippets for the kitex family |
+| `optional/{observability_logging,release_canary}.go` | Shared add-ons (logging helpers, SDK-neutral canary model) |
+| `optional/release_ops.go` | Production-hardening decorators for canary seam |
 
 ## 5. `kitex-template/*.yaml` Semantics
 
@@ -462,9 +578,13 @@ Constraints for new optional files:
 - Package must match the target package (`data`, `registry`, etc.).
 - Top-of-file comment must list required dependencies and wiring notes.
 
-Currently shipped: `redis`, `kafka`, `es`, `clickhouse`, and Kitex-only
-`registry_polaris`. Observability is provided by the kitex base template
-(go-framework OTLP) and no longer ships as a standalone add-on.
+Currently shipped: `redis`, `kafka`, `es`, `clickhouse`,
+`observability_logging` (structured logging interceptors),
+`release_canary` (SDK-neutral canary model + Hertz/Kitex traffic
+adapters), and Kitex-only `registry_polaris` (service registry),
+`polaris_adapter` (Polaris canary routing adapter). Observability tracing
+is provided by the kitex base template (go-framework OTLP) and no longer
+ships as a standalone add-on.
 
 ## 7. Differences from Hertz
 

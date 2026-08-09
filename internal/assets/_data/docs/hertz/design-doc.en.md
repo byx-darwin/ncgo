@@ -380,6 +380,78 @@ When the scaffolder is invoked with `--db postgres`:
   do.Provide(inj, data.NewClickHouse)
   ```
 
+#### Structured Logging (`observability_logging.go` + `hertz.go`)
+
+`ncgo add infra observability_logging` (alias: `logging`) adds category-based
+structured logging middleware under `internal/base/logging/`.
+
+- **Files added:**
+  - `internal/base/logging/logging.go` — shared helpers: `WithRequestID`,
+    `WithTrafficLane`, `SinceMS`, and category constants (`CategoryAccess`,
+    `CategoryError`, `CategoryBiz`, `CategoryRPC`, `CategoryDB`,
+    `CategoryPanic`, `CategoryAudit`, `CategorySecurity`). Re-exports from
+    `go-common/log`.
+  - `internal/base/logging/hertz.go` — Hertz-specific middleware.
+
+- **Middleware (register in `server.go`):**
+  ```go
+  import "my-api/internal/base/logging"
+
+  h.Use(logging.HertzRequestID())    // extract/generate X-Request-ID, propagate X-Traffic-Lane
+  h.Use(logging.HertzAccessLog())    // structured access log (method, path, status, latency)
+  h.Use(logging.HertzRecovery())     // panic recovery → HTTP 500 + CategoryPanic log
+  ```
+
+- **`HertzRequestID()`** — reads `X-Request-ID` from the request header;
+  falls back to the OTel span trace ID; generates a 16-byte hex ID when
+  neither is present. Sets the response header. Also propagates
+  `X-Traffic-Lane` into context and Hertz local storage.
+- **`HertzAccessLog()`** — emits `goclog.Access` with `http.method`,
+  `http.path`, `http.status_code`, and `latency_ms`.
+- **`HertzRecovery()`** — catches panics, logs via
+  `goclog.L().WithCategory(CategoryPanic)` with the panic value and stack,
+  returns HTTP 500.
+- **`HertzRequestIDFromContext(c)`** — reads the request ID from Hertz
+  local storage (useful in handlers).
+
+- **Initialization (in `main.go` or `server.go`):**
+  ```go
+  import goclog "github.com/byx-darwin/go-tools/go-common/log"
+
+  logging.InitFromConf(cfg.Logging, goclog.ReleaseInfo{
+      ServiceName: "my-api",
+      Environment: cfg.Env,
+  })
+  ```
+
+- **Configuration (`conf.yaml`):**
+  ```yaml
+  logging:
+    level: info          # debug | info | warn | error
+    format: json         # json | text
+    mode: console        # console | file | both
+    add_source: false
+    file:
+      dir: logs
+      filename: app.log
+      max_size_mb: 100
+      max_backups: 3
+      max_age_days: 7
+      compress: true
+  ```
+
+- **Usage in handlers:**
+  ```go
+  func (h *Handler) GetUser(ctx context.Context, c *app.RequestContext) {
+      reqID := logging.HertzRequestIDFromContext(c)
+      goclog.App(ctx).InfoContext(ctx, "getting user", "request_id", reqID)
+      // ...
+  }
+  ```
+
+- **Deps:** `github.com/byx-darwin/go-tools/go-common` (log, error packages),
+  `go.opentelemetry.io/otel` (trace context for request ID fallback).
+
 ## 4. Files
 
 | File | Purpose | Consumer |
@@ -388,7 +460,10 @@ When the scaffolder is invoked with `--db postgres`:
 | `hertz/package.yaml` | Custom `hz` package template: handler.go uses a `Handler` struct that delegates to a `useCase` interface, plus a usecase stub | `hz new --customize_package` |
 | `hertz/data.json` | Render-time variables for `layout.yaml` (`GoModule`, `ServiceName`, `WithDatabase`) | `hz new --customize_layout_data_path` |
 | `hertz/sqlc.yaml` | Reference sqlc config copied into projects with `--db postgres` | `mono` scaffolder |
-| `hertz/optional/{redis,kafka,es,clickhouse}.go` | Drop-in Go files for `ncgo add infra <kind>` | `internal/scaffold/infra` |
+| `hertz/optional/{redis,kafka,es,clickhouse,observability_logging,release_canary}.go` | Drop-in Go files for `ncgo add infra <kind>` | `internal/scaffold/infra` |
+| `optional/observability_logging.go` | Shared logging helpers (category constants, `WithRequestID`, `SinceMS`) | `internal/scaffold/infra` |
+| `optional/release_canary.go` | SDK-neutral canary model (`Traffic`, `RuleSet`, `Selector`, `Instance`) | `internal/scaffold/infra` |
+| `hertz/optional/redis_shared.go` | Shared Redis client for middleware + data reuse | `internal/scaffold/infra` |
 | `hertz/optional/rule_center_client.go` | gRPC client for rule-center rate-limit rule queries; generated when `--rule-center-addr` is set | `internal/scaffold/rulecenter`, `mono` |
 
 ## 5. `data.json` Contract
@@ -477,9 +552,11 @@ Constraints for new optional files:
 - Package must match the target package (`data`, etc.).
 - Top-of-file comment must list the registration snippet verbatim.
 
-Currently shipped: `redis`, `kafka`, `es`, `clickhouse`. Observability is
-provided by the Hertz base template (go-framework OTLP, driven by
-`cfg.Server.Jaeger`) and no longer ships as a standalone add-on.
+Currently shipped: `redis`, `kafka`, `es`, `clickhouse`,
+`observability_logging` (structured logging middleware), `release_canary`
+(Hertz traffic adapter). Observability tracing (OTLP) is provided by the
+Hertz base template (go-framework OTLP, driven by `cfg.Server.Jaeger`) and
+no longer ships as a standalone add-on.
 
 ## 8. Maintenance Contract
 

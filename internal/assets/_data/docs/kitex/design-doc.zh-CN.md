@@ -288,6 +288,61 @@ client option 接入,不走 `do`)。Kitex 侧 add-on 的
 - 错误码:`clickhouse_config_missing`、`clickhouse_addresses_missing`、
   `clickhouse_open_failed`、`clickhouse_ping_failed`。
 
+#### 结构化日志(`observability_logging.go` + `kitex.go`)
+
+`ncgo add infra observability_logging`(别名:`logging`)在 `internal/base/logging/`
+下添加分类结构化日志拦截器。
+
+- **生成的文件:**
+  - `internal/base/logging/logging.go` — 共享工具(与 Hertz 版相同):
+    `WithRequestID`、`WithTrafficLane`、`SinceMS` 及分类常量。
+  - `internal/base/logging/kitex.go` — Kitex 专用拦截器。
+
+- **拦截器(在 `server.go` 和客户端构造函数中注册):**
+  ```go
+  import "my-api/internal/base/logging"
+
+  // 服务端:
+  svr := service.New(..., server.WithMiddleware(logging.KitexRequestID()))
+  // 或添加到拦截器链:
+  //   logging.KitexRequestID()  — 通过 metainfo 提取/生成 x-request-id
+  //   logging.KitexAccessLog()  — 结构化 RPC 日志(服务、方法、延迟)
+  //   logging.KitexRecovery()   — panic 恢复 + CategoryPanic 日志
+  ```
+
+- **`KitexRequestID()`** — 从 Kitex metainfo 读取 `x-request-id`;回退到
+  OTel span trace ID;都没有时生成 16 字节 hex ID。通过
+  `metainfo.WithPersistentValue` 向下游传递。同时传递 `x-traffic-lane`。
+- **`KitexAccessLog()`** — 输出 `goclog.RPC` 日志,包含 `rpc.system`、
+  `rpc.service`、`rpc.method` 和 `latency_ms`。失败时以 ERROR 级别
+  记录(直接传 `err` 给 `ErrorContext`),成功时 INFO 级别。
+- **`KitexRecovery()`** — 捕获 panic,通过
+  `goclog.L().WithCategory(CategoryPanic)` 记录 panic 值。
+- **`KitexMetaValue(ctx, key)`** — 读取 metainfo 值(persistent 或
+  transient),在 handler 中提取 request ID / traffic lane。
+
+- **初始化(在 `main.go` 或 `server.go` 中):**
+  ```go
+  import goclog "github.com/byx-darwin/go-tools/go-common/log"
+
+  logging.InitFromConf(cfg.Log, goclog.ReleaseInfo{
+      ServiceName: "my-rpc",
+      Environment: cfg.Env,
+  })
+  ```
+
+- **配置(`conf.yaml`):**
+  ```yaml
+  log:
+    level: info          # debug | info | warn | error
+    format: json         # json | text
+    mode: console        # console | file | both
+  ```
+
+- **依赖:`github.com/byx-darwin/go-tools/go-common`(log、error 包)、
+  `github.com/bytedance/gopkg`(metainfo,用于 Kitex RPC 调用间的 request ID
+  传递)、`go.opentelemetry.io/otel`(trace context 回退)。
+
 #### Polaris 注册 / 发现(`registry/polaris.go`,kitex 专属)
 
 - 暴露：`NewRegistry(cfg)` 返回 `kitexregistry.Registry`、
@@ -312,10 +367,64 @@ client option 接入,不走 `do`)。Kitex 侧 add-on 的
   `WithRegistry` / `WithResolver`;不加 `--wire` 时只产出 `polaris.go` 与
   `polaris.yaml`,不修改 base server/client。
 
-#### Release 金丝雀 GA 加固(`release_ops.go`,SDK-neutral)
+#### Polaris 金丝雀适配器(`polaris_adapter.go`,kitex 专属)
 
-`ncgo add infra release_canary` 产出 `release_ops.go`(仅 stdlib),在 canonical
-`release_canary.go` seam 之上叠加生产级加固装饰器:
+`ncgo add infra polaris_adapter` 将真实的 polaris-go SDK 接入
+`canary.go`(由 `optional/release_canary.go` 落盘,同包)中定义的 SDK
+中性金丝雀接口。`polaris_adapter.go` 是唯一引入 polaris-go 的文件 —
+ncgo 本身不直接依赖 polaris-go SDK。
+
+- **生成的文件:**
+  - `internal/base/release/polaris_adapter.go` — Polaris SDK 适配器
+    (唯一引入 polaris-go 的文件)。
+  - `internal/base/release/polaris_observer_otel.go` — OTel metrics
+    observer(复用 kitex 基础模板已接入的 go-framework OTLP meter)。
+
+- **暴露:**
+  - `NewPolarisInstanceLister(cfg PolarisDiscoveryConfig) (PolarisInstanceLister, error)` — 返回
+    `PolarisInstanceLister`,底层调用 `polaris.ConsumerAPI.GetAllInstances`。
+  - `NewPolarisRuleLoader(cfg PolarisRuleConfig) (PolarisRuleLoader, error)` — 返回 `PolarisRuleLoader`,
+    通过 `polaris.ConfigAPI.GetConfigFile` 从 Polaris 配置中心读取金丝雀
+    `RuleSet`(YAML)。
+  - `NewPolarisSelector(discoveryCfg, ruleCfg) (Selector, error)` — 便捷构造函数,组装一个
+    完整接入 Polaris 发现和规则加载的 `release.Selector`。
+
+- **凭证(仅从环境变量读取,禁止硬编码):**
+  - `POLARIS_TOKEN` — Polaris 认证 token(空 = 不认证)
+  - `POLARIS_NAMESPACE` — `cfg.Namespace` 为空时的默认命名空间
+
+- **启用:**
+  ```bash
+  go get github.com/polarismesh/polaris-go
+  go get gopkg.in/yaml.v3
+  ```
+  `go.opentelemetry.io/otel` 和 `go.opentelemetry.io/otel/metric` 已由
+  生成项目的 go-framework OTLP 提供。
+
+- **使用:**
+  ```go
+  sel, err := release.NewPolarisSelector(
+      release.PolarisDiscoveryConfig{
+          Addresses: []string{"polaris.example.com:8091"},
+          Namespace: "production",
+          Service:   "my-rpc",
+      },
+      release.PolarisRuleConfig{
+          Addresses: []string{"polaris.example.com:8091"},
+          Namespace: "production",
+          Group:     "ncgo-canary",
+          FileName:  "my-rpc.canary.yaml",
+      },
+  )
+  ```
+
+- **依赖:`github.com/polarismesh/polaris-go`、`gopkg.in/yaml.v3`、
+  `go-tools/go-common`(goerror)。已在 polaris-go v1.7.1 上验证。
+
+#### Release 金丝雀 GA 加固(`ops.go`,源自 `release_ops.go`,SDK-neutral)
+
+`ncgo add infra release_canary` 产出 `ops.go`(源自 `optional/release_ops.go`,
+仅 stdlib),在 `canary.go` seam 之上叠加生产级加固装饰器:
 
 - **TTL 缓存**(`CacheOptions`):默认 TTL 30s / stale-while-revalidate 窗口
   5m / 刷新抖动 ±20%(`Jitter=0.2`);`StaleTTL=0` 关闭 stale 窗口,负值回落到
@@ -389,7 +498,9 @@ ServiceName})`,把 `provider.ServerSuite()` 挂到 kitex server option,并在
 | `kitex/kitex-template/migration_init.yaml` / `migration_keep.yaml` | sqlc/atlas 迁移占位 |
 | `kitex/kitex-template/makefile.yaml` | Makefile 目标(`make dev`、`make sqlc` 等) |
 | `kitex/sqlc.yaml` | sqlc 配置,结构与 Hertz 版相同 |
-| `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris}.go` | kitex 族的 `add infra` 素材(`registry_polaris` 同时产出 `polaris.yaml` 到项目根) |
+| `kitex/optional/{redis,kafka,es,clickhouse,registry_polaris,observability_logging,release_canary,polaris_canary_adapter,polaris_canary_observer_otel}.go` | kitex 族的 `add infra` 素材 |
+| `optional/{observability_logging,release_canary}.go` | 共享 add-on(日志工具、SDK 中性金丝雀模型) |
+| `optional/release_ops.go` | 金丝雀接缝的生产加固装饰器 |
 
 ## 5. `kitex-template/*.yaml` 语义
 
@@ -434,9 +545,13 @@ kitex 工具通过 `--template-extension` 读取这些记录,然后把每条按 
 - 包名必须匹配目标包(`data`、`registry` 等)。
 - 文件顶部注释必须列出依赖和接线说明。
 
-当前已发布:`redis`、`kafka`、`es`、`clickhouse`,以及 Kitex-only
-`registry_polaris`。observability 已由 kitex 基础模板(go-framework OTLP)
-直接提供,不再以独立 add-on 形态存在。
+当前已发布:`redis`、`kafka`、`es`、`clickhouse`、
+`observability_logging`(结构化日志拦截器)、
+`release_canary`(SDK 中性金丝雀模型 + Hertz/Kitex 流量适配器),
+以及 Kitex 专属 `registry_polaris`(服务注册)、
+`polaris_adapter`(Polaris 金丝雀路由适配器)。observability 追踪
+已由 kitex 基础模板(go-framework OTLP)直接提供,不再以独立 add-on
+形态存在。
 
 ## 7. 与 Hertz 的差异
 

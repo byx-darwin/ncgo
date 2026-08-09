@@ -389,6 +389,77 @@ query 文件。
   do.Provide(inj, data.NewClickHouse)
   ```
 
+#### 结构化日志(`observability_logging.go` + `hertz.go`)
+
+`ncgo add infra observability_logging`(别名:`logging`)在 `internal/base/logging/`
+下添加分类结构化日志中间件。
+
+- **生成的文件:**
+  - `internal/base/logging/logging.go` — 共享工具:`WithRequestID`、
+    `WithTrafficLane`、`SinceMS`,以及分类常量(`CategoryAccess`、
+    `CategoryError`、`CategoryBiz`、`CategoryRPC`、`CategoryDB`、
+    `CategoryPanic`、`CategoryAudit`、`CategorySecurity`)。从
+    `go-common/log` 重新导出。
+  - `internal/base/logging/hertz.go` — Hertz 专用中间件。
+
+- **中间件(在 `server.go` 中注册):**
+  ```go
+  import "my-api/internal/base/logging"
+
+  h.Use(logging.HertzRequestID())    // 提取/生成 X-Request-ID,传递 X-Traffic-Lane
+  h.Use(logging.HertzAccessLog())    // 结构化访问日志(方法、路径、状态码、延迟)
+  h.Use(logging.HertzRecovery())     // panic 恢复 → HTTP 500 + CategoryPanic 日志
+  ```
+
+- **`HertzRequestID()`** — 从请求头读取 `X-Request-ID`;回退到 OTel span
+  trace ID;都没有时生成 16 字节 hex ID。设置响应头。同时将
+  `X-Traffic-Lane` 传递到 context 和 Hertz 本地存储。
+- **`HertzAccessLog()`** — 输出 `goclog.Access` 日志,包含 `http.method`、
+  `http.path`、`http.status_code` 和 `latency_ms`。
+- **`HertzRecovery()`** — 捕获 panic,通过
+  `goclog.L().WithCategory(CategoryPanic)` 记录 panic 值和堆栈,返回
+  HTTP 500。
+- **`HertzRequestIDFromContext(c)`** — 从 Hertz 本地存储读取请求 ID
+  (handler 中使用)。
+
+- **初始化(在 `main.go` 或 `server.go` 中):**
+  ```go
+  import goclog "github.com/byx-darwin/go-tools/go-common/log"
+
+  logging.InitFromConf(cfg.Logging, goclog.ReleaseInfo{
+      ServiceName: "my-api",
+      Environment: cfg.Env,
+  })
+  ```
+
+- **配置(`conf.yaml`):**
+  ```yaml
+  logging:
+    level: info          # debug | info | warn | error
+    format: json         # json | text
+    mode: console        # console | file | both
+    add_source: false
+    file:
+      dir: logs
+      filename: app.log
+      max_size_mb: 100
+      max_backups: 3
+      max_age_days: 7
+      compress: true
+  ```
+
+- **handler 中使用:**
+  ```go
+  func (h *Handler) GetUser(ctx context.Context, c *app.RequestContext) {
+      reqID := logging.HertzRequestIDFromContext(c)
+      goclog.App(ctx).InfoContext(ctx, "getting user", "request_id", reqID)
+      // ...
+  }
+  ```
+
+- **依赖:`github.com/byx-darwin/go-tools/go-common`(log、error 包)、
+  `go.opentelemetry.io/otel`(trace context,用于 request ID 回退)。
+
 ## 4. 文件清单
 
 | 文件 | 作用 | 消费方 |
@@ -397,7 +468,10 @@ query 文件。
 | `hertz/package.yaml` | 自定义 `hz` package 模板:handler.go 用 `Handler` struct 委托给 `useCase` 接口,并附带 usecase 桩 | `hz new --customize_package` |
 | `hertz/data.json` | `layout.yaml` 渲染时变量(`GoModule`、`ServiceName`、`WithDatabase`) | `hz new --customize_layout_data_path` |
 | `hertz/sqlc.yaml` | `--db postgres` 时复制到项目里的 sqlc 配置参考 | `mono` 脚手架 |
-| `hertz/optional/{redis,kafka,es,clickhouse}.go` | `ncgo add infra <kind>` 的 drop-in 文件 | `internal/scaffold/infra` |
+| `hertz/optional/{redis,kafka,es,clickhouse,observability_logging,release_canary}.go` | `ncgo add infra <kind>` 的 drop-in 文件 | `internal/scaffold/infra` |
+| `optional/observability_logging.go` | 共享日志工具(分类常量、`WithRequestID`、`SinceMS`) | `internal/scaffold/infra` |
+| `optional/release_canary.go` | SDK 中性金丝雀模型(`Traffic`、`RuleSet`、`Selector`、`Instance`) | `internal/scaffold/infra` |
+| `hertz/optional/redis_shared.go` | 中间件 + data 复用的共享 Redis 客户端 | `internal/scaffold/infra` |
 | `hertz/optional/rule_center_client.go` | `--rule-center-addr` 或 `ncgo add rule-center` 生成的 gRPC 客户端 | `mono` 脚手架 |
 
 ## 5. `data.json` 契约
@@ -451,9 +525,11 @@ flag 与文件的对应关系:
 - 包名必须匹配目标包(`data` 等)。
 - 文件顶部注释必须把注册调用片段原样列出。
 
-当前已发布:`redis`、`kafka`、`es`、`clickhouse`。可观测性由 Hertz
-基础模板(go-framework OTLP,`cfg.Server.Jaeger` 驱动)内置提供,不再以
-独立 add-on 形态存在。
+当前已发布:`redis`、`kafka`、`es`、`clickhouse`、
+`observability_logging`(结构化日志中间件)、`release_canary`
+(Hertz 流量适配器)。可观测性追踪(OTLP)由 Hertz 基础模板
+(go-framework OTLP,`cfg.Server.Jaeger` 驱动)内置提供,不再以独立
+add-on 形态存在。
 
 ## 8. 维护契约
 
