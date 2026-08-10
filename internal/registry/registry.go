@@ -34,13 +34,42 @@ func ResolveURL(flagValue string) string {
 	return DefaultURL
 }
 
-// CacheDir returns the default template registry cache directory.
+// CacheDir returns the default template registry cache directory under
+// ~/.ncgo/template-registry.
 func CacheDir() (string, error) {
-	base, err := os.UserCacheDir()
+	home, err := os.UserHomeDir()
 	if err != nil {
-		return "", fmt.Errorf("registry: user cache dir: %w", err)
+		return "", fmt.Errorf("registry: user home dir: %w", err)
 	}
-	return filepath.Join(base, "ncgo", "template-registry"), nil
+	return filepath.Join(home, ".ncgo", "template-registry"), nil
+}
+
+// migrateOldCache moves a previously-cloned cache from the legacy
+// os.UserCacheDir() location to newRoot. It is best-effort: any error
+// (missing old cache, cross-filesystem rename, etc.) is silently ignored
+// so that ensureCache can proceed with a fresh clone.
+func migrateOldCache(newRoot string) error {
+	oldBase, err := os.UserCacheDir()
+	if err != nil {
+		return nil // cannot determine old path, skip
+	}
+	oldRoot := filepath.Join(oldBase, "ncgo", "template-registry")
+	if oldRoot == newRoot {
+		return nil
+	}
+	if _, err := os.Stat(filepath.Join(newRoot, ".git")); err == nil {
+		return nil // new cache already exists, do not overwrite
+	}
+	if _, err := os.Stat(filepath.Join(oldRoot, ".git")); err != nil {
+		return nil // old cache not present, nothing to migrate
+	}
+	if err := os.MkdirAll(filepath.Dir(newRoot), 0o755); err != nil {
+		return nil // cannot create parent, let ensureCache handle it
+	}
+	if err := os.Rename(oldRoot, newRoot); err != nil {
+		return nil // cross-filesystem or permission error; skip migration
+	}
+	return nil
 }
 
 // Entry describes one template package available in the registry.
@@ -136,6 +165,9 @@ func (c *Client) ensureCache(ctx context.Context) (string, error) {
 	root, err := c.root()
 	if err != nil {
 		return "", err
+	}
+	if c.Root == "" {
+		_ = migrateOldCache(root) // best-effort: move legacy cache if present
 	}
 	runner := c.runner()
 	if _, err := os.Stat(filepath.Join(root, ".git")); err == nil {
