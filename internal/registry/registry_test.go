@@ -218,3 +218,93 @@ func TestLocalPath(t *testing.T) {
 		t.Errorf("LocalPath = %q, want %q", got, filepath.Join(c.Root, "base-hertz"))
 	}
 }
+
+func TestCacheDir(t *testing.T) {
+	t.Setenv("HOME", t.TempDir())
+	got, err := CacheDir()
+	if err != nil {
+		t.Fatalf("CacheDir: %v", err)
+	}
+	want := filepath.Join(os.Getenv("HOME"), ".ncgo", "template-registry")
+	if got != want {
+		t.Errorf("CacheDir() = %q, want %q", got, want)
+	}
+}
+
+func TestMigrateOldCache_MigratesOldCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Simulate old cache with .git marker
+	oldBase, _ := os.UserCacheDir()
+	oldRoot := filepath.Join(oldBase, "ncgo", "template-registry")
+	os.MkdirAll(filepath.Join(oldRoot, ".git"), 0o755)
+	os.WriteFile(filepath.Join(oldRoot, ".git", "config"), []byte("test"), 0o644)
+
+	newRoot := filepath.Join(home, ".ncgo", "template-registry")
+	if err := migrateOldCache(newRoot); err != nil {
+		t.Fatalf("migrateOldCache: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(newRoot, ".git", "config")); err != nil {
+		t.Errorf("expected migrated .git/config at new root, got error: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(oldRoot, ".git")); err == nil {
+		t.Errorf("old cache should have been moved away")
+	}
+}
+
+func TestMigrateOldCache_NoOldCache(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	newRoot := filepath.Join(home, ".ncgo", "template-registry")
+	if err := migrateOldCache(newRoot); err != nil {
+		t.Fatalf("migrateOldCache with no old cache: %v", err)
+	}
+	// New root should not exist either
+	if _, err := os.Stat(newRoot); err == nil {
+		t.Errorf("new root should not be created when there's nothing to migrate")
+	}
+}
+
+func TestMigrateOldCache_NewCacheExists(t *testing.T) {
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Create new cache with .git
+	newRoot := filepath.Join(home, ".ncgo", "template-registry")
+	os.MkdirAll(filepath.Join(newRoot, ".git"), 0o755)
+	os.WriteFile(filepath.Join(newRoot, ".git", "config"), []byte("new"), 0o644)
+
+	// Create old cache too
+	oldBase, _ := os.UserCacheDir()
+	oldRoot := filepath.Join(oldBase, "ncgo", "template-registry")
+	os.MkdirAll(filepath.Join(oldRoot, ".git"), 0o755)
+	os.WriteFile(filepath.Join(oldRoot, ".git", "config"), []byte("old"), 0o644)
+
+	if err := migrateOldCache(newRoot); err != nil {
+		t.Fatalf("migrateOldCache: %v", err)
+	}
+	// New cache should be preserved
+	data, _ := os.ReadFile(filepath.Join(newRoot, ".git", "config"))
+	if string(data) != "new" {
+		t.Errorf("new cache should not be overwritten, got %q", string(data))
+	}
+	// Old cache should still exist (not moved)
+	if _, err := os.Stat(oldRoot); err != nil {
+		t.Errorf("old cache should still exist when new cache takes precedence")
+	}
+}
+
+func TestMigrateOldCache_SamePath(t *testing.T) {
+	// When oldRoot == newRoot, should be a no-op
+	home := t.TempDir()
+	t.Setenv("HOME", home)
+
+	// Set up so UserCacheDir returns the same as home (simulating edge case)
+	// This is hard to simulate directly, so just verify no panic
+	root := filepath.Join(home, ".ncgo", "template-registry")
+	if err := migrateOldCache(root); err != nil {
+		t.Fatalf("migrateOldCache same path: %v", err)
+	}
+}
