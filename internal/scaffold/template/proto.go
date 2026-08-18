@@ -16,14 +16,14 @@ func ParseAllServices(ctx context.Context, protoPath string, module string) ([]S
 	if err != nil {
 		return nil, fmt.Errorf("resolve proto path: %w", err)
 	}
-	dir := filepath.Dir(abs)
+	roots, target := importRootsAndTarget(abs)
 
 	compiler := protocompile.Compiler{
 		Resolver: protocompile.WithStandardImports(&protocompile.SourceResolver{
-			ImportPaths: []string{dir},
+			ImportPaths: roots,
 		}),
 	}
-	files, err := compiler.Compile(ctx, abs)
+	files, err := compiler.Compile(ctx, target)
 	if err != nil {
 		return nil, fmt.Errorf("compile proto: %w", err)
 	}
@@ -71,6 +71,43 @@ func ParseServiceInfo(ctx context.Context, protoPath string, module string) (*Se
 		return nil, err
 	}
 	return &services[0], nil
+}
+
+// importRootsAndTarget derives protoc-style import roots and the compile
+// target (relative to the first root) for a proto file. Hertz service protos
+// live at <root>/idl/app/<svc>.proto and import files rooted at idl/
+// (matching `hz -I idl`), so the idl/ ancestor must be an import root. The
+// proto's own directory is added for sibling imports; Kitex protos at
+// <root>/idl/<svc>.proto resolve via the idl/ root too. When there is no idl/
+// ancestor, compile relative to the proto's own directory.
+func importRootsAndTarget(abs string) (roots []string, target string) {
+	protoDir := filepath.Dir(abs)
+	if idlRoot := findIDLRoot(abs); idlRoot != "" {
+		if rel, err := filepath.Rel(idlRoot, abs); err == nil {
+			roots = []string{idlRoot}
+			if protoDir != idlRoot {
+				roots = append(roots, protoDir)
+			}
+			return roots, filepath.ToSlash(rel)
+		}
+	}
+	return []string{protoDir}, filepath.Base(abs)
+}
+
+// findIDLRoot returns the nearest ancestor directory named "idl", or "" if
+// none exists.
+func findIDLRoot(abs string) string {
+	dir := filepath.Dir(abs)
+	for {
+		if filepath.Base(dir) == "idl" {
+			return dir
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			return ""
+		}
+		dir = parent
+	}
 }
 
 func defaultServiceName(protoPath string) string {

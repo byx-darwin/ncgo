@@ -195,7 +195,10 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 
 	// Apply custom Hertz templates if they exist (post-hz overlay)
 	if defaultKind(opts.Kind) == manifest.KindHertz {
-		services, _ := scaffoldtemplate.ParseAllServices(ctx, filepath.Join(dir, idl), opts.Module)
+		services, err := scaffoldtemplate.ParseAllServices(ctx, filepath.Join(dir, idl), opts.Module)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "ncgo: warning: parse services from %s: %v\n", idl, err)
+		}
 		_, _ = scaffoldtemplate.Apply(scaffoldtemplate.ApplyOptions{
 			Root:         dir,
 			Module:       opts.Module,
