@@ -881,6 +881,21 @@ service name parameterized (for example
 `template/idl/app/{{ToLower .ServiceName}}.proto`), so consumers can render it
 onto their own default IDL path.
 
+### DDD domain/application layers
+
+`ncgo export templates` also captures the DDD business layers under
+`internal/domain/**` and `internal/application/**`. Like `internal/repository/**`,
+these files are exported with `skip` update behavior, but they are **not** looped
+per proto service: each aggregate is exported as a concrete per-aggregate file, so
+the aggregate directory segment (`internal/domain/<agg>/`,
+`internal/application/<agg>/`) is preserved literally in the template path.
+
+```
+internal/domain/<agg>/        entity.go valueobject.go <agg>.go service.go repository.go   (domain model + repo port)
+internal/application/<agg>/    <agg>_service.go dto.go                                       (application service)
+internal/repository/<agg>/     repo implementation (sqlc-backed)
+```
+
 A template package is the base project's starting code. `ncgo new --template-dir`
 (or `--template`) consumes it as a renamed clone: generation replaces the module
 path and service name in the exported files and produces a fresh scaffold under
