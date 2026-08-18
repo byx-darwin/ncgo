@@ -65,6 +65,17 @@ service UserApi {
 message PingReq {}
 message PingResp {}
 `)
+	writeFixture(t, root, "internal/domain/account/entity.go", `package account
+
+// Account is an aggregate root under github.com/acme/golden.
+type Account struct{ ID string }
+`)
+	writeFixture(t, root, "internal/application/account/account_service.go", `package account
+
+import "github.com/acme/golden/internal/domain/account"
+
+type Service struct{ _ account.Account }
+`)
 	if _, err := Export(ExportOptions{Root: root, Kind: "hertz",
 		Module: "github.com/acme/golden", ServiceName: "UserApi"}); err != nil {
 		t.Fatalf("export: %v", err)
@@ -114,6 +125,17 @@ service UserRpc {
 
 message PingReq {}
 message PingResp {}
+`)
+	writeFixture(t, root, "internal/domain/account/entity.go", `package account
+
+// Account is an aggregate root under github.com/acme/golden.
+type Account struct{ ID string }
+`)
+	writeFixture(t, root, "internal/application/account/account_service.go", `package account
+
+import "github.com/acme/golden/internal/domain/account"
+
+type Service struct{ _ account.Account }
 `)
 	if _, err := Export(ExportOptions{Root: root, Kind: "kitex",
 		Module: "github.com/acme/golden", ServiceName: "UserRpc"}); err != nil {

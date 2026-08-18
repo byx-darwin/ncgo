@@ -1,0 +1,10 @@
+# ncgo exported template — internal/application/account/account_service.go
+path: internal/application/account/account_service.go
+update_behavior:
+    type: skip
+body: |
+    package account
+
+    import "{{.Module}}/internal/domain/account"
+
+    type Service struct{{ "{" }} _ account.Account {{ "}" }}
