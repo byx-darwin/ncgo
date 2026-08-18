@@ -13,7 +13,7 @@
 ## Global Constraints
 
 - Keep changes inside the smallest relevant package; no cross-package moves.
-- Contract-sensitive surfaces (CLI/MCP/scaffold templates/generated layout) unchanged — this is an internal generator fix.
+- Contract-sensitive surfaces (CLI flags/MCP schemas/scaffold template files/JSON schemas) unchanged — this is an internal generator fix. Intended behavior change: re-activating the `loop_service` templates means the default hertz flow now emits `internal/usecase/<svc>/usecase.go` (always) and `internal/repository/<svc>repo/repo.go` (with `--with-database`), plus the template-package flow's per-service router/handler.
 - Golden tests run with `NoGenerate: true`; this path is not exercised there — expect zero golden diff (verify).
 - Preserve existing error wording where tests rely on it; the `compile proto: %w` / `no files compiled` messages stay.
 - gofmt-clean; `go vet ./...` clean.
@@ -281,7 +281,7 @@ git commit -m "docs: add design + plan for hertz idl per-service router fix (#70
 - Root-cause fix (path double-join + idl/ import root) → Task 1.
 - Non-fatal warning at mono.go:198 → Task 2.
 - Regression test `TestParseAllServices_ImportResolution` (hertz import + kitex no-import) → Task 1.
-- Golden/no-doc/no-CLI-change claims → verified in Task 3.
+- Golden/no-CLI-change claims → verified in Task 3 (golden path is `NoGenerate`-gated).
 - Acceptance criteria: per-service router/handler generation is unblocked by populating `opts.Services`; end-to-end `go build` of a generated project depends on the external `ratelimit-hertz` package and is out of in-repo scope (asserted at the `ParseAllServices` level per the design).
 
 **Placeholder scan:** none — all steps carry concrete code and exact run commands.

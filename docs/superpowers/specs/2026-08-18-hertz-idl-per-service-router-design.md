@@ -69,10 +69,26 @@ diagnosable without breaking flows that legitimately lack a parseable proto.
 - **Golden tests:** unaffected — the mono golden tests run with `NoGenerate: true`, so
   `template.Apply` / `ParseAllServices` never execute there. Will run them to confirm zero
   diff.
-- **Docs / CLI / MCP:** no user-facing contract change → no doc updates required.
+- **Docs / CLI / MCP / schemas:** no CLI flag, MCP schema, scaffold template, or JSON schema
+  changes; `ParseAllServices` signature unchanged.
 - End-to-end "`go build ./...` passes out of the box" depends on the external
   `ncgo-templates/ratelimit-hertz` package; the in-repo regression is asserted at the
   `ParseAllServices` level, which is the actual defect.
+
+## Behavior change (intended)
+
+Fixing `ParseAllServices` (so `opts.Services` is populated) re-activates the previously
+silently-inert `loop_service: true` templates. The default `ncgo new --kind hertz` flow now
+emits per-service files in addition to the template-package flow's per-service router/handler
+(`internal/router/pb/<service>.go`, `internal/handler/pb/<service>_service.go`):
+
+- `internal/usecase/<svc>/usecase.go` — always emitted.
+- `internal/repository/<svc>repo/repo.go` — emitted when `--with-database` is set.
+
+This is the intended fix and is verified safe by the existing integration tests
+`TestGenerateHertzCompiles` and `TestGenerateHertzWithDatabaseCompiles`, which run real
+`hz` + `go build` + `go test` on the generated project. Golden output is genuinely unchanged —
+the mono golden path is `NoGenerate`-gated and returns before the `ParseAllServices` call.
 
 ## Acceptance criteria mapping (#70)
 
