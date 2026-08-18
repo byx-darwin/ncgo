@@ -1,0 +1,9 @@
+# ncgo exported template — internal/domain/account/entity.go
+path: internal/domain/account/entity.go
+update_behavior:
+    type: skip
+body: |
+    package account
+
+    // Account is an aggregate root under {{.Module}}.
+    type Account struct{{ "{" }} ID string {{ "}" }}

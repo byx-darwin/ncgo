@@ -1505,6 +1505,9 @@ func TestGenerate_AutoSteps_Default(t *testing.T) {
 	if _, err := exec.LookPath("hz"); err != nil {
 		t.Skip("hz not on PATH")
 	}
+	if _, err := exec.LookPath("protoc"); err != nil {
+		t.Skip("protoc not on PATH")
+	}
 
 	opts := baseOpts(t)
 	opts.NoGenerate = false // use real runner to actually generate with hz

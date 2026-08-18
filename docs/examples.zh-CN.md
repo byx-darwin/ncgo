@@ -792,6 +792,20 @@ ncgo export templates --kind kitex
 （例如 `template/idl/app/{{ToLower .ServiceName}}.proto`），这样使用者可以把它
 渲染到自己的默认 IDL 路径上。
 
+### DDD 领域层/应用层
+
+`ncgo export templates` 还会捕获 `internal/domain/**` 与 `internal/application/**`
+下的 DDD 业务分层。与 `internal/repository/**` 一样，这些文件以 `skip` 更新行为
+导出，但**不会**按 proto service 循环：每个聚合以具体的按聚合文件导出，因此聚合
+目录段（`internal/domain/<agg>/`、`internal/application/<agg>/`）在模板路径中
+原样保留。
+
+```
+internal/domain/<agg>/        entity.go valueobject.go <agg>.go service.go repository.go   （领域模型 + repo 端口）
+internal/application/<agg>/    <agg>_service.go dto.go                                       （应用服务）
+internal/repository/<agg>/     repo 实现（sqlc-backed）
+```
+
 模板包内容就是基础项目的起始代码。`ncgo new --template-dir`（或 `--template`）
 把它当作“换名复制”来消费：生成时只替换导出文件里的 module 与服务名，并用你传入
 的 `--module` / 服务名生成一个全新的脚手架，而不是逐字复制源项目。

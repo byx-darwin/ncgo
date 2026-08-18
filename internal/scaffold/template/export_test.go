@@ -212,6 +212,111 @@ func writeFileExport(t *testing.T, root, rel, content string) {
 	}
 }
 
+// loadExportedTemplateByPath walks template/<kind>-template/*.yaml and returns
+// the TemplateFile whose Path matches want, or fails.
+func loadExportedTemplateByPath(t *testing.T, root, kind, want string) *TemplateFile {
+	t.Helper()
+	dir := filepath.Join(root, "template", kind+"-template")
+	entries, err := os.ReadDir(dir)
+	if err != nil {
+		t.Fatalf("read template dir: %v", err)
+	}
+	for _, e := range entries {
+		if e.IsDir() || !strings.HasSuffix(e.Name(), ".yaml") {
+			continue
+		}
+		tpl, err := readTemplateYAML(filepath.Join(dir, e.Name()))
+		if err != nil {
+			t.Fatalf("read yaml %s: %v", e.Name(), err)
+		}
+		if tpl.Path == want {
+			return tpl
+		}
+	}
+	t.Fatalf("no exported template with path %q in %s", want, dir)
+	return nil
+}
+
+func TestExport_DDDLayers_Hertz(t *testing.T) {
+	dir := t.TempDir()
+	writeFileExport(t, dir, "main.go", "package main\n\nfunc main() {}\n")
+	// aggregate "user" — name deliberately != service name "UserApi"
+	writeFileExport(t, dir, "internal/domain/user/entity.go", `package user
+
+// User is an aggregate root in module github.com/acme/test.
+type User struct{ ID string }
+`)
+	writeFileExport(t, dir, "internal/domain/user/repository.go", `package user
+
+import "context"
+
+type Repository interface {
+	Save(ctx context.Context, u *User) error
+}
+`)
+	writeFileExport(t, dir, "internal/application/user/user_service.go", `package user
+
+import "github.com/acme/test/internal/domain/user"
+
+type Service struct{ repo user.Repository }
+`)
+
+	if _, err := Export(ExportOptions{Root: dir, Kind: "hertz",
+		Module: "github.com/acme/test", ServiceName: "UserApi"}); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	// domain entity: aggregate path preserved literally, module variabilized, skip.
+	ent := loadExportedTemplateByPath(t, dir, "hertz", "internal/domain/user/entity.go")
+	if ent.UpdateBehavior.Type != "skip" {
+		t.Errorf("domain entity UpdateBehavior = %q, want skip", ent.UpdateBehavior.Type)
+	}
+	if ent.LoopService {
+		t.Errorf("domain entity LoopService = true, want false (aggregate-organized)")
+	}
+	if !strings.Contains(ent.Body, "module {{.Module}}") {
+		t.Errorf("module not variabilized in domain entity:\n%s", ent.Body)
+	}
+
+	// application service: path preserved, import module variabilized.
+	app := loadExportedTemplateByPath(t, dir, "hertz", "internal/application/user/user_service.go")
+	if app.UpdateBehavior.Type != "skip" {
+		t.Errorf("application service UpdateBehavior = %q, want skip", app.UpdateBehavior.Type)
+	}
+	if !strings.Contains(app.Body, "{{.Module}}/internal/domain/user") {
+		t.Errorf("import module not variabilized in application service:\n%s", app.Body)
+	}
+}
+
+func TestExport_DDDLayers_Kitex(t *testing.T) {
+	dir := t.TempDir()
+	writeFileExport(t, dir, "main.go", "package main\n\nfunc main() {}\n")
+	writeFileExport(t, dir, "internal/domain/role/entity.go", `package role
+
+// Role is an aggregate root in module github.com/acme/test.
+type Role struct{ ID string }
+`)
+	writeFileExport(t, dir, "internal/application/role/role_service.go", `package role
+
+import "github.com/acme/test/internal/domain/role"
+
+type Service struct{ _ role.Role }
+`)
+
+	if _, err := Export(ExportOptions{Root: dir, Kind: "kitex",
+		Module: "github.com/acme/test", ServiceName: "UserRpc"}); err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	ent := loadExportedTemplateByPath(t, dir, "kitex", "internal/domain/role/entity.go")
+	if ent.UpdateBehavior.Type != "skip" || ent.LoopService {
+		t.Errorf("kitex domain entity behavior wrong: skip=%q loop=%v", ent.UpdateBehavior.Type, ent.LoopService)
+	}
+	if !strings.Contains(ent.Body, "module {{.Module}}") {
+		t.Errorf("module not variabilized in kitex domain entity:\n%s", ent.Body)
+	}
+}
+
 func TestExport_IDL(t *testing.T) {
 	dir := t.TempDir()
 	writeFileExport(t, dir, "main.go", "package main\n")
