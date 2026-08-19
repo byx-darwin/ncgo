@@ -438,28 +438,27 @@ cd "$SEED" && git init -q 2>/dev/null; git add -A && git commit -qm "seed: rbac-
 ## Task 2: DDD domain layer (pure Go + unit tests)
 
 **Files:**
-- Create: `internal/domain/user/{entity,valueobject,service,repository}.go`, `internal/domain/role/{entity,service,repository}.go`, `internal/domain/permission/{entity,valueobject,repository}.go`, `internal/domain/menu/{entity,service,repository}.go`
+- Create: `internal/domain/user/{entity,valueobject,service,repository}.go`, `internal/domain/role/{entity,service,repository}.go`, `internal/domain/permission/{entity,valueobject,repository}.go`
 - Test: `internal/domain/.../*_test.go` per aggregate
 
 **Interfaces:**
 - Consumes: nothing (pure Go; `context` only).
 - Produces: domain types + ports consumed by Task 4 (repos) and Task 5 (app services):
-  - `user.User{ID int64, Username, PasswordHash, Status string}`; `user.Status` consts `user.StatusActive`/`user.StatusDisabled`; `user.New(username, passwordHash string) (*User, error)` (validates username non-empty, ≥3 chars); `user.Repository` port: `GetByID(ctx,id)`, `GetByUsername(ctx,name)`, `List(ctx, limit, offset)`, `Save(ctx, *User)`, `Delete(ctx,id)`, `SetStatus(ctx,id,status)`; `user.NotFoundError`, `user.ValidationError`.
-  - `role.Role{ID int64, Code, Name string}`; `role.Repository`: `GetByID/GetByCode/List/Save/Delete`; `role.Assign(ctx, roleID, permissionIDs []int64) error` domain rule: code non-empty; `role.NotFoundError`.
-  - `permission.Permission{ID int64, Code, Name, Kind, Method string}`; `permission.KindMenu|KindButton|KindAPI` consts; `permission.New(code,name,kind,method) (*Permission, error)` (validates kind ∈ {menu,button,api}); `permission.Repository`: `GetByID/GetByCode/ListByIDs/List/Save/Delete`.
-  - `menu.Menu{ID, ParentID int64, Type, Name, Path, Component, PermCode string, SortOrder int32}`; `menu.KindDir|KindMenu|KindButton`; `menu.Node{Menu, Children []*Node}`; `menu.BuildTree(items []*Menu) []*Node` (pure, stable by SortOrder then ID); `menu.Repository`: `GetByID/List/ListByPermCodes/Save/Delete`.
+  - `user.User{ID, Username, Nickname, Avatar, Email, Phone, PasswordHash string; Status int}`（`Status` 常量 `user.StatusEnabled=1` / `user.StatusDisabled=0`；`New` 校验 username ≥3 chars）。
+  - `role.Role{ID, Code, Name, Remark string; Status int}`；`role.New` 校验 code 非空。
+  - `permission.Permission{ID, Code, Name, Kind, ParentID, Path, Icon, RouteName, Redirect, Method, Description string; KeepAlive, HideInMenu, IsExternal bool; SortOrder int32; Status int}`；`permission.KindCatalog|KindMenu|KindButton|KindAPI` 常量；`permission.New(code,name,kind,parentID string, …)` 校验 kind ∈ {catalog,menu,button,api}；`permission.BuildTree(items []*Permission) []*Node`（纯函数，按 SortOrder 再 ID 稳定排序；孤儿节点挂根）。
+  - 仓储 PORT：`permission.Repository` 增 `GetByCodeAndKind(ctx, code, kind string) (*Permission, error)`、`Update(ctx, *Permission) error`（对应新 query）。
 - Domain errors: each aggregate defines `type XNotFoundError` (implements `error`, used by app layer for `rpcerror` mapping). Keep them tiny.
 
 - [ ] **Step 1: Write the failing tests** — per aggregate, pure unit tests:
   - `user`: `New` rejects short username; `SetStatus` validates enum.
   - `role`: `New` rejects empty code.
-  - `permission`: `New` rejects unknown kind; normalizes method to `*` for menu/button and default `GET` for api when empty.
-  - `menu`: `BuildTree` — given flat list builds nested tree by parent_id, ordered by SortOrder then ID; orphans hang as roots.
+  - `permission`: `New` rejects unknown kind (kind ∈ {catalog,menu,button,api}); `BuildTree` — given flat list builds nested tree by parent_id, ordered by SortOrder then ID; orphans hang as roots.
 
 - [ ] **Step 2: Run tests to verify they fail** — `go test ./internal/domain/... -count=1` → FAIL (no packages).
 - [ ] **Step 3: Implement domain files** (entities + VOs + domain services + repository ports + errors, matching the signatures above). Keep each file small and pure.
 - [ ] **Step 4: Run tests to verify they pass** — `go test ./internal/domain/... -count=1` → PASS.
-- [ ] **Step 5: Commit** — `git add internal/domain && git commit -qm "feat(seed): DDD domain layer (user/role/permission/menu)"`.
+- [ ] **Step 5: Commit** — `git add internal/domain && git commit -qm "feat(seed): DDD domain layer (user/role/permission)"`.
 
 ---
 
@@ -475,10 +474,10 @@ cd "$SEED" && git init -q 2>/dev/null; git add -A && git commit -qm "seed: rbac-
   - `casbin.NewSQLPolicyStore(q *gen.Queries) *casbin.SQLPolicyStore` (sqlc-backed) and `casbin.NewMemoryPolicyStore() *casbin.MemoryPolicyStore` (test-only).
   - `casbin.Adapter` implements `persist.Adapter` (from `github.com/casbin/casbin/v2/persist`) over a `PolicyStore`.
   - `casbin.NewEnforcer(store PolicyStore) (*casbin.Enforcer, error)` — loads embedded `model.conf`, builds adapter, `LoadPolicy`.
-  - `auth.JWTManager{Sign(uid int64, roles []string, ttl time.Duration) (string, error); Parse(token string) (*Claims, error)}`; `auth.Claims{Uid int64, Roles []string, jwt.RegisteredClaims}`; HS256, secret from config.
+  - `auth.JWTManager{Sign(uid string, roles []string, ttl time.Duration) (string, error); Parse(token string) (*Claims, error)}`; `auth.Claims{Uid string, Roles []string, jwt.RegisteredClaims}`; HS256, secret from config.
   - `auth.HashPassword(plain string) (string, error)` + `auth.VerifyPassword(hash, plain string) (bool, error)` — argon2id (alexedwards/argon2id).
-  - `token.Store` — `SetRefresh(ctx, uid, refreshToken string, ttl time.Duration) error`, `GetRefresh(ctx, refreshToken) (uid int64, err error)`, `DeleteRefresh(ctx, refreshToken) error`, `Blacklist(ctx, accessToken string, ttl time.Duration) error`, `IsBlacklisted(ctx, accessToken) (bool, error)`; `token.NewMemoryStore() *token.MemoryStore` (default) and `token.NewRedisStore(redisAddr, keyPrefix string) *token.RedisStore` (seam).
-  - `audit.Writer` — `Write(ctx, actorUID int64, action, target, detailJSON string) error`; `audit.NewSQLWriter(q *gen.Queries) *audit.SQLWriter` and `audit.NewMemoryWriter() *audit.MemoryWriter` (test-only).
+  - `token.Store` — `SetRefresh(ctx, uid string, refreshToken string, ttl time.Duration) error`, `GetRefresh(ctx, refreshToken) (uid string, err error)`, `DeleteRefresh(ctx, refreshToken) error`, `Blacklist(ctx, accessToken string, ttl time.Duration) error`, `IsBlacklisted(ctx, accessToken) (bool, error)`; `token.NewMemoryStore() *token.MemoryStore` (default) and `token.NewRedisStore(redisAddr, keyPrefix string) *token.RedisStore` (seam).
+  - `audit.Writer` — `Write(ctx, actorUID string, action, target, detailJSON string) error`; `audit.NewSQLWriter(q *gen.Queries) *audit.SQLWriter` and `audit.NewMemoryWriter() *audit.MemoryWriter` (test-only).
 
 - [ ] **Step 1: Write the failing tests**
   - `casbin`: adapter round-trip against `MemoryPolicyStore` — build enforcer with model.conf, `AddPolicy("admin","user:create","POST")`, `Enforce("1","user:create","POST")` → allowed (with `g("1","admin")`); `SavePolicy` then a fresh enforcer `LoadPolicy` sees the policy; `RemoveFilteredPolicy` removes only matching subset.
@@ -514,13 +513,13 @@ cd "$SEED" && git init -q 2>/dev/null; git add -A && git commit -qm "seed: rbac-
 ## Task 4: sqlc-backed repositories (domain port impls)
 
 **Files:**
-- Create: `internal/repository/user/repo.go`, `internal/repository/role/repo.go`, `internal/repository/permission/repo.go`, `internal/repository/menu/repo.go`
+- Create: `internal/repository/user/repo.go`, `internal/repository/role/repo.go`, `internal/repository/permission/repo.go`
 
 **Interfaces:**
 - Consumes: `internal/db/gen` (Queries + pgx), domain ports (Task 2).
-- Produces: concrete `*userrepo.Repo` (implements `user.Repository`), `*rolerepo.Repo`, `*permissionrepo.Repo`, `*menurepo.Repo`. Each `New(q *gen.Queries, pool *pgxpool.Pool) *Repo` + `WithTx(ctx, fn) error` (mirror the base repository.yaml `WithTx` pattern). Repos map domain ↔ sqlc types and translate `pgx.ErrNoRows` → domain `NotFoundError`.
+- Produces: concrete `*userrepo.Repo` (implements `user.Repository`), `*rolerepo.Repo`, `*permissionrepo.Repo`. Each `New(q *gen.Queries, pool *pgxpool.Pool) *Repo` + `WithTx(ctx, fn) error` (mirror the base repository.yaml `WithTx` pattern). Repos map domain ↔ sqlc types and translate `pgx.ErrNoRows` → domain `NotFoundError`.
 
-- [ ] **Step 1: Implement the four repos** (map every port method to the matching sqlc query; `user.Repo` exposes `AssignRoles(ctx, uid, roleIDs)`, `ClearRoles`, `ListRoles(ctx, uid)`; `role.Repo` exposes `AssignPermissions`, `ClearPermissions`, `ListPermissions(ctx, roleIDs)`; `menu.Repo` exposes `ListByPermCodes`).
+- [ ] **Step 1: Implement the three repos** (map every port method to the matching sqlc query; `user.Repo` exposes `AssignRoles(ctx, userID string, roleIDs []string)`, `ClearRoles`, `ListRoles(ctx, userID string)`; `role.Repo` exposes `AssignPermissions(ctx, roleID string, permissionIDs []string)`, `ClearPermissions`, `ListPermissions(ctx, roleIDs []string)` (内部 `ListPermissionsByRoleIDs`); `permission.Repo` exposes `ListByCodes(ctx, codes []string)` (内部 `ListPermissionsByCodes`), `GetByCodeAndKind`, `Update`). All ID 参数为 string；错误映射 `pgx.ErrNoRows → NotFoundError`.
 - [ ] **Step 2: Verify compile + gen query names exist**
 
 ```bash
@@ -536,26 +535,24 @@ Expected: PASS. If a sqlc query name was mistyped, fix the query name or the cal
 ## Task 5: Application services + unit tests
 
 **Files:**
-- Create: `internal/application/auth/{auth_service.go,dto.go}`, `internal/application/user/{user_service.go,dto.go}`, `internal/application/role/{role_service.go,dto.go}`, `internal/application/permission/{permission_service.go,dto.go}`, `internal/application/menu/{menu_service.go,dto.go}`, `internal/application/rbac/{enforce_service.go,dto.go}`
+- Create: `internal/application/auth/{auth_service.go,dto.go}`, `internal/application/user/{user_service.go,dto.go}`, `internal/application/role/{role_service.go,dto.go}`, `internal/application/permission/{permission_service.go,dto.go}`, `internal/application/rbac/{enforce_service.go,dto.go}`
 - Test: `internal/application/.../*_test.go`
 
 **Interfaces:**
 - Consumes: domain ports, infrastructure (Task 3), casbin enforcer, `internal/db/gen` for the casbin/audit writers.
 - Produces (consumed by Task 6 handlers):
-  - `auth.Service{Login(ctx, username, password) (access, refresh string, expiresIn int32, err error); Refresh(ctx, refreshToken) (access, refresh string, err error); Logout(ctx, accessToken string) error; ValidateToken(ctx, accessToken) (uid int64, roles []string, valid bool)}`. Wires `user.Repository` (GetByUsername) + `auth.VerifyPassword` + `token.Store` + `auth.JWTManager` + `audit.Writer`.
-  - `user.Service{Create/Update/Delete/Get/List; AssignRoles(ctx, uid, roleIDs) error}` — after AssignRoles writes `user_roles`, calls `enforcer` to set `g(uid, role_code)` for each role (get roles by IDs → `AddRoleForUser(uid, code)`), then audit.
-  - `role.Service{Create/Update/Delete/List; GrantPermissions(ctx, roleID, permissionIDs) error}` — writes `role_permissions`, then for each permission `enforcer.AddPolicy(role_code, perm.code, perm.method)`, then audit.
-  - `permission.Service{Create/Delete/List}` (Create validates kind via domain; Delete cascades via `ClearRolePermissions` + `enforcer.RemoveFilteredPolicy("p", 1, code)`), audit.
-  - `menu.Service{Create/Update/Delete/List; UserMenuTree(ctx, uid) ([]*menu.Node, error); UserPermCodes(ctx, uid) ([]string, error)}` — UserPermCodes: roles by user → permissions by role IDs → codes; if user has role code `"admin"`, return all permissions. UserMenuTree: same role/perm resolution → `ListMenusByPermCodes(codes)` → `menu.BuildTree`. Audit on Create/Update/Delete.
-  - `rbac.EnforceService{Enforce(ctx, uid, obj, act) (bool, error)}` — `enforcer.Enforce(fmt.Sprint(uid), obj, act)`.
+  - `auth.Service{Login(ctx, username, password) (access, refresh string, expiresIn int32, err error); Refresh(ctx, refreshToken) (access, refresh string, err error); Logout(ctx, accessToken string) error; ValidateToken(ctx, accessToken) (uid string, roles []string, valid bool)}`. Wires `user.Repository` (GetByUsername) + `auth.VerifyPassword` + `token.Store` + `auth.JWTManager` + `audit.Writer`.
+  - `user.Service{Create/Update/Delete/Get/List; AssignRoles(ctx, userID string, roleIDs []string) error}` — 写入 `user_roles` 后，按 roleIDs 解析 role codes，`enforcer.AddRoleForUser(userID, roleCode)`，再 audit。
+  - `role.Service{Create/Update/Delete/List; GrantPermissions(ctx, roleID string, permissionCodes []string) error}` — 按 codes 解析 permission 记录，写 `role_permissions`；对 `kind=api` 记录 `enforcer.AddPolicy(roleCode, code, method)`；audit。
+  - `permission.Service{Create/Update/Delete/List; UserMenuTree(ctx, uid string); UserPermCodes(ctx, uid string)}` — `Update` 走 `GetPermissionByCodeAndKind` 校验 + repo.Update；`UserPermCodes`：role codes by user → permission codes（`admin` 角色返回全部）；`UserMenuTree` 复用同解析 → `permission.BuildTree`.
+  - `rbac.EnforceService{Enforce(ctx, uid string, obj, act string) (bool, error)}` — `enforcer.Enforce(uid, obj, act)`.
   - Each service constructor takes its deps as interfaces (small local interfaces over ports) so tests can fake them. Audit is always `audit.Writer`.
 
 - [ ] **Step 1: Write the failing tests** (fake repos + memory enforcer + memory token store + memory audit + real JWT/argon2):
   - `auth`: Login success returns 3-part tokens + writes audit; Login wrong password → error; ValidateToken ok/invalid; Refresh rotates; Logout blacklists access token (IsBlacklisted true).
-  - `user`: Create hashes password, saves; AssignRoles adds `g(uid, role_code)` to a memory casbin enforcer and `Enforce(uid, perm_code, method)` returns true for a permission granted to that role.
-  - `role`: GrantPermissions writes `p(role_code, perm_code, method)`; Enforce allows; audit written.
-  - `menu`: UserMenuTree returns only nodes whose perm_code ∈ user's permission codes; `admin` sees all menus. UserPermCodes returns the union of granted codes.
-  - `permission`: Create rejects unknown kind; Delete removes `p(role_code, code, *)`.
+  - `user`: Create hashes password, saves; AssignRoles adds `g(uid, role_code)` to a memory casbin enforcer and `Enforce(uid, code, method)` returns true for a permission granted to that role.
+  - `role`: GrantPermissions writes `p(role_code, code, method)`; Enforce allows; audit written.
+  - `permission`: Create rejects unknown kind; Update走 `GetByCodeAndKind` 校验; Delete removes `p(role_code, code, method)`; UserMenuTree returns only nodes whose code ∈ user's permission codes; `admin` sees all. UserPermCodes returns the union of granted codes.
   - `rbac`: Enforce true when policy+role granted, false otherwise.
 - [ ] **Step 2: Run tests to verify they fail.**
 - [ ] **Step 3: Implement app services** per the interfaces above. Keep each service focused; cross-aggregate consistency (grant/assign sync into casbin) lives HERE, not in the domain.
@@ -575,7 +572,7 @@ Expected: PASS. If a sqlc query name was mistyped, fix the query name or the cal
 - Consumes: Task 5 app services.
 - Produces: kitex server interfaces (`rbacv1.AuthService`, `rbacv1.RBACService`) implemented by `authservicehandler.AuthServiceImpl` / `rbacservicehandler.RBACServiceImpl`; `server.Run()` wires everything.
 
-- [ ] **Step 1: Write the handlers** — thin; map kitex req/resp ↔ app service args; errors → `rpcerror.ToBizError(err)` (same as base handler pattern). `AuthServiceImpl` fields: `auth *auth.Service`; `RBACServiceImpl` fields: `user *user.Service`, `role *role.Service`, `permission *permission.Service`, `menu *menu.Service`, `rbac *rbac.EnforceService`.
+- [ ] **Step 1: Write the handlers** — thin; map kitex req/resp ↔ app service args; errors → `rpcerror.ToBizError(err)` (same as base handler pattern). `AuthServiceImpl` fields: `auth *auth.Service`（不变）; `RBACServiceImpl` fields: `user *user.Service`, `role *role.Service`, `permission *permission.Service`, `rbac *rbac.EnforceService`（menu 服务并入 permission）.
 - [ ] **Step 2: Extend conf** — add to `Config`: `Auth AuthConfig`; define:
   ```go
   type AuthConfig struct {
@@ -593,8 +590,7 @@ Expected: PASS. If a sqlc query name was mistyped, fix the query name or the cal
   q := gen.New(pool)
   userRepo := userrepo.New(q, pool)                  // user.Repository
   roleRepo := rolerepo.New(q, pool)
-  permRepo := permissionrepo.New(q, pool)
-  menuRepo := menurepo.New(q, pool)
+  permRepo := permissionrepo.New(q, pool)            // incl. GetByCodeAndKind (authorization resolution)
   casbinStore := casbin.NewSQLPolicyStore(q)
   enforcer, _ := casbin.NewEnforcer(casbinStore)
   jwtMgr := auth.NewJWTManager(cfg.Auth.JWTSecret)
@@ -603,12 +599,11 @@ Expected: PASS. If a sqlc query name was mistyped, fix the query name or the cal
   userSvc := usersvc.New(userRepo, enforcer, auditWriter)
   roleSvc := rolesvc.New(roleRepo, permRepo, enforcer, auditWriter)
   permSvc := permsvc.New(permRepo, roleRepo, enforcer, auditWriter)
-  menuSvc := menusvc.New(menuRepo, userRepo, permRepo, enforcer, auditWriter)
   rbacSvc := rbacsvc.New(enforcer)
   authSvc := authsvc.New(userRepo, jwtMgr, tokenStore, auditWriter)
   // register both services:
   authServer := rbacv1.NewServer(new(authservicehandler.AuthServiceImpl, authSvc))
-  rbacServer := rbacv1.NewServer(new(rbacservicehandler.RBACServiceImpl, userSvc, roleSvc, permSvc, menuSvc, rbacSvc))
+  rbacServer := rbacv1.NewServer(new(rbacservicehandler.RBACServiceImpl, userSvc, roleSvc, permSvc, rbacSvc))
   // ... serve both on the same addr via two goroutines (or kitex multiple services option)
   ```
   Exact kitex multi-service registration follows the generated `kitex_gen/api/rbac/v1` package API (check the generated `server.go` in kitex_gen for the `NewServer` signature — one `NewServer` per service with its handler; both can share the addr via `kitexserver.WithServiceAddr`).
@@ -698,7 +693,7 @@ Use a deterministic helper: `make_yaml() { printf '# rbac-kitex template — %s\
 ```yaml
 name: rbac-kitex
 kind: kitex
-description: Official RBAC + auth authority Kitex RPC template (DDD: users/roles/permissions/menus, Casbin enforcement, JWT login, audit)
+description: Official RBAC + auth authority Kitex RPC template (DDD: users/roles/permissions, Casbin enforcement, JWT login, audit)
 version: "1"
 skip_default_templates:
   - handler.yaml
@@ -740,9 +735,9 @@ skip_default_templates:
 ## Self-Review
 
 **Spec coverage:**
-- DDD aggregates user/role/permission/menu → Task 2.
+- DDD aggregates user/role/permission → Task 2.
 - Casbin sqlc adapter + model `sub,obj,act` + `casbin_rule` single-source → Task 3 (+ Task 5 policy-sync).
-- Unified permission code (permissions.code == casbin obj == menus.perm_code) → schema (Task 1), app services (Task 5), menu tree/perm codes (Task 5).
+- Unified permission code (permissions.code == casbin obj == 前端按钮/接口权限码) → schema (Task 1), app services (Task 5), permission tree/perm codes (Task 5).
 - Auth JWT HS256 + argon2id + refresh/blacklist → Task 3, 5.
 - Audit log on RBAC mutations → Task 3, 5.
 - RPC AuthService + RBACService → proto (Task 1), handlers + wiring (Task 6).
@@ -751,4 +746,4 @@ skip_default_templates:
 
 **Placeholder scan:** No TBD/TODO. Every task has concrete files, signatures, code (proto/schema/queries/model.conf/conf structs are inline), commands, and pass criteria. The kitex_gen `NewServer` signature and `POSTGRES_DSN` gating are resolved at implementation with a stated fallback (read the generated package; gate on `pg_isready`).
 
-**Type consistency:** Domain ports (`user.Repository`, `role.Repository`, `permission.Repository`, `menu.Repository`) are consumed by Task 4 impls and Task 5 services; infrastructure interfaces (`casbin.PolicyStore`, `auth.JWTManager`, `token.Store`, `audit.Writer`) are produced in Task 3 and consumed in Tasks 4-6; handler constructors match Task 5 service constructors; sqlc query names in Task 1 match repo call sites in Task 4.
+**Type consistency:** Domain ports (`user.Repository`, `role.Repository`, `permission.Repository`) are consumed by Task 4 impls and Task 5 services; infrastructure interfaces (`casbin.PolicyStore`, `auth.JWTManager`, `token.Store`, `audit.Writer`) are produced in Task 3 and consumed in Tasks 4-6; handler constructors match Task 5 service constructors; sqlc query names in Task 1 match repo call sites in Task 4.
