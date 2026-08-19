@@ -17,7 +17,7 @@
 - Bar = **reference scaffold**: correct structure + runnable happy path + documented production seams. NOT a full production system.
 - DDD layers are **aggregate-organized** (`internal/domain/<agg>/`), NOT proto-service-looped. Export rules: `internal/domain/**` + `internal/application/**` are `skip` + `LoopService:false` (ncgo #72/#73, on main).
 - Casbin: **basic model `sub, obj, act`**; `casbin_rule` is the enforcement single-source; management writes (grant/assign) **sync into** the adapter in-tx direction (mgmt tables → casbin). Data-scope/domain is a documented seam.
-- **Unified permission code**: `permissions.code` == casbin `obj` == `menus.perm_code` (one code drives frontend menus/buttons + backend API enforce).
+- **Unified permission code**: `permissions.code` == casbin `obj` == menu/button permission `code` (one code drives frontend menus/buttons + backend API enforce).
 - Casbin adapter is built-in **sqlc-based** (no gorm).
 - Auth: self-built JWT **HS256** (claims `{uid, roles}`) + **argon2id** passwords; refresh/blacklist via a `TokenStore` (hermetic memory default, Redis seam documented). RS256/JWKS is a seam.
 - Hermetic happy path: seed/tests/e2e must build+test WITHOUT postgres/redis up (DB-gated paths skip explicitly). No silent skips.
@@ -953,7 +953,7 @@ skip_default_templates:
 **Spec coverage:**
 - DDD aggregates user/role/permission/menu → Task 2.
 - Casbin sqlc adapter + model `sub,obj,act` + `casbin_rule` single-source → Task 3 (+ Task 5 policy-sync).
-- Unified permission code (permissions.code == casbin obj == menus.perm_code) → schema (Task 1), app services (Task 5), menu tree/perm codes (Task 5).
+- Unified permission code (permissions.code == casbin obj == menu/button permission code) → schema (Task 1), app services (Task 5), menu tree/perm codes (Task 5).
 - Auth JWT HS256 + argon2id + refresh/blacklist → Task 3, 5.
 - Audit log on RBAC mutations → Task 3, 5.
 - RPC AuthService + RBACService → proto (Task 1), handlers + wiring (Task 6).
