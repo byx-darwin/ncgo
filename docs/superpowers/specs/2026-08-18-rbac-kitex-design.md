@@ -12,21 +12,25 @@ Part of the **micro-admin** program (sub-project 2 of the 3-template decompositi
 |---|---|
 | Framework | Kitex RPC (base-kitex layered layout + DDD layers) |
 | Architecture | DDD: `internal/domain/<agg>` + `internal/application/<agg>` + `internal/repository/<agg>` (sqlc) |
-| RBAC | Casbin, **basic model `sub, obj, act`** (no domain first version); data-scope/domain is a documented seam |
-| Permission code | **Unified**: `permissions.code` == Casbin `obj` == menu/button `perm_code` (one code drives frontend menus + backend API enforce) |
+| RBAC | Casbin, basic model `sub, obj, act` (no domain first version); data-scope/domain is a documented seam |
+| Permission model | **单一 Permission 树**（合并原 menus）: `permissions` 自带 parent_id/path/icon/route_name/sort/status; kind ∈ catalog\|menu\|button\|api |
+| Permission code | **Unified**: `permissions.code` == Casbin `obj` == 前端按钮/接口权限码; **同一 code 可同时为 button 与 api 记录**（api 记录携带 method） |
 | Casbin storage | built-in **sqlc-based `persist.Adapter`** over `casbin_rule` (no gorm) |
 | Single source | `casbin_rule` is the enforcement source; management writes (grant/assign) **sync into** the adapter (direction: mgmt tables → casbin) |
+| ID type | **string**（uuid v4, TEXT PK）: users/roles/permissions/user_roles/role_permissions/audit_log.actor_uid 全为 string |
+| Status | **int32 0/1** (1=enabled/0=disabled) on user/role/permission (对齐 s-web) |
+| Grant/Assign payload | **GrantPermissionsToRole by permission_codes**; **AssignRolesToUser by role_ids** (对齐 s-web REST) |
 | Auth | self-built **JWT (HS256 default)**, claims `{uid, roles}`; argon2id passwords + basic lockout; Redis refresh-token + JWT blacklist |
 | Audit | basic `audit_log` (who/what/when) written by RBAC mutations |
 | Build | develop real Kitex project with ncgo → hand-write DDD+casbin+JWT → build/test → `ncgo export` → `rbac-kitex` package |
 
 ## DDD structure (per aggregate)
 
-Aggregates: **user, role, permission, menu**.
+Aggregates: **user, role, permission**（menu 树由 permission 聚合的 `BuildTree` 构建，非独立聚合）。
 
 ```
 internal/domain/<agg>/
-    entity.go        # entity/aggregate root (User, Role, Permission, Menu)
+    entity.go        # entity/aggregate root (User, Role, Permission)
     valueobject.go   # VOs (e.g. PermissionCode, PasswordHash)
     service.go       # domain service (pure rules; e.g. password policy, role-permission invariants)
     repository.go    # repository PORT (interface) + domain errors
@@ -37,26 +41,31 @@ internal/repository/<agg>/
     repository.go    # sqlc-backed implementation of the domain PORT
 internal/infrastructure/
     casbin/adapter.go   # sqlc-based persist.Adapter over casbin_rule
-    auth/jwt.go         # HS256 sign/verify, claims
+    auth/jwt.go         # HS256 sign/verify, claims {uid string, role_codes}
     auth/password.go    # argon2id hash/verify
 ```
 
 - Cross-aggregate consistency (e.g. assign role → permission) lives in an **application service**, not the domain, to keep aggregates independent.
+- `permission.BuildTree(items []*Permission) []*Node` is a **pure domain function** (stable by SortOrder then ID) — no separate Menu aggregate.
 - `Enforce` is an application concern delegating to the Casbin enforcer (backed by the adapter).
 
 ## Data model (postgres + sqlc)
 
-Tables (schema DDL via migration; queries via sqlc):
-- `users` (id, username, password_hash, status, created_at, …)
-- `roles` (id, code, name, …)
-- `permissions` (id, **code**, name, kind[menu|button|api], …) — `code` is the unified permission code
-- `user_roles` (user_id, role_id)
-- `role_permissions` (role_id, permission_id)
-- `menus` (id, parent_id, type[dir|menu|button], name, path/component, **perm_code**, order) — tree; button rows carry `perm_code` referencing `permissions.code`
+Tables (schema DDL via migration; queries via sqlc). All IDs are TEXT (uuid v4, app-generated).
+- `users` (id TEXT PK, username, password_hash, nickname, avatar, email, phone, **status int 0/1**, created_at, updated_at)
+- `roles` (id TEXT PK, code UNIQUE, name, **status int 0/1**, remark, created_at)
+- `permissions` (id TEXT PK, **code**, name, **kind ∈ catalog|menu|button|api**, **parent_id**→permissions(id) ON DELETE CASCADE, path, icon, **route_name**, redirect, keep_alive, hide_in_menu, is_external, **method**, **sort_order**, **status int 0/1**, description, created_at, **UNIQUE(code, kind)**)
+- `user_roles` (user_id TEXT, role_id TEXT)
+- `role_permissions` (role_id TEXT, permission_id TEXT)
 - `casbin_rule` (ptype, v0..v5) — the Casbin adapter's storage; **enforcement source of truth**
-- `audit_log` (id, actor_uid, action, target, detail_json, created_at)
+- `audit_log` (id, **actor_uid TEXT**, action, target, detail_json, created_at)
 
-**Single-source rule:** when management grants a permission to a role or assigns a role to a user, the application service writes the relational tables AND the corresponding Casbin policy via the adapter in the same tx. `casbin_rule` is what `Enforce` reads. `// TODO(data-scope)`: a `dom` column + `departments` tree + role→data-scope binding are the documented seam.
+**Single-source rule:** when management grants a permission to a role or assigns a role to a user, the application service writes the relational tables AND the corresponding Casbin policy via the adapter in the same tx. `casbin_rule` is what `Enforce` reads.
+
+**Permission tree semantics** (对齐 s-web):
+- `kind=catalog|menu` rows are the frontend menu tree (`GetUserMenuTree`); `kind=button|api` rows carry the same `code` for button rendering + endpoint enforcement.
+- `api`-kind rows carry `path` (endpoint) + `method` (HTTP verb); the casbin policy `p(role_code, code, method)` is generated from api-kind rows during grant.
+- `// TODO(data-scope)`: a `dom` column + `departments` tree + role→data-scope binding are the documented seam.
 
 ## Casbin
 
