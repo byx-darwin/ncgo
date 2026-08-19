@@ -2,7 +2,7 @@
 
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
-**Goal:** Build the official `rbac-kitex` template package in `ncgo-templates` — a DDD Kitex RPC service that is the RBAC + authentication **authority** (users/roles/permissions/menus, Casbin enforcement, JWT login, audit), built by developing a real seed project with `ncgo` and exporting it.
+**Goal:** Build the official `rbac-kitex` template package in `ncgo-templates` — a DDD Kitex RPC service that is the RBAC + authentication **authority** (users/roles/permissions, Casbin enforcement, JWT login, audit), built by developing a real seed project with `ncgo` and exporting it.
 
 **Architecture:** Develop a real Kitex seed project (`ncgo new --kind kitex --db postgres`) in a gitignored scratch dir, hand-write DDD layers (`internal/domain/**` + `internal/application/**` + `internal/repository/<agg>/**`) + infrastructure (sqlc-backed casbin `persist.Adapter`, JWT/argon2, token store, audit), make it build+test green, then `ncgo export templates --kind kitex` and assemble the `rbac-kitex` package (`template.yaml` + `kitex-template/*.yaml` + `idl/` + README + e2e test). The package is consumed via `ncgo new --template rbac-kitex` / `--template-dir`.
 
@@ -15,7 +15,7 @@
 - Bar = **reference scaffold**: correct structure + runnable happy path + documented production seams. NOT a full production system.
 - DDD layers are **aggregate-organized** (`internal/domain/<agg>/`), NOT proto-service-looped. Export rules: `internal/domain/**` + `internal/application/**` are `skip` + `LoopService:false` (ncgo #72/#73, on main).
 - Casbin: **basic model `sub, obj, act`**; `casbin_rule` is the enforcement single-source; management writes (grant/assign) **sync into** the adapter in-tx direction (mgmt tables → casbin). Data-scope/domain is a documented seam.
-- **Unified permission code**: `permissions.code` == casbin `obj` == `menus.perm_code` (one code drives frontend menus/buttons + backend API enforce).
+- **Unified permission code**: `permissions.code` == casbin `obj` == 前端按钮/接口权限码 (same code may exist for both button and api records, `UNIQUE(code, kind)`, one code drives frontend menu/button rendering + backend API enforce).
 - Casbin adapter is built-in **sqlc-based** (no gorm).
 - Auth: self-built JWT **HS256** (claims `{uid, roles}`) + **argon2id** passwords; refresh/blacklist via a `TokenStore` (hermetic memory default, Redis seam documented). RS256/JWKS is a seam.
 - Hermetic happy path: seed/tests/e2e must build+test WITHOUT postgres/redis up (DB-gated paths skip explicitly). No silent skips.
@@ -36,17 +36,14 @@ idl/auth.proto                          # rbac.v1: AuthService + RBACService
 internal/domain/user/{entity,valueobject,service,repository}.go
 internal/domain/role/{entity,service,repository}.go
 internal/domain/permission/{entity,valueobject,repository}.go
-internal/domain/menu/{entity,service,repository}.go
 internal/application/auth/{auth_service,dto}.go
 internal/application/user/{user_service,dto}.go
 internal/application/role/{role_service,dto}.go
 internal/application/permission/{permission_service,dto}.go
-internal/application/menu/{menu_service,dto}.go
 internal/application/rbac/{enforce_service,dto}.go
 internal/repository/user/repo.go
 internal/repository/role/repo.go
 internal/repository/permission/repo.go
-internal/repository/menu/repo.go
 internal/infrastructure/casbin/{adapter.go,model.conf,enforcer.go}
 internal/infrastructure/auth/{jwt.go,password.go}
 internal/infrastructure/token/{store.go,memory.go,redis.go}
@@ -97,7 +94,6 @@ Write `idl/auth.proto`:
 ```proto
 syntax = "proto3";
 package rbac.v1;
-
 option go_package = "api/rbac/v1;rbacv1";
 
 service AuthService {
@@ -120,13 +116,9 @@ service RBACService {
   rpc ListRoles(ListRolesReq) returns (ListRolesResp);
 
   rpc CreatePermission(CreatePermissionReq) returns (PermissionResp);
+  rpc UpdatePermission(UpdatePermissionReq) returns (PermissionResp);
   rpc DeletePermission(DeletePermissionReq) returns (EmptyResp);
   rpc ListPermissions(ListPermissionsReq) returns (ListPermissionsResp);
-
-  rpc CreateMenu(CreateMenuReq) returns (MenuResp);
-  rpc UpdateMenu(UpdateMenuReq) returns (MenuResp);
-  rpc DeleteMenu(DeleteMenuReq) returns (EmptyResp);
-  rpc ListMenus(ListMenusReq) returns (ListMenusResp);
 
   rpc AssignRolesToUser(AssignRolesToUserReq) returns (EmptyResp);
   rpc GrantPermissionsToRole(GrantPermissionsToRoleReq) returns (EmptyResp);
@@ -136,81 +128,91 @@ service RBACService {
 }
 
 message LoginReq { string username = 1; string password = 2; }
-message LoginResp {
-  string access_token = 1;
-  string refresh_token = 2;
-  int32 expires_in = 3;           // access token TTL seconds
-}
+message LoginResp { string access_token = 1; string refresh_token = 2; int32 expires_in = 3; }
 message RefreshReq { string refresh_token = 1; }
 message LogoutReq { string access_token = 1; }
 message LogoutResp {}
 message ValidateTokenReq { string access_token = 1; }
-message ValidateTokenResp {
-  int64 uid = 1;
-  repeated string roles = 2;
-  bool valid = 3;
-}
+message ValidateTokenResp { string uid = 1; repeated string role_codes = 2; bool valid = 3; }
 
 message User {
-  int64 id = 1;
+  string id = 1;
   string username = 2;
-  string status = 3;
-  repeated string roles = 4;
+  string nickname = 3;
+  string avatar = 4;
+  string email = 5;
+  string phone = 6;
+  int32 status = 7;                 // 1 enabled / 0 disabled
+  repeated string role_ids = 8;
 }
-message CreateUserReq { string username = 1; string password = 2; }
-message UpdateUserReq { int64 id = 1; optional string password = 2; optional string status = 3; }
-message DeleteUserReq { int64 id = 1; }
-message GetUserReq { int64 id = 1; }
-message ListUsersReq { int32 page = 1; int32 page_size = 2; }
+message CreateUserReq { string username = 1; string password = 2; string nickname = 3; string email = 4; string phone = 5; }
+message UpdateUserReq { string id = 1; optional string password = 2; optional string nickname = 3; optional string email = 4; optional string phone = 5; optional int32 status = 6; }
+message DeleteUserReq { string id = 1; }
+message GetUserReq { string id = 1; }
+message ListUsersReq { int32 page = 1; int32 page_size = 2; string keyword = 3; }
 message UserResp { User user = 1; }
 message ListUsersResp { repeated User users = 1; int32 total = 2; }
 
-message Role { int64 id = 1; string code = 2; string name = 3; }
-message CreateRoleReq { string code = 1; string name = 2; }
-message UpdateRoleReq { int64 id = 1; string name = 2; }
-message DeleteRoleReq { int64 id = 1; }
+message Role {
+  string id = 1;
+  string code = 2;
+  string name = 3;
+  int32 status = 4;
+  string remark = 5;
+  repeated string permission_codes = 6;
+}
+message CreateRoleReq { string code = 1; string name = 2; string remark = 3; }
+message UpdateRoleReq { string id = 1; optional string name = 2; optional string remark = 3; optional int32 status = 4; }
+message DeleteRoleReq { string id = 1; }
 message ListRolesReq { int32 page = 1; int32 page_size = 2; }
 message RoleResp { Role role = 1; }
 message ListRolesResp { repeated Role roles = 1; int32 total = 2; }
 
 message Permission {
-  int64 id = 1;
+  string id = 1;
   string code = 2;
   string name = 3;
-  string kind = 4;   // menu | button | api
-  string method = 5; // HTTP method for kind=api; "*" for menu/button
+  string kind = 4;              // catalog | menu | button | api
+  string parent_id = 5;
+  string path = 6;              // catalog/menu 路由；api 接口路径
+  string icon = 7;
+  string route_name = 8;        // 路由名 = 多语言标识
+  string redirect = 9;
+  bool keep_alive = 10;
+  bool hide_in_menu = 11;
+  bool is_external = 12;
+  string method = 13;           // api: GET/POST/PUT/DELETE；其他 ""
+  int32 sort_order = 14;
+  int32 status = 15;            // 1 enabled / 0 disabled
+  string description = 16;
 }
-message CreatePermissionReq { string code = 1; string name = 2; string kind = 3; string method = 4; }
-message DeletePermissionReq { int64 id = 1; }
-message ListPermissionsReq { int32 page = 1; int32 page_size = 2; }
+message CreatePermissionReq { string code = 1; string name = 2; string kind = 3; string parent_id = 4; string path = 5; string icon = 6; string route_name = 7; string redirect = 8; bool keep_alive = 9; bool hide_in_menu = 10; bool is_external = 11; string method = 12; int32 sort_order = 13; string description = 14; }
+message UpdatePermissionReq { string id = 1; optional string code = 2; optional string name = 3; optional string kind = 4; optional string parent_id = 5; optional string path = 6; optional string icon = 7; optional string route_name = 8; optional string redirect = 9; optional bool keep_alive = 10; optional bool hide_in_menu = 11; optional bool is_external = 12; optional string method = 13; optional int32 sort_order = 14; optional int32 status = 15; optional string description = 16; }
+message DeletePermissionReq { string id = 1; }
+message ListPermissionsReq {}
 message PermissionResp { Permission permission = 1; }
-message ListPermissionsResp { repeated Permission permissions = 1; int32 total = 2; }
+message ListPermissionsResp { repeated Permission permissions = 1; }
 
-message Menu {
-  int64 id = 1;
-  int64 parent_id = 2;
-  string type = 3;      // dir | menu | button
-  string name = 4;
-  string path = 5;
-  string component = 6;
-  string perm_code = 7;
-  int32 sort_order = 8;
-}
-message CreateMenuReq { int64 parent_id = 1; string type = 2; string name = 3; string path = 4; string component = 5; string perm_code = 6; int32 sort_order = 7; }
-message UpdateMenuReq { int64 id = 1; optional int64 parent_id = 2; optional string type = 3; optional string name = 4; optional string path = 5; optional string component = 6; optional string perm_code = 7; optional int32 sort_order = 8; }
-message DeleteMenuReq { int64 id = 1; }
-message ListMenusReq {}
-message MenuResp { Menu menu = 1; }
-message ListMenusResp { repeated Menu menus = 1; }
-
-message AssignRolesToUserReq { int64 user_id = 1; repeated int64 role_ids = 2; }
-message GrantPermissionsToRoleReq { int64 role_id = 1; repeated int64 permission_ids = 2; }
-message EnforceReq { int64 uid = 1; string obj = 2; string act = 3; }
+message AssignRolesToUserReq { string user_id = 1; repeated string role_ids = 2; }
+message GrantPermissionsToRoleReq { string role_id = 1; repeated string permission_codes = 2; }
+message EnforceReq { string uid = 1; string obj = 2; string act = 3; }
 message EnforceResp { bool allowed = 1; }
-message GetUserMenuTreeReq { int64 uid = 1; }
-message MenuNode { Menu menu = 1; repeated MenuNode children = 2; }
+message GetUserMenuTreeReq { string uid = 1; }
+message MenuNode {
+  string id = 1;
+  string code = 2;
+  string name = 3;
+  string route_name = 4;
+  string path = 5;
+  string icon = 6;
+  string redirect = 7;
+  bool hide_in_menu = 8;
+  bool is_external = 9;
+  bool keep_alive = 10;
+  repeated MenuNode children = 11;
+}
 message GetUserMenuTreeResp { repeated MenuNode roots = 1; }
-message GetUserPermCodesReq { int64 uid = 1; }
+message GetUserPermCodesReq { string uid = 1; }
 message GetUserPermCodesResp { repeated string codes = 1; }
 message EmptyResp {}
 ```
@@ -242,52 +244,58 @@ Write `internal/db/schema/000001_rbac.sql`:
 
 ```sql
 CREATE TABLE users (
-    id BIGSERIAL PRIMARY KEY,
+    id TEXT PRIMARY KEY,
     username TEXT NOT NULL UNIQUE,
     password_hash TEXT NOT NULL,
-    status TEXT NOT NULL DEFAULT 'active' CHECK (status IN ('active','disabled')),
+    nickname TEXT NOT NULL DEFAULT '',
+    avatar TEXT NOT NULL DEFAULT '',
+    email TEXT NOT NULL DEFAULT '',
+    phone TEXT NOT NULL DEFAULT '',
+    status INTEGER NOT NULL DEFAULT 1 CHECK (status IN (0,1)),
     created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE roles (
-    id BIGSERIAL PRIMARY KEY,
+    id TEXT PRIMARY KEY,
     code TEXT NOT NULL UNIQUE,
     name TEXT NOT NULL,
+    status INTEGER NOT NULL DEFAULT 1 CHECK (status IN (0,1)),
+    remark TEXT NOT NULL DEFAULT '',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE permissions (
-    id BIGSERIAL PRIMARY KEY,
-    code TEXT NOT NULL UNIQUE,
+    id TEXT PRIMARY KEY,
+    code TEXT NOT NULL,
     name TEXT NOT NULL,
-    kind TEXT NOT NULL CHECK (kind IN ('menu','button','api')),
-    method TEXT NOT NULL DEFAULT '*',
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+    kind TEXT NOT NULL CHECK (kind IN ('catalog','menu','button','api')),
+    parent_id TEXT REFERENCES permissions(id) ON DELETE CASCADE,
+    path TEXT,
+    icon TEXT,
+    route_name TEXT,
+    redirect TEXT,
+    keep_alive BOOLEAN NOT NULL DEFAULT false,
+    hide_in_menu BOOLEAN NOT NULL DEFAULT false,
+    is_external BOOLEAN NOT NULL DEFAULT false,
+    method TEXT,
+    sort_order INTEGER NOT NULL DEFAULT 0,
+    status INTEGER NOT NULL DEFAULT 1 CHECK (status IN (0,1)),
+    description TEXT NOT NULL DEFAULT '',
+    created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+    UNIQUE (code, kind)
 );
 
 CREATE TABLE user_roles (
-    user_id BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    role_id BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    role_id TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
     PRIMARY KEY (user_id, role_id)
 );
 
 CREATE TABLE role_permissions (
-    role_id BIGINT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
-    permission_id BIGINT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
+    role_id TEXT NOT NULL REFERENCES roles(id) ON DELETE CASCADE,
+    permission_id TEXT NOT NULL REFERENCES permissions(id) ON DELETE CASCADE,
     PRIMARY KEY (role_id, permission_id)
-);
-
-CREATE TABLE menus (
-    id BIGSERIAL PRIMARY KEY,
-    parent_id BIGINT REFERENCES menus(id) ON DELETE CASCADE,
-    type TEXT NOT NULL DEFAULT 'menu' CHECK (type IN ('dir','menu','button')),
-    name TEXT NOT NULL,
-    path TEXT,
-    component TEXT,
-    perm_code TEXT REFERENCES permissions(code) ON DELETE SET NULL,
-    sort_order INTEGER NOT NULL DEFAULT 0,
-    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE casbin_rule (
@@ -304,14 +312,14 @@ CREATE TABLE casbin_rule (
 
 CREATE TABLE audit_log (
     id BIGSERIAL PRIMARY KEY,
-    actor_uid BIGINT,
+    actor_uid TEXT,
     action TEXT NOT NULL,
     target TEXT NOT NULL DEFAULT '',
     detail_json TEXT NOT NULL DEFAULT '{}',
     created_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
-CREATE INDEX idx_menus_parent ON menus(parent_id);
+CREATE INDEX idx_permissions_parent ON permissions(parent_id);
 CREATE INDEX idx_casbin_rule_policy ON casbin_rule(ptype, v0, v1, v2);
 ```
 
@@ -319,15 +327,16 @@ Write `internal/db/query/rbac.sql`:
 
 ```sql
 -- name: CreateUser :one
-INSERT INTO users (username, password_hash, status) VALUES ($1, $2, $3) RETURNING *;
+INSERT INTO users (id, username, password_hash, nickname, avatar, email, phone, status)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING *;
 -- name: GetUserByID :one
 SELECT * FROM users WHERE id = $1;
 -- name: GetUserByUsername :one
 SELECT * FROM users WHERE username = $1;
 -- name: ListUsers :many
-SELECT * FROM users ORDER BY id LIMIT $1 OFFSET $2;
+SELECT * FROM users WHERE ($3 = '' OR username ILIKE '%' || $3 || '%') ORDER BY created_at LIMIT $1 OFFSET $2;
 -- name: UpdateUser :one
-UPDATE users SET username = $1, status = $2, updated_at = now() WHERE id = $3 RETURNING *;
+UPDATE users SET nickname = $1, email = $2, phone = $3, status = $4, updated_at = now() WHERE id = $5 RETURNING *;
 -- name: UpdateUserPassword :one
 UPDATE users SET password_hash = $1, updated_at = now() WHERE id = $2 RETURNING *;
 -- name: DeleteUser :exec
@@ -339,20 +348,20 @@ DELETE FROM user_roles WHERE user_id = $1 AND role_id = $2;
 -- name: ClearUserRoles :exec
 DELETE FROM user_roles WHERE user_id = $1;
 -- name: ListRolesByUserID :many
-SELECT r.* FROM roles r JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = $1 ORDER BY r.id;
+SELECT r.* FROM roles r JOIN user_roles ur ON ur.role_id = r.id WHERE ur.user_id = $1 ORDER BY r.created_at;
 -- name: ListRoleIDsByUserID :many
 SELECT role_id FROM user_roles WHERE user_id = $1;
 
 -- name: CreateRole :one
-INSERT INTO roles (code, name) VALUES ($1, $2) RETURNING *;
+INSERT INTO roles (id, code, name, status, remark) VALUES ($1, $2, $3, $4, $5) RETURNING *;
 -- name: GetRoleByID :one
 SELECT * FROM roles WHERE id = $1;
 -- name: GetRoleByCode :one
 SELECT * FROM roles WHERE code = $1;
 -- name: ListRoles :many
-SELECT * FROM roles ORDER BY id LIMIT $1 OFFSET $2;
+SELECT * FROM roles ORDER BY created_at LIMIT $1 OFFSET $2;
 -- name: UpdateRole :one
-UPDATE roles SET name = $1 WHERE id = $2 RETURNING *;
+UPDATE roles SET name = $1, remark = $2, status = $3 WHERE id = $4 RETURNING *;
 -- name: DeleteRole :exec
 DELETE FROM roles WHERE id = $1;
 -- name: AddRolePermission :exec
@@ -364,33 +373,23 @@ DELETE FROM role_permissions WHERE role_id = $1;
 -- name: ListPermissionIDsByRoleID :many
 SELECT permission_id FROM role_permissions WHERE role_id = $1;
 -- name: ListPermissionsByRoleIDs :many
-SELECT DISTINCT p.* FROM permissions p JOIN role_permissions rp ON rp.permission_id = p.id WHERE rp.role_id = ANY($1) ORDER BY p.id;
+SELECT DISTINCT p.* FROM permissions p JOIN role_permissions rp ON rp.permission_id = p.id WHERE rp.role_id = ANY($1) ORDER BY p.sort_order, p.id;
 
 -- name: CreatePermission :one
-INSERT INTO permissions (code, name, kind, method) VALUES ($1, $2, $3, $4) RETURNING *;
+INSERT INTO permissions (id, code, name, kind, parent_id, path, icon, route_name, redirect, keep_alive, hide_in_menu, is_external, method, sort_order, status, description)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16) RETURNING *;
 -- name: GetPermissionByID :one
 SELECT * FROM permissions WHERE id = $1;
--- name: GetPermissionByCode :one
-SELECT * FROM permissions WHERE code = $1;
 -- name: ListPermissions :many
-SELECT * FROM permissions ORDER BY id LIMIT $1 OFFSET $2;
+SELECT * FROM permissions ORDER BY sort_order, id;
 -- name: ListPermissionsByCodes :many
-SELECT * FROM permissions WHERE code = ANY($1) ORDER BY id;
+SELECT * FROM permissions WHERE code = ANY($1) ORDER BY sort_order, id;
+-- name: GetPermissionByCodeAndKind :one
+SELECT * FROM permissions WHERE code = $1 AND kind = $2;
+-- name: UpdatePermission :one
+UPDATE permissions SET code = $1, name = $2, kind = $3, parent_id = $4, path = $5, icon = $6, route_name = $7, redirect = $8, keep_alive = $9, hide_in_menu = $10, is_external = $11, method = $12, sort_order = $13, status = $14, description = $15 WHERE id = $16 RETURNING *;
 -- name: DeletePermission :exec
 DELETE FROM permissions WHERE id = $1;
-
--- name: CreateMenu :one
-INSERT INTO menus (parent_id, type, name, path, component, perm_code, sort_order) VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING *;
--- name: GetMenuByID :one
-SELECT * FROM menus WHERE id = $1;
--- name: ListMenus :many
-SELECT * FROM menus ORDER BY sort_order, id;
--- name: UpdateMenu :one
-UPDATE menus SET parent_id = $1, type = $2, name = $3, path = $4, component = $5, perm_code = $6, sort_order = $7 WHERE id = $8 RETURNING *;
--- name: DeleteMenu :exec
-DELETE FROM menus WHERE id = $1;
--- name: ListMenusByPermCodes :many
-SELECT * FROM menus WHERE perm_code = ANY($1) ORDER BY sort_order, id;
 
 -- name: ListCasbinRules :many
 SELECT ptype, v0, v1, v2, v3, v4, v5 FROM casbin_rule ORDER BY id;
@@ -409,7 +408,7 @@ SELECT count(*) FROM casbin_rule;
 INSERT INTO audit_log (actor_uid, action, target, detail_json) VALUES ($1, $2, $3, $4) RETURNING id;
 ```
 
-Replace `internal/db/migrations/000001_init.sql` with a goose migration wrapping the same 8 tables (`-- +goose Up` all CREATE TABLEs + indexes, `-- +goose Down` DROP TABLEs in reverse order). Keep `internal/db/schema/000001_placeholder.sql` (it is a no-op comment; harmless).
+Replace `internal/db/migrations/000001_init.sql` with a goose migration wrapping the same 7 tables (`-- +goose Up` all CREATE TABLEs + indexes, `-- +goose Down` DROP TABLEs in reverse order). Keep `internal/db/schema/000001_placeholder.sql` (it is a no-op comment; harmless).
 
 - [ ] **Step 6: Run codegen**
 
@@ -419,7 +418,7 @@ go mod tidy
 make sqlc        # sqlc generate -f internal/db/sqlc.yaml
 make update      # kitex -template-dir template/kitex-template -type protobuf idl/auth.proto
 ```
-Expected: `internal/db/gen/` generated (models + queries for all 8 tables), `kitex_gen/api/rbac/v1/` generated (both service stubs), base `internal/handler/{authservice,rbacservice}/handler.go` + `internal/usecase/` + `internal/repository/` stubs written by the base templates.
+Expected: `internal/db/gen/` generated (models + queries for all 7 tables), `kitex_gen/api/rbac/v1/` generated (both service stubs), base `internal/handler/{authservice,rbacservice}/handler.go` + `internal/usecase/` + `internal/repository/` stubs written by the base templates.
 
 - [ ] **Step 7: Verify seed compiles with base stubs**
 
