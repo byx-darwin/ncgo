@@ -175,6 +175,7 @@ below.
 | `ncgo add method` | Insert a method stub at ncgo anchor markers |
 | `ncgo add infra` | Add optional infra helpers such as Redis / logging / canary / polaris_adapter |
 | `ncgo add rpc` / `ncgo add bff` | Add services inside a micro workspace (`--template` / `--template-dir` consume template packages; `add bff` also supports `--preset`) |
+| `ncgo add kitex-client` | Generate a Kitex client wrapper under `pkg/client/<name>/` for BFF services calling RPC services |
 | `ncgo ai init claude` | Bootstrap hand-authored `.claude` starter files (`--preset minimal` or `--preset team`) |
 | `ncgo ai sync` | Render AI context files — `claude` target by default; `--target all\|agents\|claude\|cursor` selects a group |
 | `ncgo protolint` | Lint selected `.proto` files with Proto I/O rules |
@@ -512,6 +513,32 @@ Supported common infra add-ons: `redis`, `kafka`, `es`, `clickhouse`,
 `observability_logging` (`logging` alias),
 and `release_canary` (`canary` alias).
 Kitex-only add-ons: `registry_polaris`, `rate-limit`, `polaris_adapter`.
+
+### Kitex client for BFF
+
+```bash
+cd services/admin
+
+# Add rbac client
+ncgo add kitex-client rbac \
+  --service rbac-rpc \
+  --idl ../../rbac/idl/rbac.proto
+
+# Add rule-center client
+ncgo add kitex-client rulecenter \
+  --service rule-rpc \
+  --idl ../../rule/idl/rule_center.proto
+
+# Preview without writing
+ncgo add kitex-client rbac --service rbac-rpc --idl ../../rbac/idl/rbac.proto --dry-run
+
+# Machine-readable plan
+ncgo add kitex-client rbac --service rbac-rpc --idl ../../rbac/idl/rbac.proto --plan
+```
+
+`ncgo add kitex-client` generates `pkg/client/<name>/client.go` (Kitex client
+wrapper) and `pkg/client/<name>/config.go` (client configuration). After
+generation, run `kitex` to produce the `kitex_gen/` types from the proto file.
 
 `rate-limit` is **kitex-only** (Hertz uses a different rate-limit design). It
 rewrites the Kitex template's pass-through `RateLimit()` placeholder into a real

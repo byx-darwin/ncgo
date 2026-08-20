@@ -149,6 +149,7 @@ make dev
 | `ncgo add method` | 在 ncgo anchor 标记中插入方法桩 |
 | `ncgo add infra` | 添加 Redis / logging / canary / polaris_adapter 等可选基础设施 helper |
 | `ncgo add rpc` / `ncgo add bff` | 在 micro 工作区中新增服务（`--template` / `--template-dir` 消费模版包；`add bff` 还支持 `--preset`） |
+| `ncgo add kitex-client` | 在 `pkg/client/<name>/` 下生成 Kitex 客户端包装器，供 BFF 服务调用 RPC 服务 |
 | `ncgo ai init claude` | 初始化 hand-authored `.claude` starter files（`--preset minimal` 或 `--preset team`） |
 | `ncgo ai sync` | 渲染 AI 上下文文件——默认 `claude` 目标；`--target all\|agents\|claude\|cursor` 选择分组 |
 | `ncgo doctor` | 检查宿主机工具、项目元数据与默认 proto 契约问题 |
@@ -439,6 +440,31 @@ ncgo add infra polaris_adapter --root .           # kitex only：opt-in 真实 P
 ```
 
 common infra：`redis`、`kafka`、`es`、`clickhouse`、`observability_logging`（`logging` alias）、`release_canary`（`canary` alias）。Kitex-only：`registry_polaris`、`rate-limit`、`polaris_adapter`。
+
+### BFF 的 Kitex 客户端
+
+```bash
+cd services/admin
+
+# 添加 rbac 客户端
+ncgo add kitex-client rbac \
+  --service rbac-rpc \
+  --idl ../../rbac/idl/rbac.proto
+
+# 添加 rule-center 客户端
+ncgo add kitex-client rulecenter \
+  --service rule-rpc \
+  --idl ../../rule/idl/rule_center.proto
+
+# 预览不写入
+ncgo add kitex-client rbac --service rbac-rpc --idl ../../rbac/idl/rbac.proto --dry-run
+
+# 输出机器可读 plan
+ncgo add kitex-client rbac --service rbac-rpc --idl ../../rbac/idl/rbac.proto --plan
+```
+
+`ncgo add kitex-client` 在 `pkg/client/<name>/` 下生成 `client.go`（Kitex 客户端包装器）
+和 `config.go`（客户端配置）。生成后需要运行 `kitex` 命令从 proto 文件产生 `kitex_gen/` 类型。
 
 `rate-limit` 为 **kitex only**（Hertz 侧使用另一套限流设计）。它把 Kitex 模板
 里 pass-through 的 `RateLimit()` 占位符改写为真实的 `endpoint.Middleware`，底层
