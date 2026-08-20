@@ -11,6 +11,7 @@ import (
 
 type addKitexClientOptions struct {
 	root    string
+	module  string
 	service string
 	idl     string
 	force   bool
@@ -32,6 +33,7 @@ func newAddKitexClientCmd() *cobra.Command {
 	}
 	f := cmd.Flags()
 	f.StringVar(&opts.root, "root", ".", "Project root")
+	f.StringVar(&opts.module, "module", "", "Go module path (auto-detected from go.mod when empty)")
 	f.StringVar(&opts.service, "service", "", "RPC service name")
 	f.StringVar(&opts.idl, "idl", "", "Path to proto file")
 	f.BoolVar(&opts.force, "force", false, "Overwrite existing files")
@@ -51,11 +53,12 @@ func runAddKitexClient(cmd *cobra.Command, name string, opts *addKitexClientOpti
 	if err := validateAddOutput("add kitex-client", opts.output); err != nil {
 		return err
 	}
-	res, err := kitexclient.Add(kitexclient.Options{
+	res, err := kitexclient.Add(cmd.Context(), kitexclient.Options{
 		Root:    opts.root,
 		Name:    name,
 		Service: opts.service,
 		IDL:     opts.idl,
+		Module:  opts.module,
 		Force:   opts.force,
 		DryRun:  opts.dryRun,
 	})
