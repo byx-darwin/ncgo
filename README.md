@@ -536,9 +536,13 @@ ncgo add kitex-client rbac --service rbac-rpc --idl ../../rbac/idl/rbac.proto --
 ncgo add kitex-client rbac --service rbac-rpc --idl ../../rbac/idl/rbac.proto --plan
 ```
 
-`ncgo add kitex-client` generates `pkg/client/<name>/client.go` (Kitex client
-wrapper) and `pkg/client/<name>/config.go` (client configuration). After
-generation, run `kitex` to produce the `kitex_gen/` types from the proto file.
+`ncgo add kitex-client` generates `pkg/client/<name>/client.go` (a complete Kitex
+client wrapper that proxies all RPC methods from the proto IDL),
+`pkg/client/<name>/config.go` (client configuration), and `kitex_gen/` (the
+Kitex-generated types). The command invokes `kitex` automatically to produce the
+`kitex_gen/` types from the proto file and runs `go mod tidy` to resolve
+dependencies. The `kitex` binary must be on PATH (>= v0.16.1); the Go module
+path is auto-detected from `go.mod` or can be overridden with `--module`.
 
 `rate-limit` is **kitex-only** (Hertz uses a different rate-limit design). It
 rewrites the Kitex template's pass-through `RateLimit()` placeholder into a real

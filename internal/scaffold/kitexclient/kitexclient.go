@@ -1,22 +1,35 @@
 // Package kitexclient implements `ncgo add kitex-client <name>` for generating
 // Kitex client wrappers that BFF services use to call RPC services.
+//
+// Unlike the previous skeleton-only approach, Add now:
+//  1. Calls the kitex CLI to generate kitex_gen/ types from the proto IDL
+//  2. Generates a complete client wrapper that proxies all RPC methods
+//  3. Runs go mod tidy to resolve dependencies
 package kitexclient
 
 import (
+	"bufio"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"text/template"
+
+	"github.com/byx-darwin/ncgo/internal/exec"
+	"github.com/byx-darwin/ncgo/internal/protolint"
 )
 
 // Options describes a `ncgo add kitex-client` invocation.
 type Options struct {
-	Root    string // project root
-	Name    string // client name (e.g. rbac, rulecenter)
-	Service string // RPC service name
-	IDL     string // path to proto file
-	Force   bool   // overwrite existing files
-	DryRun  bool   // preview mode
+	Root    string      // project root
+	Name    string      // client name (e.g. rbac, rulecenter)
+	Service string      // RPC service name
+	IDL     string      // path to proto file (relative to Root)
+	Module  string      // Go module path; auto-detected from go.mod when empty
+	Force   bool        // overwrite existing files
+	DryRun  bool        // preview mode
+	Runner  exec.Runner // injected exec; nil means exec.NewDefault()
 }
 
 // Result describes what Add produced.
@@ -27,7 +40,7 @@ type Result struct {
 }
 
 // Add generates the Kitex client wrapper and config for calling an RPC service.
-func Add(opts Options) (*Result, error) {
+func Add(ctx context.Context, opts Options) (*Result, error) {
 	if opts.Root == "" {
 		opts.Root = "."
 	}
@@ -41,7 +54,33 @@ func Add(opts Options) (*Result, error) {
 		return nil, fmt.Errorf("kitex-client: --idl is required")
 	}
 
+	// Derive module from go.mod when not explicitly provided.
+	if opts.Module == "" {
+		mod, err := detectModule(opts.Root)
+		if err != nil {
+			return nil, fmt.Errorf("kitex-client: --module is required (or provide a go.mod at root): %w", err)
+		}
+		opts.Module = mod
+	}
+
 	result := &Result{DryRun: opts.DryRun}
+
+	// 1. Call kitex to generate kitex_gen/
+	if err := generateKitexTypes(ctx, opts, result); err != nil {
+		return nil, err
+	}
+
+	// 2. Parse proto to extract service/methods for the client wrapper.
+	services, protoPkg, err := parseProtoServices(ctx, opts)
+	if err != nil {
+		return nil, fmt.Errorf("kitex-client: parse proto: %w", err)
+	}
+
+	// Find the matching service.
+	svc, err := findService(services, opts.Service)
+	if err != nil {
+		return nil, err
+	}
 
 	// Create pkg/client/<name>/ directory
 	clientDir := filepath.Join(opts.Root, "pkg", "client", opts.Name)
@@ -51,63 +90,186 @@ func Add(opts Options) (*Result, error) {
 		}
 	}
 
-	// Generate client.go
+	// 3. Generate complete client wrapper
 	clientPath := filepath.Join(clientDir, "client.go")
-	if err := generateClient(clientPath, opts, result); err != nil {
+	if err := generateClient(clientPath, opts, svc, protoPkg, result); err != nil {
 		return nil, err
 	}
 
-	// Generate config.go
+	// 4. Generate config.go
 	configPath := filepath.Join(clientDir, "config.go")
 	if err := generateConfig(configPath, opts, result); err != nil {
 		return nil, err
 	}
 
+	// 5. Update go.mod dependencies
+	if err := updateGoMod(ctx, opts); err != nil {
+		return nil, fmt.Errorf("kitex-client: go mod tidy failed: %w", err)
+	}
+
 	result.NextSteps = []string{
-		"go get github.com/cloudwego/kitex",
-		"go mod tidy",
-		fmt.Sprintf("kitex -module %s %s", opts.Service, opts.IDL),
+		fmt.Sprintf("Import the client: %q", fmt.Sprintf("%s/pkg/client/%s", opts.Module, opts.Name)),
 	}
 
 	return result, nil
 }
 
-func generateClient(path string, opts Options, result *Result) error {
+// runner returns the configured Runner or the default.
+func (o Options) runner() exec.Runner {
+	if o.Runner != nil {
+		return o.Runner
+	}
+	return exec.NewDefault()
+}
+
+// generateKitexTypes calls the kitex CLI to generate kitex_gen/ types from the
+// proto IDL. This must happen before generating the client wrapper because the
+// wrapper imports the generated types.
+func generateKitexTypes(ctx context.Context, opts Options, result *Result) error {
+	if opts.DryRun {
+		result.WrittenPaths = append(result.WrittenPaths, "kitex_gen/")
+		return nil
+	}
+	r := opts.runner()
+	args := []string{
+		"-module", opts.Module,
+		"-type", "protobuf",
+		opts.IDL,
+	}
+	if _, err := exec.Kitex(ctx, r, opts.Root, args...); err != nil {
+		return fmt.Errorf("kitex generation failed: %w", err)
+	}
+	result.WrittenPaths = append(result.WrittenPaths, "kitex_gen/")
+	return nil
+}
+
+// protoServiceInfo is the subset of service metadata needed to render the
+// client wrapper.
+type protoServiceInfo struct {
+	ServiceName string
+	Methods     []protoMethodInfo
+}
+
+type protoMethodInfo struct {
+	Name         string
+	RequestType  string
+	ResponseType string
+}
+
+// parseProtoServices extracts the proto package name and service definitions
+// from the IDL file. It uses protolint for robust proto compilation.
+func parseProtoServices(ctx context.Context, opts Options) ([]protoServiceInfo, string, error) {
+	model, err := protolint.Load(ctx, protolint.LoadOptions{
+		Root:  opts.Root,
+		Files: []string{opts.IDL},
+	})
+	if err != nil {
+		return nil, "", err
+	}
+	if len(model.Files) == 0 {
+		return nil, "", fmt.Errorf("no files compiled from %s", opts.IDL)
+	}
+
+	protoPkg := model.Files[0].Package
+	if protoPkg == "" {
+		protoPkg = opts.Name
+	}
+
+	var services []protoServiceInfo
+	for _, svc := range model.Files[0].Services {
+		si := protoServiceInfo{ServiceName: svc.Name}
+		for _, rpc := range svc.RPCs {
+			si.Methods = append(si.Methods, protoMethodInfo{
+				Name:         rpc.Name,
+				RequestType:  rpc.InputMessageName,
+				ResponseType: rpc.OutputMessageName,
+			})
+		}
+		services = append(services, si)
+	}
+	return services, protoPkg, nil
+}
+
+// findService selects the requested service by name. When only one service
+// exists in the proto and opts.Service matches the proto package, it is
+// returned as a convenience.
+func findService(services []protoServiceInfo, name string) (protoServiceInfo, error) {
+	for _, s := range services {
+		if s.ServiceName == name {
+			return s, nil
+		}
+	}
+	if len(services) == 1 {
+		return services[0], nil
+	}
+	var names []string
+	for _, s := range services {
+		names = append(names, s.ServiceName)
+	}
+	return protoServiceInfo{}, fmt.Errorf("kitex-client: service %q not found in proto (available: %s)", name, strings.Join(names, ", "))
+}
+
+type clientTemplateData struct {
+	Name        string // Go package name (client name)
+	Service     string // RPC service name (unused in template but kept for context)
+	Module      string // Go module path
+	PackagePath string // proto package (kitex_gen subdirectory)
+	PkgRefName  string // Go import reference for kitex_gen package
+	Methods     []protoMethodInfo
+}
+
+func generateClient(path string, opts Options, svc protoServiceInfo, protoPkg string, result *Result) error {
 	if !opts.Force {
 		if _, err := os.Stat(path); err == nil {
 			return fmt.Errorf("kitex-client: %s already exists (use --force to overwrite)", path)
 		}
 	}
 
+	pkgRefName := protoPkg
+	data := clientTemplateData{
+		Name:        opts.Name,
+		Service:     opts.Service,
+		Module:      opts.Module,
+		PackagePath: protoPkg,
+		PkgRefName:  pkgRefName,
+		Methods:     svc.Methods,
+	}
+
 	tmpl := `package {{.Name}}
 
 import (
 	"context"
+	"fmt"
+
+	"{{.Module}}/kitex_gen/{{.PackagePath}}"
+	"github.com/cloudwego/kitex/client"
 )
 
 // Client wraps the Kitex generated client for {{.Service}}.
 type Client struct {
-	// TODO: Add Kitex client field after running kitex code generation
+	c {{.PkgRefName}}.Client
 }
 
 // New creates a new Kitex client for {{.Service}}.
-func New(addr string) (*Client, error) {
-	// TODO: Initialize Kitex client after running kitex code generation
-	// Example:
-	// c, err := {{.Service}}.NewClient(addr, client.WithHostPorts(addr))
-	// if err != nil {
-	//     return nil, err
-	// }
-	// return &Client{client: c}, nil
-	return &Client{}, nil
+func New(addr string, opts ...client.Option) (*Client, error) {
+	c, err := {{.PkgRefName}}.NewClient(addr, opts...)
+	if err != nil {
+		return nil, fmt.Errorf("kitex-client {{.Name}}: create client: %w", err)
+	}
+	return &Client{c: c}, nil
 }
 
 // Close closes the client connection.
 func (c *Client) Close() error {
-	// TODO: Implement cleanup
 	return nil
 }
-`
+{{range .Methods}}
+// {{.Name}} proxies the {{.Name}} RPC method.
+func (c *Client) {{.Name}}(ctx context.Context, req *{{$.PkgRefName}}.{{.RequestType}}) (*{{$.PkgRefName}}.{{.ResponseType}}, error) {
+	return c.c.{{.Name}}(ctx, req)
+}
+{{end}}`
+
 	t, err := template.New("client").Parse(tmpl)
 	if err != nil {
 		return fmt.Errorf("kitex-client: parse client template: %w", err)
@@ -119,7 +281,7 @@ func (c *Client) Close() error {
 			return fmt.Errorf("kitex-client: create %s: %w", path, err)
 		}
 		defer f.Close()
-		if err := t.Execute(f, opts); err != nil {
+		if err := t.Execute(f, data); err != nil {
 			return fmt.Errorf("kitex-client: execute client template: %w", err)
 		}
 	}
@@ -156,4 +318,35 @@ func DefaultConfig() *Config {
 	}
 	result.WrittenPaths = append(result.WrittenPaths, path)
 	return nil
+}
+
+// updateGoMod runs `go mod tidy` in the project root to resolve the kitex
+// dependency and any transitive imports.
+func updateGoMod(ctx context.Context, opts Options) error {
+	if opts.DryRun {
+		return nil
+	}
+	r := opts.runner()
+	_, err := exec.GoModTidy(ctx, r, opts.Root)
+	return err
+}
+
+// detectModule reads the first "module" directive from go.mod at root.
+func detectModule(root string) (string, error) {
+	f, err := os.Open(filepath.Join(root, "go.mod"))
+	if err != nil {
+		return "", err
+	}
+	defer func() { _ = f.Close() }()
+	scanner := bufio.NewScanner(f)
+	for scanner.Scan() {
+		line := scanner.Text()
+		if strings.HasPrefix(line, "module ") {
+			return strings.TrimSpace(strings.TrimPrefix(line, "module ")), nil
+		}
+	}
+	if err := scanner.Err(); err != nil {
+		return "", fmt.Errorf("read go.mod: %w", err)
+	}
+	return "", fmt.Errorf("module directive not found in go.mod")
 }

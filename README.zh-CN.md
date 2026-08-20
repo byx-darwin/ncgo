@@ -463,8 +463,11 @@ ncgo add kitex-client rbac --service rbac-rpc --idl ../../rbac/idl/rbac.proto --
 ncgo add kitex-client rbac --service rbac-rpc --idl ../../rbac/idl/rbac.proto --plan
 ```
 
-`ncgo add kitex-client` 在 `pkg/client/<name>/` 下生成 `client.go`（Kitex 客户端包装器）
-和 `config.go`（客户端配置）。生成后需要运行 `kitex` 命令从 proto 文件产生 `kitex_gen/` 类型。
+`ncgo add kitex-client` 在 `pkg/client/<name>/` 下生成 `client.go`（完整的 Kitex
+客户端包装器，代理 proto IDL 中的所有 RPC 方法）、`config.go`（客户端配置）以及
+`kitex_gen/`（Kitex 生成的类型）。命令会自动调用 `kitex` 从 proto 文件生成
+`kitex_gen/` 类型，并运行 `go mod tidy` 解析依赖。`kitex` 二进制必须位于 PATH
+中（>= v0.16.1）；Go 模块路径从 `go.mod` 自动检测，也可通过 `--module` 覆盖。
 
 `rate-limit` 为 **kitex only**（Hertz 侧使用另一套限流设计）。它把 Kitex 模板
 里 pass-through 的 `RateLimit()` 占位符改写为真实的 `endpoint.Middleware`，底层
