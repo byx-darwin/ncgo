@@ -31,6 +31,7 @@ func newAddCmd() *cobra.Command {
 	cmd.AddCommand(newAddBFFCmd())
 	cmd.AddCommand(newAddMethodCmd())
 	cmd.AddCommand(newAddRuleCenterCmd())
+	cmd.AddCommand(newAddKitexClientCmd())
 	return cmd
 }
 
