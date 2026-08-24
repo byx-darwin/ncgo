@@ -104,3 +104,29 @@ func TestApply_SkipExisting(t *testing.T) {
 		t.Errorf("expected original content, got %q", string(content))
 	}
 }
+
+func TestToSnakeCase(t *testing.T) {
+	tests := []struct {
+		input    string
+		expected string
+	}{
+		{"test-dup-verify", "test_dup_verify"},
+		{"TestDupVerify", "test_dup_verify"},
+		{"TestDupVerifyService", "test_dup_verify_service"},
+		{"my-service", "my_service"},
+		{"MyService", "my_service"},
+		{"simple", "simple"},
+		{"ALREADY_SNAKE", "already_snake"},
+		{"HTTPServer", "http_server"},
+		{"parseXML", "parse_xml"},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.input, func(t *testing.T) {
+			result := toSnakeCase(tt.input)
+			if result != tt.expected {
+				t.Errorf("toSnakeCase(%q) = %q, want %q", tt.input, result, tt.expected)
+			}
+		})
+	}
+}

@@ -117,8 +117,12 @@ func applySingle(root string, tpl *TemplateFile, opts ApplyOptions, result *Appl
 
 func applyForService(root string, tpl *TemplateFile, opts ApplyOptions, si ServiceInfo, result *ApplyResult) error {
 	// Resolve the actual target path — replace template variables in path.
+	// Use snake_case naming consistent with hz generator (kebab-case → snake_case).
+	// opts.ServiceName is the kebab-case name from CLI (e.g., "test-dup-verify").
+	// hz converts this to snake_case (e.g., "test_dup_verify") for file naming.
 	targetPath := tpl.Path
-	targetPath = strings.ReplaceAll(targetPath, "{{ToLower .ServiceName}}", strings.ToLower(si.ServiceName))
+	snakeName := toSnakeCase(opts.ServiceName)
+	targetPath = strings.ReplaceAll(targetPath, "{{ToLower .ServiceName}}", snakeName)
 
 	rendered, err := Render(tpl.Body, RenderData{
 		Module:       opts.Module,
@@ -133,6 +137,26 @@ func applyForService(root string, tpl *TemplateFile, opts ApplyOptions, si Servi
 
 	targetPath = filepath.Join(root, targetPath)
 	return writeOrSkip(root, targetPath, rendered, tpl.UpdateBehavior.Type, result)
+}
+
+// toSnakeCase converts kebab-case or PascalCase to snake_case.
+// Examples: "test-dup-verify" → "test_dup_verify", "TestDupVerify" → "test_dup_verify"
+func toSnakeCase(s string) string {
+	// First replace hyphens with underscores
+	s = strings.ReplaceAll(s, "-", "_")
+	// Then handle PascalCase by inserting underscores before uppercase letters
+	var result strings.Builder
+	for i, r := range s {
+		if i > 0 && r >= 'A' && r <= 'Z' {
+			// Check if previous char is lowercase or next char is lowercase
+			prev := rune(s[i-1])
+			if (prev >= 'a' && prev <= 'z') || (i+1 < len(s) && rune(s[i+1]) >= 'a' && rune(s[i+1]) <= 'z') {
+				result.WriteRune('_')
+			}
+		}
+		result.WriteRune(r)
+	}
+	return strings.ToLower(result.String())
 }
 
 func writeOrSkip(_ string, targetPath, content, behavior string, result *ApplyResult) error {
