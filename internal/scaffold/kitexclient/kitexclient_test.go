@@ -396,10 +396,10 @@ message GetDeviceResp { string name = 1; }
 }
 
 // TestAddMicroWorkspaceScenario covers the 4 bugs from issue #87 in one shot:
-//   1. kitex_gen path uses last segment of go_package, not the full path
-//   2. package name is sanitized (no hyphens)
-//   3. import path matches where kitex_gen is actually written
-//   4. Client interface is referenced from the service sub-package
+//  1. kitex_gen path uses last segment of go_package, not the full path
+//  2. package name is sanitized (no hyphens)
+//  3. import path matches where kitex_gen is actually written
+//  4. Client interface is referenced from the service sub-package
 func TestAddMicroWorkspaceScenario(t *testing.T) {
 	root := seedWorkspaceWithGoPackage(t)
 	r := &fakeRunner{}
