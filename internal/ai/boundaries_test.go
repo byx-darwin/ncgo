@@ -35,6 +35,9 @@ func TestEditBoundariesWorkspace(t *testing.T) {
 				{Name: "user-rpc", Kind: "kitex", Dir: "services/user-rpc"},
 			},
 		},
+		WorkspaceServices: []workspaceServiceFacts{
+			{Name: "user-rpc", Kind: "kitex", Dir: "services/user-rpc"},
+		},
 	}
 	mayEdit, doNotEdit := EditBoundaries(source)
 	if len(mayEdit) == 0 {
@@ -42,6 +45,10 @@ func TestEditBoundariesWorkspace(t *testing.T) {
 	}
 	if len(doNotEdit) == 0 {
 		t.Fatal("EditBoundaries returned empty doNotEdit for workspace")
+	}
+	joined := strings.Join([]string{boundariesToStr(mayEdit), boundariesToStr(doNotEdit)}, "")
+	if !strings.Contains(joined, "internal/usecase/user-rpc/") {
+		t.Errorf("boundaries missing workspace-derived usecase path: %s", joined)
 	}
 }
 
