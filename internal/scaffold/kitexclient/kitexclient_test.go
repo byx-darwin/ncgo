@@ -106,9 +106,13 @@ func TestAddGeneratesCompleteClient(t *testing.T) {
 		t.Fatalf("client.go missing kitex/client import:\n%s", s)
 	}
 
-	// Must have the Client struct with a kitex client field.
-	if !strings.Contains(s, "rbac.Client") {
-		t.Fatalf("client.go missing rbac.Client field:\n%s", s)
+	// Must have the Client struct backed by the service sub-package.
+	if !strings.Contains(s, "rbacservice.Client") {
+		t.Fatalf("client.go missing rbacservice.Client field (service sub-package):\n%s", s)
+	}
+	// Must import the service sub-package.
+	if !strings.Contains(s, "example.com/demo/kitex_gen/rbac/rbacservice") {
+		t.Fatalf("client.go missing service sub-package import:\n%s", s)
 	}
 
 	// Must proxy both RPC methods.
@@ -119,7 +123,7 @@ func TestAddGeneratesCompleteClient(t *testing.T) {
 		t.Fatalf("client.go missing ListRoles method:\n%s", s)
 	}
 
-	// Must have proper request/response types.
+	// Must have proper request/response types from the top-level kitex_gen pkg.
 	if !strings.Contains(s, "*rbac.CheckPermissionReq") {
 		t.Fatalf("client.go missing *rbac.CheckPermissionReq:\n%s", s)
 	}
@@ -360,6 +364,122 @@ message GetResp { string id = 1; }
 	}
 	if !strings.Contains(string(content), "kitex_gen/userrpc") {
 		t.Fatalf("client.go should import kitex_gen/userrpc:\n%s", string(content))
+	}
+}
+
+// seedWorkspaceWithGoPackage creates a workspace whose proto uses a long
+// go_package path (the micro-workspace scenario from issue #87).
+func seedWorkspaceWithGoPackage(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module iproost/proxy/api-src/edge-bff\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	idlDir := filepath.Join(root, "idl")
+	if err := os.MkdirAll(idlDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proto := `syntax = "proto3";
+package edgerpc;
+option go_package = "iproost/proxy/api-src/edge-rpc/kitex_gen/edgerpc;edgerpc";
+
+service DeviceService {
+  rpc GetDevice(GetDeviceReq) returns (GetDeviceResp) {}
+}
+message GetDeviceReq { string id = 1; }
+message GetDeviceResp { string name = 1; }
+`
+	if err := os.WriteFile(filepath.Join(idlDir, "edgerpc.proto"), []byte(proto), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// TestAddMicroWorkspaceScenario covers the 4 bugs from issue #87 in one shot:
+//   1. kitex_gen path uses last segment of go_package, not the full path
+//   2. package name is sanitized (no hyphens)
+//   3. import path matches where kitex_gen is actually written
+//   4. Client interface is referenced from the service sub-package
+func TestAddMicroWorkspaceScenario(t *testing.T) {
+	root := seedWorkspaceWithGoPackage(t)
+	r := &fakeRunner{}
+
+	res, err := Add(context.Background(), Options{
+		Root:    root,
+		Name:    "edge-rpc", // hyphenated — must be sanitized
+		Service: "DeviceService",
+		IDL:     "idl/edgerpc.proto",
+		Module:  "iproost/proxy/api-src/edge-bff",
+		Runner:  r,
+	})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	clientPath := filepath.Join(root, "pkg", "client", "edge-rpc", "client.go")
+	content, err := os.ReadFile(clientPath)
+	if err != nil {
+		t.Fatalf("read client.go: %v", err)
+	}
+	s := string(content)
+
+	// Bug 2: package name must be a valid Go identifier (no hyphens).
+	if strings.Contains(s, "package edge-rpc") {
+		t.Fatalf("client.go has invalid package name (hyphens):\n%s", s)
+	}
+	if !strings.Contains(s, "package edgerpc") {
+		t.Fatalf("client.go missing sanitized package name:\n%s", s)
+	}
+
+	// Bug 1 & 3: import path must use last segment of go_package path.
+	// go_package = "iproost/.../kitex_gen/edgerpc;edgerpc" → kitex_gen/edgerpc
+	wantImport := "iproost/proxy/api-src/edge-bff/kitex_gen/edgerpc"
+	if !strings.Contains(s, wantImport) {
+		t.Fatalf("client.go missing correct import %q:\n%s", wantImport, s)
+	}
+	// Must NOT contain the full go_package path as nested dir.
+	badImport := "kitex_gen/iproost/proxy/api-src/edge-rpc/kitex_gen/edgerpc"
+	if strings.Contains(s, badImport) {
+		t.Fatalf("client.go has nested go_package path (bug #1):\n%s", s)
+	}
+
+	// Bug 4: Client interface must come from service sub-package.
+	if !strings.Contains(s, "deviceservice.Client") {
+		t.Fatalf("client.go should reference deviceservice.Client (service sub-package):\n%s", s)
+	}
+	if strings.Contains(s, "edgerpc.Client") {
+		t.Fatalf("client.go references wrong edgerpc.Client (top-level, not service sub-pkg):\n%s", s)
+	}
+
+	// Service sub-package must be imported.
+	if !strings.Contains(s, "kitex_gen/edgerpc/deviceservice") {
+		t.Fatalf("client.go missing service sub-package import:\n%s", s)
+	}
+
+	// Sanity: still wrote the client and config.
+	if !containsStr(res.WrittenPaths, clientPath) {
+		t.Fatalf("WrittenPaths missing client.go: %v", res.WrittenPaths)
+	}
+	configPath := filepath.Join(root, "pkg", "client", "edge-rpc", "config.go")
+	if _, err := os.Stat(configPath); err != nil {
+		t.Fatalf("config.go not created: %v", err)
+	}
+}
+
+// TestSanitizeGoPackageName verifies the name-sanitization helper.
+func TestSanitizeGoPackageName(t *testing.T) {
+	cases := map[string]string{
+		"rbac":        "rbac",
+		"edge-rpc":    "edgerpc",
+		"rule_center": "rule_center",
+		"foo-bar-baz": "foobarbaz",
+		"123abc":      "123abc",
+		"a-b-c":       "abc",
+	}
+	for in, want := range cases {
+		if got := sanitizeGoPackageName(in); got != want {
+			t.Errorf("sanitizeGoPackageName(%q) = %q, want %q", in, got, want)
+		}
 	}
 }
 

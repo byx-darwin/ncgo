@@ -71,7 +71,7 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	// 2. Parse proto to extract service/methods for the client wrapper.
-	services, protoPkg, err := parseProtoServices(ctx, opts)
+	services, pkgDir, pkgName, err := parseProtoServices(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("kitex-client: parse proto: %w", err)
 	}
@@ -92,7 +92,7 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 
 	// 3. Generate complete client wrapper
 	clientPath := filepath.Join(clientDir, "client.go")
-	if err := generateClient(clientPath, opts, svc, protoPkg, result); err != nil {
+	if err := generateClient(clientPath, opts, svc, pkgDir, pkgName, result); err != nil {
 		return nil, err
 	}
 
@@ -156,23 +156,30 @@ type protoMethodInfo struct {
 	ResponseType string
 }
 
-// parseProtoServices extracts the proto package name and service definitions
-// from the IDL file. It uses protolint for robust proto compilation.
-func parseProtoServices(ctx context.Context, opts Options) ([]protoServiceInfo, string, error) {
+// parseProtoServices extracts the proto go_package value, package name, and
+// service definitions from the IDL file. It uses protolint for robust proto
+// compilation.
+func parseProtoServices(ctx context.Context, opts Options) ([]protoServiceInfo, string, string, error) {
 	model, err := protolint.Load(ctx, protolint.LoadOptions{
 		Root:  opts.Root,
 		Files: []string{opts.IDL},
 	})
 	if err != nil {
-		return nil, "", err
+		return nil, "", "", err
 	}
 	if len(model.Files) == 0 {
-		return nil, "", fmt.Errorf("no files compiled from %s", opts.IDL)
+		return nil, "", "", fmt.Errorf("no files compiled from %s", opts.IDL)
 	}
 
-	protoPkg := model.Files[0].Package
-	if protoPkg == "" {
-		protoPkg = opts.Name
+	goPkg := model.Files[0].GoPackage
+	pkgDir, pkgName := parseGoPackage(goPkg)
+	// When go_package is unset, fall back to the proto package name so the
+	// generated code still resolves to the kitex_gen layout kitex produces.
+	if pkgDir == "" {
+		pkgDir = string(model.Files[0].Package)
+	}
+	if pkgName == "" {
+		pkgName = pkgDir
 	}
 
 	var services []protoServiceInfo
@@ -187,7 +194,52 @@ func parseProtoServices(ctx context.Context, opts Options) ([]protoServiceInfo, 
 		}
 		services = append(services, si)
 	}
-	return services, protoPkg, nil
+	return services, pkgDir, pkgName, nil
+}
+
+// parseGoPackage splits a go_package option value into its path and name
+// components. The format is "path;pkg" or just "path". When the ;pkg suffix
+// is present it is used as the package name; otherwise the last path segment
+// is used. The returned pkgDir is the last path segment (the kitex_gen
+// subdirectory), which is where kitex actually writes generated files.
+func parseGoPackage(goPkg string) (pkgDir, pkgName string) {
+	if goPkg == "" {
+		return "", ""
+	}
+	path := goPkg
+	if idx := strings.Index(goPkg, ";"); idx >= 0 {
+		path = goPkg[:idx]
+		pkgName = goPkg[idx+1:]
+	}
+	// The kitex_gen subdirectory is the last segment of the path.
+	if path != "" {
+		if idx := strings.LastIndex(path, "/"); idx >= 0 {
+			pkgDir = path[idx+1:]
+		} else {
+			pkgDir = path
+		}
+	}
+	// Fall back to the path segment when no ;name suffix was given.
+	if pkgName == "" {
+		pkgName = pkgDir
+	}
+	return pkgDir, pkgName
+}
+
+// sanitizeGoPackageName strips characters that are not valid in a Go
+// identifier (letters, digits, underscore). Used to derive a valid package
+// name from user-supplied names like "edge-rpc".
+func sanitizeGoPackageName(name string) string {
+	var b strings.Builder
+	for _, r := range name {
+		if (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_' {
+			b.WriteRune(r)
+		}
+	}
+	if b.Len() == 0 {
+		return "client"
+	}
+	return b.String()
 }
 
 // findService selects the requested service by name. When only one service
@@ -210,29 +262,33 @@ func findService(services []protoServiceInfo, name string) (protoServiceInfo, er
 }
 
 type clientTemplateData struct {
-	Name        string // Go package name (client name)
-	Service     string // RPC service name (unused in template but kept for context)
-	Module      string // Go module path
-	PackagePath string // proto package (kitex_gen subdirectory)
-	PkgRefName  string // Go import reference for kitex_gen package
-	Methods     []protoMethodInfo
+	Name           string // sanitized Go package name
+	Service        string // RPC service name
+	ServiceName    string // sanitized service name (kitex_gen sub-package)
+	Module         string // Go module path
+	KitexGenDir    string // last segment of go_package path (kitex_gen subdir)
+	TypesPkgName   string // proto package name for request/response types
+	ServicePkgName string // service sub-package name for Client interface
+	Methods        []protoMethodInfo
 }
 
-func generateClient(path string, opts Options, svc protoServiceInfo, protoPkg string, result *Result) error {
+func generateClient(path string, opts Options, svc protoServiceInfo, pkgDir, pkgName string, result *Result) error {
 	if !opts.Force {
 		if _, err := os.Stat(path); err == nil {
 			return fmt.Errorf("kitex-client: %s already exists (use --force to overwrite)", path)
 		}
 	}
 
-	pkgRefName := protoPkg
+	svcPkgName := strings.ToLower(svc.ServiceName)
 	data := clientTemplateData{
-		Name:        opts.Name,
-		Service:     opts.Service,
-		Module:      opts.Module,
-		PackagePath: protoPkg,
-		PkgRefName:  pkgRefName,
-		Methods:     svc.Methods,
+		Name:           sanitizeGoPackageName(opts.Name),
+		Service:        opts.Service,
+		ServiceName:    svcPkgName,
+		Module:         opts.Module,
+		KitexGenDir:    pkgDir,
+		TypesPkgName:   pkgName,
+		ServicePkgName: svcPkgName,
+		Methods:        svc.Methods,
 	}
 
 	tmpl := `package {{.Name}}
@@ -241,18 +297,19 @@ import (
 	"context"
 	"fmt"
 
-	"{{.Module}}/kitex_gen/{{.PackagePath}}"
+	"{{.Module}}/kitex_gen/{{.KitexGenDir}}"
+	"{{.Module}}/kitex_gen/{{.KitexGenDir}}/{{.ServicePkgName}}"
 	"github.com/cloudwego/kitex/client"
 )
 
 // Client wraps the Kitex generated client for {{.Service}}.
 type Client struct {
-	c {{.PkgRefName}}.Client
+	c {{.ServicePkgName}}.Client
 }
 
 // New creates a new Kitex client for {{.Service}}.
 func New(addr string, opts ...client.Option) (*Client, error) {
-	c, err := {{.PkgRefName}}.NewClient(addr, opts...)
+	c, err := {{.ServicePkgName}}.NewClient(addr, opts...)
 	if err != nil {
 		return nil, fmt.Errorf("kitex-client {{.Name}}: create client: %w", err)
 	}
@@ -265,7 +322,7 @@ func (c *Client) Close() error {
 }
 {{range .Methods}}
 // {{.Name}} proxies the {{.Name}} RPC method.
-func (c *Client) {{.Name}}(ctx context.Context, req *{{$.PkgRefName}}.{{.RequestType}}) (*{{$.PkgRefName}}.{{.ResponseType}}, error) {
+func (c *Client) {{.Name}}(ctx context.Context, req *{{$.TypesPkgName}}.{{.RequestType}}) (*{{$.TypesPkgName}}.{{.ResponseType}}, error) {
 	return c.c.{{.Name}}(ctx, req)
 }
 {{end}}`
@@ -309,7 +366,7 @@ func DefaultConfig() *Config {
 		Address: "localhost:8888",
 	}
 }
-`, opts.Name, opts.Name)
+`, sanitizeGoPackageName(opts.Name), opts.Name)
 
 	if !opts.DryRun {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {

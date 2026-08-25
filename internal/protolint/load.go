@@ -10,6 +10,7 @@ import (
 
 	"github.com/bufbuild/protocompile"
 	"google.golang.org/protobuf/reflect/protoreflect"
+	"google.golang.org/protobuf/types/descriptorpb"
 )
 
 var errEmptyRoot = errors.New("protolint: Root is required")
@@ -95,6 +96,9 @@ func (b *builder) buildFile(fd protoreflect.FileDescriptor) *File {
 		Path:    fd.Path(),
 		Package: string(fd.Package()),
 		Syntax:  fd.Syntax().String(),
+	}
+	if opts := fd.Options().(*descriptorpb.FileOptions); opts != nil {
+		file.GoPackage = opts.GetGoPackage()
 	}
 	for i := 0; i < fd.Imports().Len(); i++ {
 		file.Imports = append(file.Imports, fd.Imports().Get(i).Path())
