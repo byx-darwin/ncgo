@@ -160,15 +160,22 @@ func generateKitexTypes(ctx context.Context, opts Options, pkgName string, resul
 	} else if changed {
 		idlArg = tmpRel
 		cleanup = func() {
-			_ = os.Remove(filepath.Join(opts.Root, tmpRel))
+			// Remove the entire scratch directory (temp proto + any kitex_gen
+			// it generated inside it).
+			_ = os.RemoveAll(filepath.Join(opts.Root, filepath.Dir(tmpRel)))
 		}
 	}
 
 	args := []string{
 		"-module", opts.Module,
 		"-type", "protobuf",
-		idlArg,
 	}
+	// Add the original IDL directory to kitex's import path so imports in the
+	// proto still resolve when the temp proto lives in a scratch directory.
+	if idlDir := filepath.Dir(opts.IDL); idlDir != "." {
+		args = append(args, "-I", filepath.Join(opts.Root, idlDir))
+	}
+	args = append(args, idlArg)
 	if _, err := exec.Kitex(ctx, r, opts.Root, args...); err != nil {
 		return nil, fmt.Errorf("kitex generation failed: %w", err)
 	}
@@ -176,12 +183,15 @@ func generateKitexTypes(ctx context.Context, opts Options, pkgName string, resul
 	return cleanup, nil
 }
 
-// rewriteGoPackage checks whether the proto at idlRel has a go_package option
-// with a path component. If so, it writes a temp copy (sibling to the
-// original) with go_package rewritten to the flat "<pkg>;<pkg>" and returns
-// its path relative to opts.Root. The caller is responsible for removing the
-// temp file. When go_package is absent or already flat, ("", false, nil) is
-// returned and the original proto is used as-is.
+// rewriteGoPackage writes a temp copy of the proto (in a scratch directory)
+// with go_package rewritten to the flat "<pkg>;<pkg>". The temp proto keeps
+// the original filename so kitex derives clean output names (e.g.
+// edgerpc.pb.go, not <scratch>.pb.go). The scratch directory is removed by
+// the returned cleanup function.
+//
+// kitex is invoked with -I pointing at the original IDL directory so imports
+// in the proto still resolve. When go_package is absent or already flat, ("",
+// false, nil) is returned and the original proto is used as-is.
 func rewriteGoPackage(opts Options, pkgName string) (string, bool, error) {
 	protoPath := filepath.Join(opts.Root, opts.IDL)
 	src, err := os.ReadFile(protoPath)
@@ -201,18 +211,20 @@ func rewriteGoPackage(opts Options, pkgName string) (string, bool, error) {
 	}
 	modified := re.ReplaceAll(src, []byte(`${1}`+pkgName+`;`+pkgName+`${2}`))
 
-	// Write temp copy next to the original so relative imports still resolve.
-	dir := filepath.Dir(protoPath)
-	base := filepath.Base(opts.IDL)
-	ext := filepath.Ext(base)
-	name := strings.TrimSuffix(base, ext)
-	tmpPath := filepath.Join(dir, name+".ncgo.tmp"+ext)
-	if err := os.WriteFile(tmpPath, modified, 0o644); err != nil {
+	// Create a scratch dir and write the temp proto with the ORIGINAL filename
+	// so kitex derives clean output names.
+	scratch, err := os.MkdirTemp(opts.Root, ".ncgo-kitex-*")
+	if err != nil {
 		return "", false, err
 	}
-	rel, err := filepath.Rel(opts.Root, tmpPath)
+	tmpProto := filepath.Join(scratch, filepath.Base(opts.IDL))
+	if err := os.WriteFile(tmpProto, modified, 0o644); err != nil {
+		os.RemoveAll(scratch)
+		return "", false, err
+	}
+	rel, err := filepath.Rel(opts.Root, tmpProto)
 	if err != nil {
-		os.Remove(tmpPath)
+		os.RemoveAll(scratch)
 		return "", false, err
 	}
 	return rel, true, nil

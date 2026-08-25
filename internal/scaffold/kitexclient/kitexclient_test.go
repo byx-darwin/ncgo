@@ -247,24 +247,37 @@ func TestAddKitexCommandArgs(t *testing.T) {
 
 	// Verify kitex was called with correct args.
 	// The proto's go_package has a path component, so the generator rewrites
-	// it to a flat package name in a temp file and passes that to kitex.
+	// it to a flat package name in a temp file (inside a scratch dir) and
+	// passes -I <idl dir> so imports still resolve.
 	for _, c := range r.calls {
 		if c.Name == "kitex" {
-			wantArgs := []string{"-module", "example.com/demo", "-type", "protobuf", "idl/rbac.ncgo.tmp.proto"}
-			if len(c.Args) != len(wantArgs) {
-				t.Fatalf("kitex args = %v, want %v", c.Args, wantArgs)
+			if len(c.Args) != 7 {
+				t.Fatalf("kitex args = %v (len %d), want 7 elements", c.Args, len(c.Args))
 			}
-			for i, a := range wantArgs {
-				if c.Args[i] != a {
-					t.Fatalf("kitex args[%d] = %q, want %q (all: %v)", i, c.Args[i], a, c.Args)
-				}
+			if c.Args[0] != "-module" || c.Args[1] != "example.com/demo" {
+				t.Fatalf("kitex module args wrong: %v", c.Args)
+			}
+			if c.Args[2] != "-type" || c.Args[3] != "protobuf" {
+				t.Fatalf("kitex type args wrong: %v", c.Args)
+			}
+			if c.Args[4] != "-I" {
+				t.Fatalf("kitex -I flag missing: %v", c.Args)
+			}
+			if !strings.HasSuffix(c.Args[5], "/idl") {
+				t.Fatalf("kitex -I value = %q, want path ending in /idl", c.Args[5])
+			}
+			if !strings.HasPrefix(c.Args[6], ".ncgo-kitex-") || !strings.HasSuffix(c.Args[6], "/rbac.proto") {
+				t.Fatalf("kitex idl arg = %q, want scratch-temp/rbac.proto", c.Args[6])
 			}
 			if c.Dir != root {
 				t.Fatalf("kitex dir = %q, want %q", c.Dir, root)
 			}
-			// The temp file should have been cleaned up after generation.
-			if _, err := os.Stat(filepath.Join(root, "idl/rbac.ncgo.tmp.proto")); !os.IsNotExist(err) {
-				t.Fatalf("temp proto file was not cleaned up")
+			// The scratch directory should have been cleaned up.
+			entries, _ := os.ReadDir(root)
+			for _, e := range entries {
+				if strings.HasPrefix(e.Name(), ".ncgo-kitex-") {
+					t.Fatalf("scratch dir %q was not cleaned up", e.Name())
+				}
 			}
 			return
 		}
