@@ -340,6 +340,7 @@ func generateClient(path string, opts Options, svc protoServiceInfo, pkgDir, pkg
 	tmpl := `package {{.Name}}
 
 import (
+	"context"
 	"fmt"
 	"time"
 
