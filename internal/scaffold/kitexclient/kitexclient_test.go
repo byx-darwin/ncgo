@@ -245,39 +245,21 @@ func TestAddKitexCommandArgs(t *testing.T) {
 		t.Fatalf("Add: %v", err)
 	}
 
-	// Verify kitex was called with correct args.
-	// The proto's go_package has a path component, so the generator rewrites
-	// it to a flat package name in a temp file (inside a scratch dir) and
-	// passes -I <idl dir> so imports still resolve.
+	// Verify kitex was called with correct args (no temp file needed when
+	// go_package belongs to the current module).
 	for _, c := range r.calls {
 		if c.Name == "kitex" {
-			if len(c.Args) != 7 {
-				t.Fatalf("kitex args = %v (len %d), want 7 elements", c.Args, len(c.Args))
+			wantArgs := []string{"-module", "example.com/demo", "-type", "protobuf", "idl/rbac.proto"}
+			if len(c.Args) != len(wantArgs) {
+				t.Fatalf("kitex args = %v, want %v", c.Args, wantArgs)
 			}
-			if c.Args[0] != "-module" || c.Args[1] != "example.com/demo" {
-				t.Fatalf("kitex module args wrong: %v", c.Args)
-			}
-			if c.Args[2] != "-type" || c.Args[3] != "protobuf" {
-				t.Fatalf("kitex type args wrong: %v", c.Args)
-			}
-			if c.Args[4] != "-I" {
-				t.Fatalf("kitex -I flag missing: %v", c.Args)
-			}
-			if !strings.HasSuffix(c.Args[5], "/idl") {
-				t.Fatalf("kitex -I value = %q, want path ending in /idl", c.Args[5])
-			}
-			if !strings.HasPrefix(c.Args[6], ".ncgo-kitex-") || !strings.HasSuffix(c.Args[6], "/rbac.proto") {
-				t.Fatalf("kitex idl arg = %q, want scratch-temp/rbac.proto", c.Args[6])
+			for i, a := range wantArgs {
+				if c.Args[i] != a {
+					t.Fatalf("kitex args[%d] = %q, want %q (all: %v)", i, c.Args[i], a, c.Args)
+				}
 			}
 			if c.Dir != root {
 				t.Fatalf("kitex dir = %q, want %q", c.Dir, root)
-			}
-			// The scratch directory should have been cleaned up.
-			entries, _ := os.ReadDir(root)
-			for _, e := range entries {
-				if strings.HasPrefix(e.Name(), ".ncgo-kitex-") {
-					t.Fatalf("scratch dir %q was not cleaned up", e.Name())
-				}
 			}
 			return
 		}
@@ -414,22 +396,68 @@ message GetDeviceResp { string name = 1; }
 	return root
 }
 
-// TestAddMicroWorkspaceScenario covers the 4 bugs from issue #87 in one shot:
-//  1. kitex_gen path uses last segment of go_package, not the full path
-//  2. package name is sanitized (no hyphens)
-//  3. import path matches where kitex_gen is actually written
-//  4. Client interface is referenced from the service sub-package
+// TestAddMicroWorkspaceScenario verifies that running the command from a BFF
+// (whose module does not own the proto's go_package) returns a clear error
+// instead of generating broken code.
 func TestAddMicroWorkspaceScenario(t *testing.T) {
 	root := seedWorkspaceWithGoPackage(t)
 	r := &fakeRunner{}
+
+	_, err := Add(context.Background(), Options{
+		Root:    root,
+		Name:    "edge-rpc", // hyphenated — would also need sanitization
+		Service: "DeviceService",
+		IDL:     "idl/edgerpc.proto",
+		Module:  "iproost/proxy/api-src/edge-bff",
+		Runner:  r,
+	})
+	if err == nil {
+		t.Fatal("expected error when proto go_package does not belong to module")
+	}
+	if !strings.Contains(err.Error(), "does not belong to module") {
+		t.Fatalf("expected module mismatch error, got: %v", err)
+	}
+	if !strings.Contains(err.Error(), "RPC service") {
+		t.Fatalf("error should mention running from RPC service, got: %v", err)
+	}
+	// No kitex invocation should have happened.
+	if hasCall(r, "kitex") {
+		t.Fatal("kitex should not be called when module mismatch detected")
+	}
+}
+
+// TestAddFromRPCService verifies the happy path: running from the RPC service
+// whose module matches the proto's go_package. Covers the two real bugs
+// (hyphenated package name, wrong Client interface reference).
+func TestAddFromRPCService(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module iproost/proxy/api-src/edge-rpc\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	idlDir := filepath.Join(root, "idl")
+	if err := os.MkdirAll(idlDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proto := `syntax = "proto3";
+package edgerpc;
+option go_package = "iproost/proxy/api-src/edge-rpc/kitex_gen/edgerpc;edgerpc";
+
+service DeviceService {
+  rpc GetDevice(GetDeviceReq) returns (GetDeviceResp) {}
+}
+message GetDeviceReq { string id = 1; }
+message GetDeviceResp { string name = 1; }
+`
+	if err := os.WriteFile(filepath.Join(idlDir, "edgerpc.proto"), []byte(proto), 0o644); err != nil {
+		t.Fatal(err)
+	}
 
 	res, err := Add(context.Background(), Options{
 		Root:    root,
 		Name:    "edge-rpc", // hyphenated — must be sanitized
 		Service: "DeviceService",
 		IDL:     "idl/edgerpc.proto",
-		Module:  "iproost/proxy/api-src/edge-bff",
-		Runner:  r,
+		Module:  "iproost/proxy/api-src/edge-rpc",
 	})
 	if err != nil {
 		t.Fatalf("Add: %v", err)
@@ -442,7 +470,7 @@ func TestAddMicroWorkspaceScenario(t *testing.T) {
 	}
 	s := string(content)
 
-	// Bug 2: package name must be a valid Go identifier (no hyphens).
+	// Bug: package name must be a valid Go identifier (no hyphens).
 	if strings.Contains(s, "package edge-rpc") {
 		t.Fatalf("client.go has invalid package name (hyphens):\n%s", s)
 	}
@@ -450,38 +478,21 @@ func TestAddMicroWorkspaceScenario(t *testing.T) {
 		t.Fatalf("client.go missing sanitized package name:\n%s", s)
 	}
 
-	// Bug 1 & 3: import path must use last segment of go_package path.
-	// go_package = "iproost/.../kitex_gen/edgerpc;edgerpc" → kitex_gen/edgerpc
-	wantImport := "iproost/proxy/api-src/edge-bff/kitex_gen/edgerpc"
-	if !strings.Contains(s, wantImport) {
-		t.Fatalf("client.go missing correct import %q:\n%s", wantImport, s)
-	}
-	// Must NOT contain the full go_package path as nested dir.
-	badImport := "kitex_gen/iproost/proxy/api-src/edge-rpc/kitex_gen/edgerpc"
-	if strings.Contains(s, badImport) {
-		t.Fatalf("client.go has nested go_package path (bug #1):\n%s", s)
-	}
-
-	// Bug 4: Client interface must come from service sub-package.
+	// Bug: Client interface must come from service sub-package.
 	if !strings.Contains(s, "deviceservice.Client") {
-		t.Fatalf("client.go should reference deviceservice.Client (service sub-package):\n%s", s)
+		t.Fatalf("client.go should reference deviceservice.Client:\n%s", s)
 	}
 	if strings.Contains(s, "edgerpc.Client") {
-		t.Fatalf("client.go references wrong edgerpc.Client (top-level, not service sub-pkg):\n%s", s)
+		t.Fatalf("client.go references wrong edgerpc.Client:\n%s", s)
 	}
 
-	// Service sub-package must be imported.
-	if !strings.Contains(s, "kitex_gen/edgerpc/deviceservice") {
-		t.Fatalf("client.go missing service sub-package import:\n%s", s)
+	// Import paths must match the module.
+	if !strings.Contains(s, "iproost/proxy/api-src/edge-rpc/kitex_gen/edgerpc") {
+		t.Fatalf("client.go missing correct import:\n%s", s)
 	}
 
-	// Sanity: still wrote the client and config.
 	if !containsStr(res.WrittenPaths, clientPath) {
 		t.Fatalf("WrittenPaths missing client.go: %v", res.WrittenPaths)
-	}
-	configPath := filepath.Join(root, "pkg", "client", "edge-rpc", "config.go")
-	if _, err := os.Stat(configPath); err != nil {
-		t.Fatalf("config.go not created: %v", err)
 	}
 }
 

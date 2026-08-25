@@ -1,5 +1,9 @@
 // Package kitexclient implements `ncgo add kitex-client <name>` for generating
-// Kitex client wrappers that BFF services use to call RPC services.
+// Kitex client wrappers in an RPC service.
+//
+// Run this command from the RPC service directory whose module matches the
+// proto's go_package. The generated kitex_gen/ types live in the calling
+// module — a BFF should depend on the RPC module, not re-generate these types.
 //
 // Unlike the previous skeleton-only approach, Add now:
 //  1. Calls the kitex CLI to generate kitex_gen/ types from the proto IDL
@@ -13,7 +17,6 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"regexp"
 	"strings"
 	"text/template"
 
@@ -23,7 +26,7 @@ import (
 
 // Options describes a `ncgo add kitex-client` invocation.
 type Options struct {
-	Root    string      // project root
+	Root    string      // project root (RPC service directory)
 	Name    string      // client name (e.g. rbac, rulecenter)
 	Service string      // RPC service name
 	IDL     string      // path to proto file (relative to Root)
@@ -40,7 +43,13 @@ type Result struct {
 	NextSteps    []string `json:"nextSteps"`
 }
 
-// Add generates the Kitex client wrapper and config for calling an RPC service.
+// Add generates the Kitex client wrapper and config for an RPC service.
+//
+// The command must be run from the RPC service directory: the proto's
+// go_package path is expected to start with the current module path. When it
+// does not, the generated kitex_gen/ layout would not match the module's
+// import paths — in that case Add returns an error telling the user to run
+// from the RPC service whose module owns the proto.
 func Add(ctx context.Context, opts Options) (*Result, error) {
 	if opts.Root == "" {
 		opts.Root = "."
@@ -66,13 +75,18 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 
 	result := &Result{DryRun: opts.DryRun}
 
-	// 2. Parse proto to extract go_package dir, package name, and services.
-	//    This must happen before kitex generation so we can rewrite go_package
-	//    to a flat package name (kitex otherwise nests kitex_gen at the full
-	//    go_package path, which doesn't match the calling module).
+	// Parse proto to extract go_package, package name, and services.
 	services, pkgDir, pkgName, err := parseProtoServices(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("kitex-client: parse proto: %w", err)
+	}
+
+	// The proto's go_package must belong to the current module. kitex nests
+	// kitex_gen under the full go_package path; if that path does not start
+	// with the current module, the generated tree will not match the module's
+	// import layout.
+	if err := checkModuleOwnership(opts); err != nil {
+		return nil, err
 	}
 
 	// Find the matching service.
@@ -81,15 +95,9 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 		return nil, err
 	}
 
-	// 1. Call kitex to generate kitex_gen/<pkgDir>/.
-	//    Rewrites go_package to just the package name so kitex generates at a
-	//    flat path that matches the client wrapper's imports.
-	cleanup, err := generateKitexTypes(ctx, opts, pkgName, result)
-	if err != nil {
+	// 1. Call kitex to generate kitex_gen/.
+	if err := generateKitexTypes(ctx, opts, result); err != nil {
 		return nil, err
-	}
-	if cleanup != nil {
-		defer cleanup()
 	}
 
 	// Create pkg/client/<name>/ directory
@@ -100,19 +108,19 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 		}
 	}
 
-	// 3. Generate complete client wrapper
+	// 2. Generate complete client wrapper
 	clientPath := filepath.Join(clientDir, "client.go")
 	if err := generateClient(clientPath, opts, svc, pkgDir, pkgName, result); err != nil {
 		return nil, err
 	}
 
-	// 4. Generate config.go
+	// 3. Generate config.go
 	configPath := filepath.Join(clientDir, "config.go")
 	if err := generateConfig(configPath, opts, result); err != nil {
 		return nil, err
 	}
 
-	// 5. Update go.mod dependencies
+	// 4. Update go.mod dependencies
 	if err := updateGoMod(ctx, opts); err != nil {
 		return nil, fmt.Errorf("kitex-client: go mod tidy failed: %w", err)
 	}
@@ -122,6 +130,36 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 	}
 
 	return result, nil
+}
+
+// checkModuleOwnership verifies that the proto's go_package belongs to the
+// current module. kitex generates kitex_gen under the go_package path, so a
+// mismatch produces code whose import paths cannot resolve.
+func checkModuleOwnership(opts Options) error {
+	model, err := protolint.Load(context.Background(), protolint.LoadOptions{
+		Root:  opts.Root,
+		Files: []string{opts.IDL},
+	})
+	if err != nil {
+		return fmt.Errorf("kitex-client: parse proto: %w", err)
+	}
+	if len(model.Files) == 0 {
+		return fmt.Errorf("kitex-client: no files compiled from %s", opts.IDL)
+	}
+	goPkg := model.Files[0].GoPackage
+	// Extract the path component (strip ;name suffix).
+	goPkgPath := goPkg
+	if idx := strings.Index(goPkg, ";"); idx >= 0 {
+		goPkgPath = goPkg[:idx]
+	}
+	if goPkgPath == "" {
+		return nil // no go_package — kitex uses proto package name, always local
+	}
+	if strings.HasPrefix(goPkgPath, opts.Module+"/") || goPkgPath == opts.Module {
+		return nil
+	}
+	return fmt.Errorf("kitex-client: proto go_package %q does not belong to module %q — run this command from the RPC service that owns the proto, not from a BFF",
+		goPkgPath, opts.Module)
 }
 
 // runner returns the configured Runner or the default.
@@ -135,99 +173,22 @@ func (o Options) runner() exec.Runner {
 // generateKitexTypes calls the kitex CLI to generate kitex_gen/ types from the
 // proto IDL. This must happen before generating the client wrapper because the
 // wrapper imports the generated types.
-//
-// kitex nests the generated tree under the full go_package path (e.g.
-// kitex_gen/a/b/c/), which does not match the calling module's import paths.
-// To keep the layout flat (kitex_gen/<pkg>/), the go_package option is
-// rewritten to just the package name in a temporary copy of the proto. The
-// returned cleanup function removes that temporary file.
-func generateKitexTypes(ctx context.Context, opts Options, pkgName string, result *Result) (func(), error) {
+func generateKitexTypes(ctx context.Context, opts Options, result *Result) error {
 	if opts.DryRun {
 		result.WrittenPaths = append(result.WrittenPaths, "kitex_gen/")
-		return nil, nil
+		return nil
 	}
 	r := opts.runner()
-
-	idlArg := opts.IDL
-	var cleanup func()
-
-	// If the proto's go_package has a path component, rewrite it to just the
-	// package name in a temp copy so kitex generates at kitex_gen/<pkg>/
-	// instead of the full nested path. When go_package is already flat (or
-	// absent), use the original proto as-is.
-	if tmpRel, changed, err := rewriteGoPackage(opts, pkgName); err != nil {
-		return nil, err
-	} else if changed {
-		idlArg = tmpRel
-		cleanup = func() {
-			// Remove the entire scratch directory (temp proto + any kitex_gen
-			// it generated inside it).
-			_ = os.RemoveAll(filepath.Join(opts.Root, filepath.Dir(tmpRel)))
-		}
-	}
-
 	args := []string{
 		"-module", opts.Module,
 		"-type", "protobuf",
+		opts.IDL,
 	}
-	// Add the original IDL directory to kitex's import path so imports in the
-	// proto still resolve when the temp proto lives in a scratch directory.
-	if idlDir := filepath.Dir(opts.IDL); idlDir != "." {
-		args = append(args, "-I", filepath.Join(opts.Root, idlDir))
-	}
-	args = append(args, idlArg)
 	if _, err := exec.Kitex(ctx, r, opts.Root, args...); err != nil {
-		return nil, fmt.Errorf("kitex generation failed: %w", err)
+		return fmt.Errorf("kitex generation failed: %w", err)
 	}
 	result.WrittenPaths = append(result.WrittenPaths, "kitex_gen/")
-	return cleanup, nil
-}
-
-// rewriteGoPackage writes a temp copy of the proto (in a scratch directory)
-// with go_package rewritten to the flat "<pkg>;<pkg>". The temp proto keeps
-// the original filename so kitex derives clean output names (e.g.
-// edgerpc.pb.go, not <scratch>.pb.go). The scratch directory is removed by
-// the returned cleanup function.
-//
-// kitex is invoked with -I pointing at the original IDL directory so imports
-// in the proto still resolve. When go_package is absent or already flat, ("",
-// false, nil) is returned and the original proto is used as-is.
-func rewriteGoPackage(opts Options, pkgName string) (string, bool, error) {
-	protoPath := filepath.Join(opts.Root, opts.IDL)
-	src, err := os.ReadFile(protoPath)
-	if err != nil {
-		return "", false, err
-	}
-	re := regexp.MustCompile(`(?m)(option\s+go_package\s*=\s*")[^"]*("\s*;)`)
-	match := re.FindSubmatch(src)
-	if match == nil {
-		return "", false, nil // no go_package — kitex uses proto package name
-	}
-	core := string(match[0])
-	core = strings.TrimPrefix(core, `option go_package = "`)
-	core = strings.TrimSuffix(core, `";`)
-	if !strings.Contains(core, "/") {
-		return "", false, nil // already flat
-	}
-	modified := re.ReplaceAll(src, []byte(`${1}`+pkgName+`;`+pkgName+`${2}`))
-
-	// Create a scratch dir and write the temp proto with the ORIGINAL filename
-	// so kitex derives clean output names.
-	scratch, err := os.MkdirTemp(opts.Root, ".ncgo-kitex-*")
-	if err != nil {
-		return "", false, err
-	}
-	tmpProto := filepath.Join(scratch, filepath.Base(opts.IDL))
-	if err := os.WriteFile(tmpProto, modified, 0o644); err != nil {
-		os.RemoveAll(scratch)
-		return "", false, err
-	}
-	rel, err := filepath.Rel(opts.Root, tmpProto)
-	if err != nil {
-		os.RemoveAll(scratch)
-		return "", false, err
-	}
-	return rel, true, nil
+	return nil
 }
 
 // protoServiceInfo is the subset of service metadata needed to render the
