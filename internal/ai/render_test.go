@@ -7,8 +7,8 @@ import (
 
 func TestRenderClaudeRestructured(t *testing.T) {
 	inputs := renderInputs{
-		SourceRef: ".ncgo/manifest.yaml",
-		LongBody:  "## Quick Facts\n\n- module: `github.com/acme/user-api`\n- service.name: `user-api`\n- service.kind: `hertz`\n- domains: `[user]`\n",
+		SourceRef:    ".ncgo/manifest.yaml",
+		LongBody:     "## Quick Facts\n\n- module: `github.com/acme/user-api`\n- service.name: `user-api`\n- service.kind: `hertz`\n- domains: `[user]`\n",
 		WorkflowBody: "## Implementing a Feature with ncgo\n\n1. **Add domain**",
 		MethodsByDomain: map[string][]string{
 			"user": {"Create", "Get", "Delete"},
@@ -40,8 +40,8 @@ func TestRenderClaudeRestructured(t *testing.T) {
 
 func TestRenderAgentsRestructured(t *testing.T) {
 	inputs := renderInputs{
-		SourceRef: ".ncgo/manifest.yaml",
-		LongBody:  "## Quick Facts\n\n- module: `github.com/acme/user-api`\n- domains: `[user]`\n",
+		SourceRef:    ".ncgo/manifest.yaml",
+		LongBody:     "## Quick Facts\n\n- module: `github.com/acme/user-api`\n- domains: `[user]`\n",
 		WorkflowBody: "## Implementing a Feature with ncgo\n\n1. **Add domain**",
 		MethodsByDomain: map[string][]string{
 			"user": {"Create", "Get"},
