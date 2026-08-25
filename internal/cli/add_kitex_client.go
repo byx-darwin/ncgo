@@ -24,8 +24,8 @@ func newAddKitexClientCmd() *cobra.Command {
 	opts := &addKitexClientOptions{}
 	cmd := &cobra.Command{
 		Use:   "kitex-client <name>",
-		Short: "Add Kitex client wrapper in an RPC service",
-		Long:  "Generate a Kitex client wrapper and kitex_gen/ types in the RPC service that owns the proto. Run this from the RPC service directory — not a BFF.",
+		Short: "Add Kitex client for calling RPC services",
+		Long:  "Generate Kitex client wrapper and types for calling an RPC service from a BFF.",
 		Args:  cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runAddKitexClient(cmd, args[0], opts)

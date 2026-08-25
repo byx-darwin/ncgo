@@ -26,7 +26,7 @@ import (
 
 // Options describes a `ncgo add kitex-client` invocation.
 type Options struct {
-	Root    string      // project root (RPC service directory)
+	Root    string      // project root
 	Name    string      // client name (e.g. rbac, rulecenter)
 	Service string      // RPC service name
 	IDL     string      // path to proto file (relative to Root)
@@ -312,9 +312,8 @@ func findService(services []protoServiceInfo, name string) (protoServiceInfo, er
 type clientTemplateData struct {
 	Name           string // sanitized Go package name
 	Service        string // RPC service name
-	ServiceName    string // sanitized service name (kitex_gen sub-package)
 	Module         string // Go module path
-	KitexGenDir    string // last segment of go_package path (kitex_gen subdir)
+	KitexGenDir    string // proto package (kitex_gen subdirectory)
 	TypesPkgName   string // proto package name for request/response types
 	ServicePkgName string // service sub-package name for Client interface
 	Methods        []protoMethodInfo
@@ -331,7 +330,6 @@ func generateClient(path string, opts Options, svc protoServiceInfo, pkgDir, pkg
 	data := clientTemplateData{
 		Name:           sanitizeGoPackageName(opts.Name),
 		Service:        opts.Service,
-		ServiceName:    svcPkgName,
 		Module:         opts.Module,
 		KitexGenDir:    pkgDir,
 		TypesPkgName:   pkgName,
@@ -342,12 +340,26 @@ func generateClient(path string, opts Options, svc protoServiceInfo, pkgDir, pkg
 	tmpl := `package {{.Name}}
 
 import (
-	"context"
 	"fmt"
+	"time"
 
+	"github.com/byx-darwin/go-tools/go-framework/config/kitex"
+	"github.com/cloudwego/kitex/client"
+	"github.com/cloudwego/kitex/pkg/connpool"
+	"github.com/cloudwego/kitex/pkg/loadbalance"
+	"github.com/cloudwego/kitex/pkg/remote/codec/thrift"
+	remoteConnpool "github.com/cloudwego/kitex/pkg/remote/connpool"
+	"github.com/cloudwego/kitex/pkg/retry"
+	"github.com/cloudwego/kitex/pkg/rpcinfo"
+	"github.com/cloudwego/kitex/pkg/transmeta"
+	"github.com/cloudwego/kitex/transport"
+{{if eq .KitexGenDir .ServicePkgName}}
+	typespkg "{{.Module}}/kitex_gen/{{.KitexGenDir}}"
+	"{{.Module}}/kitex_gen/{{.KitexGenDir}}/{{.ServicePkgName}}"
+{{else}}
 	"{{.Module}}/kitex_gen/{{.KitexGenDir}}"
 	"{{.Module}}/kitex_gen/{{.KitexGenDir}}/{{.ServicePkgName}}"
-	"github.com/cloudwego/kitex/client"
+{{end}}
 )
 
 // Client wraps the Kitex generated client for {{.Service}}.
@@ -355,9 +367,62 @@ type Client struct {
 	c {{.ServicePkgName}}.Client
 }
 
-// New creates a new Kitex client for {{.Service}}.
-func New(addr string, opts ...client.Option) (*Client, error) {
-	c, err := {{.ServicePkgName}}.NewClient(addr, opts...)
+// New creates a new Kitex client for {{.Service}} using the provided config.
+func New(cfg *kitex.ClientConfig, opts ...client.Option) (*Client, error) {
+	options := []client.Option{
+		client.WithPayloadCodec(thrift.NewThriftCodec()),
+		client.WithMetaHandler(transmeta.ClientTTHeaderHandler),
+		client.WithTransportProtocol(transport.TTHeaderStreaming),
+	}
+
+	if cfg.RPC != nil && cfg.RPC.Intranet != "" {
+		options = append(options, client.WithHostPorts(cfg.RPC.Intranet))
+	}
+
+	if cfg.ClientOption.Timeout.ConnectTimeOut > 0 {
+		options = append(options, client.WithConnectTimeout(cfg.ClientOption.Timeout.ConnectTimeOut))
+	} else {
+		options = append(options, client.WithConnectTimeout(50*time.Millisecond))
+	}
+
+	if cfg.ClientOption.Timeout.RPCTimeout > 0 {
+		options = append(options, client.WithRPCTimeout(cfg.ClientOption.Timeout.RPCTimeout))
+	}
+
+	options = append(options, client.WithConnPool(remoteConnpool.NewLongPool(
+		cfg.ClientOption.Resolver.Name,
+		connpool.IdleConfig{
+			MinIdlePerAddress: cfg.ClientOption.ConnPool.MinIdlePerAddress,
+			MaxIdlePerAddress: cfg.ClientOption.ConnPool.MaxIdlePerAddress,
+			MaxIdleGlobal:     cfg.ClientOption.ConnPool.MaxIdleGlobal,
+			MaxIdleTimeout:    cfg.ClientOption.ConnPool.MaxIdleTimeout,
+		},
+	)))
+
+	if cfg.ClientOption.Failure.Enable {
+		fp := retry.NewFailurePolicy()
+		fp.WithMaxRetryTimes(cfg.ClientOption.Failure.MaxRetryTimes)
+		options = append(options, client.WithFailureRetry(fp))
+	}
+
+	if cfg.ClientOption.LoadBalancer.Enable {
+		options = append(options, client.WithLoadBalancer(loadbalance.NewConsistBalancer(
+			loadbalance.NewConsistentHashOption(func(ctx context.Context, request any) string {
+				if s, ok := request.(interface{ Key() string }); ok {
+					return s.Key()
+				}
+				return ""
+			}),
+		)))
+	}
+
+	options = append(options, client.WithClientBasicInfo(&rpcinfo.EndpointBasicInfo{
+		ServiceName: cfg.ClientOption.Resolver.Name,
+	}))
+
+	options = append(options, opts...)
+
+	c, err := {{.ServicePkgName}}.NewClient(cfg.ClientOption.Resolver.Name, options...)
 	if err != nil {
 		return nil, fmt.Errorf("kitex-client {{.Name}}: create client: %w", err)
 	}
@@ -370,7 +435,7 @@ func (c *Client) Close() error {
 }
 {{range .Methods}}
 // {{.Name}} proxies the {{.Name}} RPC method.
-func (c *Client) {{.Name}}(ctx context.Context, req *{{$.TypesPkgName}}.{{.RequestType}}) (*{{$.TypesPkgName}}.{{.ResponseType}}, error) {
+func (c *Client) {{.Name}}(ctx context.Context, req *{{if eq $.KitexGenDir $.ServicePkgName}}typespkg{{else}}{{$.TypesPkgName}}{{end}}.{{.RequestType}}) (*{{if eq $.KitexGenDir $.ServicePkgName}}typespkg{{else}}{{$.TypesPkgName}}{{end}}.{{.ResponseType}}, error) {
 	return c.c.{{.Name}}(ctx, req)
 }
 {{end}}`
@@ -403,18 +468,28 @@ func generateConfig(path string, opts Options, result *Result) error {
 
 	content := fmt.Sprintf(`package %s
 
-// Config holds configuration for the %s Kitex client.
-type Config struct {
-	Address string `+"`yaml:\"address\"`"+`
-}
+import "github.com/byx-darwin/go-tools/go-framework/config/kitex"
 
-// DefaultConfig returns a default configuration.
-func DefaultConfig() *Config {
-	return &Config{
-		Address: "localhost:8888",
+// Config aliases the Kitex client config from go-framework.
+// Use kitex.ClientConfig directly; this alias keeps callers importing from
+// the generated client package.
+type Config = kitex.ClientConfig
+
+// DefaultConfig returns a minimal default configuration.
+func DefaultConfig() *kitex.ClientConfig {
+	return &kitex.ClientConfig{
+		RPC: &kitex.RPCServerOption{
+			Intranet: "localhost:8888",
+		},
+		ClientOption: &kitex.ClientOption{
+			Timeout: kitex.ClientTimeout{
+				ConnectTimeOut: 50000000,  // 50ms in nanoseconds
+				RPCTimeout:     200000000, // 200ms in nanoseconds
+			},
+		},
 	}
 }
-`, sanitizeGoPackageName(opts.Name), opts.Name)
+`, sanitizeGoPackageName(opts.Name))
 
 	if !opts.DryRun {
 		if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
