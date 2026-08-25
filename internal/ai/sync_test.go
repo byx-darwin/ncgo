@@ -149,9 +149,10 @@ func TestSyncWritesAllTargets(t *testing.T) {
 			}
 			continue
 		}
-		if !strings.Contains(body, "Hertz Template Design Doc") &&
-			!strings.Contains(body, "## 2. Generated Project Architecture") {
-			t.Errorf("%s missing embedded design-doc body", p)
+		// Design doc is no longer embedded in CLAUDE.md/AGENTS.md;
+		// it lives in standalone docs/ncgo/ files.
+		if !strings.Contains(body, "## Quick Facts") {
+			t.Errorf("%s missing Quick Facts section", p)
 		}
 	}
 	mdc, _ := os.ReadFile(filepath.Join(root, ".cursor/rules/ncgo.mdc"))
@@ -469,9 +470,10 @@ func TestSyncZhLangPicksZhDoc(t *testing.T) {
 	if _, err := Sync(Options{Root: root, Lang: LangZhCN, Target: TargetAll}); err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	body, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
-	if !strings.Contains(string(body), "生成项目架构") {
-		t.Errorf("zh-CN sync should embed Chinese design doc")
+	// Standalone design docs still carry the full localized design doc.
+	standaloneDoc, _ := os.ReadFile(filepath.Join(root, "docs/ncgo/hertz/design-doc.zh-CN.md"))
+	if !strings.Contains(string(standaloneDoc), "生成项目架构") {
+		t.Errorf("zh-CN standalone design doc should contain Chinese content")
 	}
 	projectContext, _ := os.ReadFile(filepath.Join(root, ".claude/generated/project-context.md"))
 	if !strings.Contains(string(projectContext), "Hertz 模板族支撑") {
@@ -514,9 +516,6 @@ func TestSyncWorkspaceWritesAllTargets(t *testing.T) {
 	}
 	if !strings.Contains(string(agents), "workspace.name: `commerce`") {
 		t.Errorf("AGENTS.md missing workspace facts")
-	}
-	if !strings.Contains(string(agents), "The micro workspace profile backs repository roots created by `ncgo new --mode micro`") {
-		t.Errorf("AGENTS.md missing embedded micro design doc overview")
 	}
 	projectContext, _ := os.ReadFile(filepath.Join(root, ".claude/generated/project-context.md"))
 	body := string(projectContext)
