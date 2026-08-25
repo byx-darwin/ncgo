@@ -24,6 +24,7 @@ type renderInputs struct {
 	ProjectContextBody string
 	WorkflowBody       string
 	RulesBody          string
+	MethodsByDomain    map[string][]string // NEW
 }
 
 // targets returns the static set of artifacts produced by `ncgo ai sync`.

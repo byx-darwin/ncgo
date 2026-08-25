@@ -941,6 +941,39 @@ func TestReadGeneratedAt(t *testing.T) {
 	}
 }
 
+func TestSyncIncludesMethodsFromScan(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	usecaseDir := filepath.Join(root, "internal", "usecase", "user")
+	if err := os.MkdirAll(usecaseDir, 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	usecaseContent := `package user
+
+import "context"
+
+type UseCase struct{}
+
+func New() *UseCase { return &UseCase{} }
+func (u *UseCase) Repo() {}
+
+// ncgo:methods:start
+func (u *UseCase) Create(ctx context.Context) error { return nil }
+func (u *UseCase) Get(ctx context.Context) error { return nil }
+// ncgo:methods:end
+`
+	if err := os.WriteFile(filepath.Join(usecaseDir, "user.go"), []byte(usecaseContent), 0o644); err != nil {
+		t.Fatalf("write usecase: %v", err)
+	}
+	res, err := Sync(Options{Root: root, Target: "claude"})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if len(res.Written) == 0 {
+		t.Fatal("Sync wrote no files")
+	}
+}
+
 func TestReadGeneratedAtMissingMarker(t *testing.T) {
 	dir := t.TempDir()
 	p := filepath.Join(dir, "CLAUDE.md")
