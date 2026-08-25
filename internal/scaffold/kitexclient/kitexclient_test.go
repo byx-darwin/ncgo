@@ -106,9 +106,13 @@ func TestAddGeneratesCompleteClient(t *testing.T) {
 		t.Fatalf("client.go missing kitex/client import:\n%s", s)
 	}
 
-	// Must have the Client struct with a kitex client field.
-	if !strings.Contains(s, "rbac.Client") {
-		t.Fatalf("client.go missing rbac.Client field:\n%s", s)
+	// Must have the Client struct backed by the service sub-package.
+	if !strings.Contains(s, "rbacservice.Client") {
+		t.Fatalf("client.go missing rbacservice.Client field (service sub-package):\n%s", s)
+	}
+	// Must import the service sub-package.
+	if !strings.Contains(s, "example.com/demo/kitex_gen/rbac/rbacservice") {
+		t.Fatalf("client.go missing service sub-package import:\n%s", s)
 	}
 
 	// Must proxy both RPC methods.
@@ -119,7 +123,7 @@ func TestAddGeneratesCompleteClient(t *testing.T) {
 		t.Fatalf("client.go missing ListRoles method:\n%s", s)
 	}
 
-	// Must have proper request/response types.
+	// Must have proper request/response types from the top-level kitex_gen pkg.
 	if !strings.Contains(s, "*rbac.CheckPermissionReq") {
 		t.Fatalf("client.go missing *rbac.CheckPermissionReq:\n%s", s)
 	}
@@ -349,14 +353,16 @@ message GetResp { string id = 1; }
 		t.Fatalf("Add with single service: %v", err)
 	}
 
-	// Verify the generated code uses the correct proto package (userrpc).
+	// Verify the generated code references the service sub-package.
+	// service UserRPC → lowercased to "userrpc", which collides with the
+	// proto package name "userrpc", so the types package is aliased.
 	clientPath := filepath.Join(root, "pkg", "client", "user", "client.go")
 	content, err := os.ReadFile(clientPath)
 	if err != nil {
 		t.Fatalf("read client.go: %v", err)
 	}
 	if !strings.Contains(string(content), "userrpc.Client") {
-		t.Fatalf("client.go should reference userrpc.Client (from proto package):\n%s", string(content))
+		t.Fatalf("client.go should reference userrpc.Client (service sub-package):\n%s", string(content))
 	}
 	if !strings.Contains(string(content), "kitex_gen/userrpc") {
 		t.Fatalf("client.go should import kitex_gen/userrpc:\n%s", string(content))

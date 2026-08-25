@@ -109,13 +109,14 @@ type Service struct {
 
 // File is the normalized view of one parsed .proto file.
 type File struct {
-	Path     string
-	Package  string
-	Syntax   string
-	Imports  []string
-	IsHertz  bool
-	Services []*Service
-	Messages []*Message
+	Path      string
+	Package   string
+	GoPackage string // raw go_package option value (e.g. "a/b/c;pkg"), empty if unset
+	Syntax    string
+	Imports   []string
+	IsHertz   bool
+	Services  []*Service
+	Messages  []*Message
 }
 
 // Model is the aggregate normalized view of the requested entry files.

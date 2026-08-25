@@ -154,9 +154,10 @@ func TestRunAddKitexClientModuleFlagOverridesGoMod(t *testing.T) {
 	cmd.SetOut(&out)
 
 	// Pass --module explicitly; dry-run so kitex is not invoked.
+	// The module must match the proto's go_package (checked even in dry-run).
 	err := runAddKitexClient(cmd, "rbac", &addKitexClientOptions{
 		root:    root,
-		module:  "example.com/override",
+		module:  "example.com/demo",
 		service: "RbacService",
 		idl:     "idl/rbac.proto",
 		dryRun:  true,
