@@ -13,6 +13,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"text/template"
 
@@ -65,12 +66,10 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 
 	result := &Result{DryRun: opts.DryRun}
 
-	// 1. Call kitex to generate kitex_gen/
-	if err := generateKitexTypes(ctx, opts, result); err != nil {
-		return nil, err
-	}
-
-	// 2. Parse proto to extract service/methods for the client wrapper.
+	// 2. Parse proto to extract go_package dir, package name, and services.
+	//    This must happen before kitex generation so we can rewrite go_package
+	//    to a flat package name (kitex otherwise nests kitex_gen at the full
+	//    go_package path, which doesn't match the calling module).
 	services, pkgDir, pkgName, err := parseProtoServices(ctx, opts)
 	if err != nil {
 		return nil, fmt.Errorf("kitex-client: parse proto: %w", err)
@@ -80,6 +79,17 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 	svc, err := findService(services, opts.Service)
 	if err != nil {
 		return nil, err
+	}
+
+	// 1. Call kitex to generate kitex_gen/<pkgDir>/.
+	//    Rewrites go_package to just the package name so kitex generates at a
+	//    flat path that matches the client wrapper's imports.
+	cleanup, err := generateKitexTypes(ctx, opts, pkgName, result)
+	if err != nil {
+		return nil, err
+	}
+	if cleanup != nil {
+		defer cleanup()
 	}
 
 	// Create pkg/client/<name>/ directory
@@ -125,22 +135,87 @@ func (o Options) runner() exec.Runner {
 // generateKitexTypes calls the kitex CLI to generate kitex_gen/ types from the
 // proto IDL. This must happen before generating the client wrapper because the
 // wrapper imports the generated types.
-func generateKitexTypes(ctx context.Context, opts Options, result *Result) error {
+//
+// kitex nests the generated tree under the full go_package path (e.g.
+// kitex_gen/a/b/c/), which does not match the calling module's import paths.
+// To keep the layout flat (kitex_gen/<pkg>/), the go_package option is
+// rewritten to just the package name in a temporary copy of the proto. The
+// returned cleanup function removes that temporary file.
+func generateKitexTypes(ctx context.Context, opts Options, pkgName string, result *Result) (func(), error) {
 	if opts.DryRun {
 		result.WrittenPaths = append(result.WrittenPaths, "kitex_gen/")
-		return nil
+		return nil, nil
 	}
 	r := opts.runner()
+
+	idlArg := opts.IDL
+	var cleanup func()
+
+	// If the proto's go_package has a path component, rewrite it to just the
+	// package name in a temp copy so kitex generates at kitex_gen/<pkg>/
+	// instead of the full nested path. When go_package is already flat (or
+	// absent), use the original proto as-is.
+	if tmpRel, changed, err := rewriteGoPackage(opts, pkgName); err != nil {
+		return nil, err
+	} else if changed {
+		idlArg = tmpRel
+		cleanup = func() {
+			_ = os.Remove(filepath.Join(opts.Root, tmpRel))
+		}
+	}
+
 	args := []string{
 		"-module", opts.Module,
 		"-type", "protobuf",
-		opts.IDL,
+		idlArg,
 	}
 	if _, err := exec.Kitex(ctx, r, opts.Root, args...); err != nil {
-		return fmt.Errorf("kitex generation failed: %w", err)
+		return nil, fmt.Errorf("kitex generation failed: %w", err)
 	}
 	result.WrittenPaths = append(result.WrittenPaths, "kitex_gen/")
-	return nil
+	return cleanup, nil
+}
+
+// rewriteGoPackage checks whether the proto at idlRel has a go_package option
+// with a path component. If so, it writes a temp copy (sibling to the
+// original) with go_package rewritten to the flat "<pkg>;<pkg>" and returns
+// its path relative to opts.Root. The caller is responsible for removing the
+// temp file. When go_package is absent or already flat, ("", false, nil) is
+// returned and the original proto is used as-is.
+func rewriteGoPackage(opts Options, pkgName string) (string, bool, error) {
+	protoPath := filepath.Join(opts.Root, opts.IDL)
+	src, err := os.ReadFile(protoPath)
+	if err != nil {
+		return "", false, err
+	}
+	re := regexp.MustCompile(`(?m)(option\s+go_package\s*=\s*")[^"]*("\s*;)`)
+	match := re.FindSubmatch(src)
+	if match == nil {
+		return "", false, nil // no go_package — kitex uses proto package name
+	}
+	core := string(match[0])
+	core = strings.TrimPrefix(core, `option go_package = "`)
+	core = strings.TrimSuffix(core, `";`)
+	if !strings.Contains(core, "/") {
+		return "", false, nil // already flat
+	}
+	modified := re.ReplaceAll(src, []byte(`${1}`+pkgName+`;`+pkgName+`${2}`))
+
+	// Write temp copy next to the original so relative imports still resolve.
+	dir := filepath.Dir(protoPath)
+	base := filepath.Base(opts.IDL)
+	ext := filepath.Ext(base)
+	name := strings.TrimSuffix(base, ext)
+	tmpPath := filepath.Join(dir, name+".ncgo.tmp"+ext)
+	if err := os.WriteFile(tmpPath, modified, 0o644); err != nil {
+		return "", false, err
+	}
+	rel, err := filepath.Rel(opts.Root, tmpPath)
+	if err != nil {
+		os.Remove(tmpPath)
+		return "", false, err
+	}
+	return rel, true, nil
 }
 
 // protoServiceInfo is the subset of service metadata needed to render the

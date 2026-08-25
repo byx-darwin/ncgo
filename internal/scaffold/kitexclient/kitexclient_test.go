@@ -246,9 +246,11 @@ func TestAddKitexCommandArgs(t *testing.T) {
 	}
 
 	// Verify kitex was called with correct args.
+	// The proto's go_package has a path component, so the generator rewrites
+	// it to a flat package name in a temp file and passes that to kitex.
 	for _, c := range r.calls {
 		if c.Name == "kitex" {
-			wantArgs := []string{"-module", "example.com/demo", "-type", "protobuf", "idl/rbac.proto"}
+			wantArgs := []string{"-module", "example.com/demo", "-type", "protobuf", "idl/rbac.ncgo.tmp.proto"}
 			if len(c.Args) != len(wantArgs) {
 				t.Fatalf("kitex args = %v, want %v", c.Args, wantArgs)
 			}
@@ -259,6 +261,10 @@ func TestAddKitexCommandArgs(t *testing.T) {
 			}
 			if c.Dir != root {
 				t.Fatalf("kitex dir = %q, want %q", c.Dir, root)
+			}
+			// The temp file should have been cleaned up after generation.
+			if _, err := os.Stat(filepath.Join(root, "idl/rbac.ncgo.tmp.proto")); !os.IsNotExist(err) {
+				t.Fatalf("temp proto file was not cleaned up")
 			}
 			return
 		}
