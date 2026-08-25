@@ -22,6 +22,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scan"
 )
 
 const (
@@ -119,6 +120,26 @@ type Skip struct {
 	Reason string `json:"reason"`
 }
 
+// methodsFromScan runs scan.Scan and extracts method names per domain.
+// Returns nil when scan fails (non-fatal — methods are best-effort).
+func methodsFromScan(root string) map[string][]string {
+	s, err := scan.Scan(root)
+	if err != nil {
+		return nil
+	}
+	out := make(map[string][]string)
+	for _, d := range s.Domains {
+		var methods []string
+		for _, m := range d.Methods {
+			methods = append(methods, m.Name)
+		}
+		if len(methods) > 0 {
+			out[d.Name] = methods
+		}
+	}
+	return out
+}
+
 // Sync renders all managed AI artifacts under opts.Root.
 func Sync(opts Options) (*Result, error) {
 	if opts.Root == "" {
@@ -145,6 +166,10 @@ func Sync(opts Options) (*Result, error) {
 		return nil, err
 	}
 	inputs := buildInputs(source, local, opts.Lang)
+	inputs.MethodsByDomain = methodsFromScan(opts.Root)
+	inputs.ErrorCodes = ErrorCodes(resolveProfile(source))
+	inputs.EditBoundaries = RenderBoundaries(EditBoundaries(source))
+	inputs.LocalNotes = local
 	res := newSyncResult(source)
 	res.Target = opts.Target
 	for _, t := range targets() {
