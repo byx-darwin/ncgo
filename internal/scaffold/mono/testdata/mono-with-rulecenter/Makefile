@@ -16,7 +16,7 @@ dev: ; @which air > /dev/null 2>&1 && air || go run .
 
 # ── Code generation ──────────────────────────────────────────────────────
 # Re-run after modifying the IDL file.
-update: ; @echo "Generating Hertz HTTP code from IDL..."; hz new --mod=$(MODULE) --idl=$(IDL_FILE) -I idl --handler_dir=internal/handler --model_dir=internal/pb --router_dir=internal/router --customize_layout=template/layout.yaml --customize_layout_data_path=template/data.json --customize_package=template/package.yaml; echo "Hertz code generation complete"
+update: ; @echo "Generating Hertz HTTP code from IDL..."; hz update --mod=$(MODULE) --idl=$(IDL_FILE) -I idl --handler_dir=internal/handler --model_dir=internal/pb --customize_package=template/package.yaml; echo "Hertz code generation complete"
 
 i18n-sync: ; @echo "Synchronizing i18n locales..."; go run ./tools/i18n/sync -root . -locales internal/pkg/i18n/locales -status internal/pkg/i18n/.meta/status.json -source zh-CN
 

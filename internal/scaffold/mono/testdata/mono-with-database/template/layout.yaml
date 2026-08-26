@@ -5642,7 +5642,7 @@ layouts:
       run: build ; @./output/bin/$(APP_NAME)
       dev: ; @which air > /dev/null 2>&1 && air || go run .
 
-      update: ; @echo "Generating Hertz HTTP code from IDL..."; hz new --mod=$(MODULE) --idl=$(IDL_FILE) -I idl --handler_dir=internal/handler --model_dir=internal/pb --router_dir=internal/router --customize_layout=template/layout.yaml --customize_layout_data_path=template/data.json --customize_package=template/package.yaml; echo "Hertz code generation complete"
+      update: ; @echo "Generating Hertz HTTP code from IDL..."; hz update --mod=$(MODULE) --idl=$(IDL_FILE) -I idl --handler_dir=internal/handler --model_dir=internal/pb --customize_package=template/package.yaml; echo "Hertz code generation complete"
       sqlc: ; @echo "Generating sqlc DB code..."; sqlc generate -f internal/db/sqlc.yaml; echo "sqlc generation complete"
       generate: update sqlc ; @echo "All code generation complete"
       migrate-up: ; @test -n "$(DATABASE_URL)" || (echo "DATABASE_URL is required" && exit 1); goose -dir $(MIGRATIONS_DIR) $(GOOSE_DRIVER) "$(DATABASE_URL)" up

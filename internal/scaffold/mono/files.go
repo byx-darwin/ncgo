@@ -781,6 +781,7 @@ service %s {
 		`message PingReq {`,
 		`  string name = 1 [`,
 		`    (api.query) = "name",`,
+		`    (api.vd) = "len($) > 0 && len($) < 65",`,
 		`    (openapi.parameter) = { required: true },`,
 		`    (validate.rules) = { string: { min_len: 1, max_len: 64 } },`,
 		`    (openapi.property) = {`,
