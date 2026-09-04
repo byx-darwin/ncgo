@@ -33,6 +33,7 @@ func (s *Server) tools() []tool {
 		{Name: "ncgo_add_method", Description: "Insert a usecase method stub at ncgo anchors.", InputSchema: schemaObject([]string{"root", "spec"}, rootField("Project root"), stringField("spec", "<domain>.<Method>"), enumField("in", []string{method.LayerUsecase}), outputTextJSONField())},
 		{Name: "ncgo_add_rule_center", Description: "Add rule-center gRPC client for rate-limit rule queries to an existing Hertz service.", InputSchema: schemaObject([]string{"root", "addr"}, rootField("Project root containing .ncgo/manifest.yaml"), stringField("addr", "Rule-center gRPC address (e.g., localhost:8888)"), boolField("force", "Overwrite existing generated files"), boolField("dryRun", "Preview without modifying files"), outputTextJSONField())},
 		{Name: "ncgo_upgrade", Description: "Check and upgrade ncgo metadata for a project or micro workspace.", InputSchema: schemaObject([]string{"root"}, rootField("Project root containing .ncgo/manifest.yaml or ncgo.workspace"), outputTextJSONField())},
+		{Name: "ncgo_import", Description: "Preview the .ncgo/manifest.yaml an existing hz/kitex project would import. Always preview-only via MCP; never writes files (run `ncgo import` locally to write).", InputSchema: schemaObject([]string{"root"}, rootField("Existing Go project root containing go.mod"), enumField("kind", []string{manifest.KindHertz, manifest.KindKitex}))},
 		{Name: "ncgo_extract_domain", Description: "Plan extraction of a domain from a mono service into a separate micro service.", InputSchema: schemaObject([]string{"name", "root"}, rootField("Micro workspace root containing ncgo.workspace"), stringField("name", "Domain name to extract, e.g. \"user\""), stringField("to", "Target service directory relative to Root; defaults to services/<name>"), outputTextJSONField())},
 		{Name: "ncgo_export_templates", Description: "Export code templates from an existing ncgo project to template/<kind>-template/.", InputSchema: schemaObject([]string{"root"}, rootField("Project root containing .ncgo/manifest.yaml"), enumField("kind", []string{manifest.KindHertz, manifest.KindKitex}), outputTextJSONField())},
 		{Name: "ncgo_template_list", Description: "List template packages available in the registry.", InputSchema: schemaObject(nil, stringField("registry", "Template registry URL (default: NCGO_REGISTRY env or official registry)"), outputTextJSONField())},
@@ -78,6 +79,8 @@ func (s *Server) callTool(ctx context.Context, raw json.RawMessage) (map[string]
 		return callAddRuleCenter(p.Arguments)
 	case "ncgo_upgrade":
 		return callUpgrade(p.Arguments, s.NCGOVersion, s.AssetsVersion)
+	case "ncgo_import":
+		return callImport(p.Arguments, s.NCGOVersion, s.AssetsVersion)
 	case "ncgo_extract_domain":
 		return callExtractDomain(p.Arguments)
 	case "ncgo_export_templates":
