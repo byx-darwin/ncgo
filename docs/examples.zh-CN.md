@@ -28,6 +28,10 @@ ncgo mcp serve
 - `ncgo_doctor`
   - 输入：`root`（可选）、`output=text|json|sarif`
   - 稳定顶层字段：`root`、`scope`、`summary`、`checks`、`ok`
+- `ncgo_check`
+  - 输入：`root`，`output=text|json`
+  - 稳定顶层字段：`root`、`scope`、`summary`、`checks`、`ok`
+  - 只读；通过 `ok`/`isError` 对应 `ncgo check` 的退出码语义
 - `ncgo_ai_init_claude`
   - 输入：`root`，以及可选的 `preset=minimal|team`、`force`、`dryRun`、`output=text|json`
   - 稳定顶层字段：`written`、`skipped`，以及可选的 `notes`、`nextSteps`
@@ -60,6 +64,12 @@ ncgo mcp serve
 - `ncgo_add_rule_center`
   - 输入：`root`、`addr`，以及可选的 `force`、`dryRun`、`output=text|json`
   - 稳定顶层字段：`dryRun`、`writtenPaths`、`nextSteps`
+- `ncgo_import`
+  - 输入：`root`，可选 `kind=hertz|kitex`（留空则自动检测）
+  - 稳定顶层字段：`preview`、`module`、`mode`、`service`
+    （`service.name`、`service.kind`、`service.withDatabase`、`service.idl`）
+  - 始终只预览：不会写入 `.ncgo/manifest.yaml`（CLI 的 `ncgo import` 会写入）；
+    `content[0].text` 是待写入 manifest 的 YAML 预览
 - `ncgo_new`
   - 输入：`name`、`module`，以及可选的 `dir`、`mode`、`kind`、`db`、
     `infra`、`noGenerate`、`preset`、`ruleCenterAddr`、`output=text|json`

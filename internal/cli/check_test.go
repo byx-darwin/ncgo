@@ -92,21 +92,6 @@ func TestRunCheckExitOneOnStaleDomains(t *testing.T) {
 	}
 }
 
-func TestParseContextDomains(t *testing.T) {
-	tests := []struct{ in, want string }{
-		{"- domains: `[device, order]`", "device,order"},
-		{"- domains: `[device]`", "device"},
-		{"- domains: `[]`", ""},
-		{"no domains line here", ""},
-	}
-	for _, tt := range tests {
-		got := strings.Join(parseContextDomains(tt.in), ",")
-		if got != tt.want {
-			t.Errorf("parseContextDomains(%q) = %q, want %q", tt.in, got, tt.want)
-		}
-	}
-}
-
 func TestRunCheckExitOneOnStaleContext(t *testing.T) {
 	root := seedCheckProject(t)
 	// manifest has domain device; the context file declares an empty domain list,

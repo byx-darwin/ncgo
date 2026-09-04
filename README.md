@@ -713,10 +713,14 @@ Kind auto-detection relies on generator marker files: `router.go` containing
 explicit `--kind` flag (e.g. `ncgo import --root . --kind kitex`).
 
 `ncgo mcp serve` starts a stdio MCP server. It currently exposes
-`ncgo_version`, `ncgo_doctor`, `ncgo_ai_init_claude`, `ncgo_ai_sync`,
+`ncgo_version`, `ncgo_doctor`, `ncgo_check`, `ncgo_ai_init_claude`, `ncgo_ai_sync`,
 `ncgo_i18n_report`, `ncgo_i18n_check`, `ncgo_protolint`, `ncgo_add_infra`,
-`ncgo_add_method`, and `ncgo_ai_context` tools. `ncgo_ai_context` scans real
+`ncgo_add_method`, `ncgo_import`, and `ncgo_ai_context` tools. `ncgo_ai_context` scans real
 code and returns structured domains/methods/anchors/consistency for agents.
+`ncgo_check` mirrors `ncgo check` (read-only AI context/manifest validation).
+`ncgo_import` is always preview-only through MCP — it never writes
+`.ncgo/manifest.yaml`, unlike the CLI's `ncgo import`; run `ncgo import`
+locally to actually write the file.
 The `ncgo_ai_sync` tool accepts the same `target` values as the CLI
 (`all|agents|claude|cursor`, default `claude`), and
 `ncgo_add_method` supports `output: json`.

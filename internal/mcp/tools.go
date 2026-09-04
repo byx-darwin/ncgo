@@ -20,6 +20,7 @@ func (s *Server) tools() []tool {
 	return []tool{
 		{Name: "ncgo_version", Description: "Return ncgo, build, and embedded assets versions.", InputSchema: schemaObject(nil)},
 		{Name: "ncgo_doctor", Description: "Run ncgo doctor and return the structured report.", InputSchema: schemaObject(nil, rootField("Project root; empty skips project checks."), outputTextJSONSARIFField())},
+		{Name: "ncgo_check", Description: "Validate AI context integrity and manifest consistency for an ncgo service (read-only).", InputSchema: schemaObject([]string{"root"}, rootField("Service root containing .ncgo/manifest.yaml"), outputTextJSONField())},
 		{Name: "ncgo_new", Description: "Scaffold a new ncgo service or micro workspace.", InputSchema: schemaObject([]string{"name", "module"}, stringField("name", "Service name, e.g. \"user-api\""), stringField("module", "Go module path, e.g. \"github.com/acme/user-api\""), stringField("dir", "Target directory, default ./<name>"), enumField("mode", []string{manifest.ModeMono, manifest.ModeMicro}), enumField("kind", []string{manifest.KindHertz, manifest.KindKitex}), enumField("db", []string{"postgres", "none"}), stringArrayField("infra", "Infra add-ons (currently: redis)"), boolField("noGenerate", "Skip generator invocation"), stringField("aiTarget", "AI sync target for post-generation: claude | all | agents | cursor | none"), boolField("noAutoSteps", "Skip automatic post-generation steps (go mod tidy, ai sync)"), stringField("preset", "Preset name: rule-center (Kitex with rate-limiting CRUD schema)"), stringField("ruleCenterAddr", "Rule-center gRPC address; sets Hertz source.type=rule_center"), stringField("template", "Template package name from registry"), stringField("templateDir", "Template package local directory path"), outputTextJSONField())},
 		{Name: "ncgo_add_domain", Description: "Add a domain usecase/repository to an ncgo project.", InputSchema: schemaObject([]string{"name", "root"}, rootField("Project root containing .ncgo/manifest.yaml"), stringField("name", "Domain name, e.g. \"device\""), boolField("force", "Overwrite existing generated files"), boolField("dryRun", "Preview intended writes without modifying files"), outputTextJSONField())},
 		{Name: "ncgo_ai_init_claude", Description: "Bootstrap the hand-authored .claude starter set for a repository.", InputSchema: schemaObject([]string{"root"}, rootField("Repository root where .claude/ should be bootstrapped"), enumField("preset", []string{ai.InitPresetMinimal, ai.InitPresetTeam}), boolField("force", "Overwrite existing starter files"), boolField("dryRun", "Report without writing"), outputTextJSONField())},
@@ -32,6 +33,7 @@ func (s *Server) tools() []tool {
 		{Name: "ncgo_add_method", Description: "Insert a usecase method stub at ncgo anchors.", InputSchema: schemaObject([]string{"root", "spec"}, rootField("Project root"), stringField("spec", "<domain>.<Method>"), enumField("in", []string{method.LayerUsecase}), outputTextJSONField())},
 		{Name: "ncgo_add_rule_center", Description: "Add rule-center gRPC client for rate-limit rule queries to an existing Hertz service.", InputSchema: schemaObject([]string{"root", "addr"}, rootField("Project root containing .ncgo/manifest.yaml"), stringField("addr", "Rule-center gRPC address (e.g., localhost:8888)"), boolField("force", "Overwrite existing generated files"), boolField("dryRun", "Preview without modifying files"), outputTextJSONField())},
 		{Name: "ncgo_upgrade", Description: "Check and upgrade ncgo metadata for a project or micro workspace.", InputSchema: schemaObject([]string{"root"}, rootField("Project root containing .ncgo/manifest.yaml or ncgo.workspace"), outputTextJSONField())},
+		{Name: "ncgo_import", Description: "Preview the .ncgo/manifest.yaml an existing hz/kitex project would import. Always preview-only via MCP; never writes files (run `ncgo import` locally to write).", InputSchema: schemaObject([]string{"root"}, rootField("Existing Go project root containing go.mod"), enumField("kind", []string{manifest.KindHertz, manifest.KindKitex}))},
 		{Name: "ncgo_extract_domain", Description: "Plan extraction of a domain from a mono service into a separate micro service.", InputSchema: schemaObject([]string{"name", "root"}, rootField("Micro workspace root containing ncgo.workspace"), stringField("name", "Domain name to extract, e.g. \"user\""), stringField("to", "Target service directory relative to Root; defaults to services/<name>"), outputTextJSONField())},
 		{Name: "ncgo_export_templates", Description: "Export code templates from an existing ncgo project to template/<kind>-template/.", InputSchema: schemaObject([]string{"root"}, rootField("Project root containing .ncgo/manifest.yaml"), enumField("kind", []string{manifest.KindHertz, manifest.KindKitex}), outputTextJSONField())},
 		{Name: "ncgo_template_list", Description: "List template packages available in the registry.", InputSchema: schemaObject(nil, stringField("registry", "Template registry URL (default: NCGO_REGISTRY env or official registry)"), outputTextJSONField())},
@@ -55,6 +57,8 @@ func (s *Server) callTool(ctx context.Context, raw json.RawMessage) (map[string]
 		return callAddDomain(p.Arguments)
 	case "ncgo_doctor":
 		return s.callDoctor(ctx, p.Arguments)
+	case "ncgo_check":
+		return callCheck(p.Arguments)
 	case "ncgo_ai_init_claude":
 		return callAIInitClaude(p.Arguments)
 	case "ncgo_ai_sync":
@@ -75,6 +79,8 @@ func (s *Server) callTool(ctx context.Context, raw json.RawMessage) (map[string]
 		return callAddRuleCenter(p.Arguments)
 	case "ncgo_upgrade":
 		return callUpgrade(p.Arguments, s.NCGOVersion, s.AssetsVersion)
+	case "ncgo_import":
+		return callImport(p.Arguments, s.NCGOVersion, s.AssetsVersion)
 	case "ncgo_extract_domain":
 		return callExtractDomain(p.Arguments)
 	case "ncgo_export_templates":
