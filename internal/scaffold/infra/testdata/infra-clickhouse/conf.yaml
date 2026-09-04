@@ -1,0 +1,21 @@
+# ncgo:add-infra:start clickhouse
+# Optional ClickHouse config block for Hertz.
+# Keep the same top-level structure in conf/dev/conf.yaml and in your config-center payload.
+# Adjust these defaults to match how you wire internal/base/data/clickhouse.go.
+clickhouse:
+  enabled: false
+  dsn: ""
+  addrs:
+    - 127.0.0.1:9000
+  database: default
+  username: default
+  password: ""
+  dial_timeout: 5
+  max_open_conns: 5
+  max_idle_conns: 5
+  conn_max_lifetime: 300
+  compress: true
+  tls:
+    enable: false
+    insecure_skip_verify: false
+# ncgo:add-infra:end clickhouse

@@ -58,6 +58,22 @@ func TestGenerateGoldenInfraES(t *testing.T) {
 	}
 }
 
+// TestGenerateGoldenInfraClickHouse locks the output of clickhouse add-on for a Hertz service.
+func TestGenerateGoldenInfraClickHouse(t *testing.T) {
+	root := seedProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindClickHouse, Force: false, DryRun: false})
+	if err != nil {
+		t.Fatalf("Add clickhouse: %v", err)
+	}
+	m, _ := manifest.Load(root)
+	if !strings.Contains(strings.Join(m.Infra, ","), "clickhouse") {
+		t.Error("manifest infra should include clickhouse")
+	}
+	for _, p := range res.WrittenPaths {
+		golden.File(t, filepath.Join("infra-clickhouse", filepath.Base(p)), goldenReadFile(t, p))
+	}
+}
+
 // TestGenerateGoldenInfraLoggingHertz locks the logging add-on for a Hertz service.
 func TestGenerateGoldenInfraLoggingHertz(t *testing.T) {
 	root := seedProject(t, nil)
