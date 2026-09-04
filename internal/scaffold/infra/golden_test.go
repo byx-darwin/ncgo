@@ -42,6 +42,22 @@ func TestGenerateGoldenInfraKafka(t *testing.T) {
 	}
 }
 
+// TestGenerateGoldenInfraES locks the output of es add-on for a Hertz service.
+func TestGenerateGoldenInfraES(t *testing.T) {
+	root := seedProject(t, nil)
+	res, err := Add(Options{Root: root, Kind: KindES, Force: false, DryRun: false})
+	if err != nil {
+		t.Fatalf("Add es: %v", err)
+	}
+	m, _ := manifest.Load(root)
+	if !strings.Contains(strings.Join(m.Infra, ","), "es") {
+		t.Error("manifest infra should include es")
+	}
+	for _, p := range res.WrittenPaths {
+		golden.File(t, filepath.Join("infra-es", filepath.Base(p)), goldenReadFile(t, p))
+	}
+}
+
 // TestGenerateGoldenInfraLoggingHertz locks the logging add-on for a Hertz service.
 func TestGenerateGoldenInfraLoggingHertz(t *testing.T) {
 	root := seedProject(t, nil)

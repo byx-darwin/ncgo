@@ -1,0 +1,18 @@
+# ncgo:add-infra:start es
+# Optional Elasticsearch config block for Hertz.
+# Keep the same top-level structure in conf/dev/conf.yaml and in your config-center payload.
+# Adjust these defaults to match how you wire internal/base/data/es.go.
+es:
+  enabled: false
+  addresses:
+    - http://127.0.0.1:9200
+  username: ""
+  password: ""
+  api_key: ""
+  cloud_id: ""
+  max_retries: 3
+  max_idle_conns_per_host: 0
+  tls:
+    enable: false
+    insecure_skip_verify: false
+# ncgo:add-infra:end es
