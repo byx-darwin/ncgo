@@ -16,6 +16,9 @@ func callAIContext(raw json.RawMessage) (map[string]any, error) {
 		Output string `json:"output"`
 	}
 	_ = json.Unmarshal(raw, &args)
+	if _, err := sandboxRoot(args.Root); err != nil {
+		return textResult(err.Error(), true), nil
+	}
 	s, err := scan.Scan(args.Root)
 	if err != nil {
 		return textResult("ncgo_ai_context: "+err.Error(), true), nil

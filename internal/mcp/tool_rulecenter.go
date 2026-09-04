@@ -22,6 +22,9 @@ func callAddRuleCenter(raw json.RawMessage) (map[string]any, error) {
 	if args.Addr == "" {
 		return textResult("addr is required", true), nil
 	}
+	if _, err := sandboxRoot(args.Root); err != nil {
+		return textResult(err.Error(), true), nil
+	}
 
 	output, err := addRuleCenterMCPTool.resolveOutput(args.Output)
 	if err != nil {

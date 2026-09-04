@@ -40,6 +40,9 @@ func callAISync(raw json.RawMessage) (map[string]any, error) {
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
+	if _, err := sandboxRoot(args.Root); err != nil {
+		return textResult(err.Error(), true), nil
+	}
 	output, err := aiSyncMCPTool.resolveOutput(args.Output)
 	if err != nil {
 		return textResult(err.Error(), true), nil
@@ -65,6 +68,9 @@ func callAIInitClaude(raw json.RawMessage) (map[string]any, error) {
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
+	}
+	if _, err := sandboxRoot(args.Root); err != nil {
+		return textResult(err.Error(), true), nil
 	}
 	output, err := aiInitClaudeMCPTool.resolveOutput(args.Output)
 	if err != nil {

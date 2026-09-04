@@ -108,6 +108,9 @@ func callI18NReport(raw json.RawMessage) (map[string]any, error) {
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
+	if _, err := sandboxRoot(args.Root); err != nil {
+		return textResult(err.Error(), true), nil
+	}
 	output, err := i18nReportMCPTool.resolveOutput(args.Output)
 	if err != nil {
 		return textResult(err.Error(), true), nil
@@ -136,6 +139,9 @@ func callI18NCheck(raw json.RawMessage) (map[string]any, error) {
 	}
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
+	}
+	if _, err := sandboxRoot(args.Root); err != nil {
+		return textResult(err.Error(), true), nil
 	}
 	output, err := i18nCheckMCPTool.resolveOutput(args.Output)
 	if err != nil {

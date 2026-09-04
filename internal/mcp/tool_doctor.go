@@ -26,6 +26,9 @@ func (s *Server) callDoctor(ctx context.Context, raw json.RawMessage) (map[strin
 		Output string `json:"output"`
 	}
 	_ = json.Unmarshal(raw, &args)
+	if _, err := sandboxRoot(args.Root); err != nil {
+		return textResult(err.Error(), true), nil
+	}
 	output, err := doctorMCPTool.resolveOutput(args.Output)
 	if err != nil {
 		return textResult(err.Error(), true), nil

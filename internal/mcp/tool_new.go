@@ -86,6 +86,9 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 	if args.Dir != "" {
 		dir = args.Dir
 	}
+	if _, err := sandboxRoot(dir); err != nil {
+		return textResult(err.Error(), true), nil
+	}
 	switch args.Mode {
 	case manifest.ModeMono:
 		res, err = runNewMono(ctx, args.Name, args.Module, dir, args.Kind, args.DB, args.Infra, args.NoGenerate, args.Preset, args.RuleCenterAddr, args.AITarget, args.NoAutoSteps, ncgoVersion, assetsVersion)

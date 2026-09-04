@@ -35,6 +35,9 @@ func callProtolint(ctx context.Context, raw json.RawMessage) (map[string]any, er
 	if strings.TrimSpace(args.Root) == "" {
 		return textResult("protolint: root is required", true), nil
 	}
+	if _, err := sandboxRoot(args.Root); err != nil {
+		return textResult(err.Error(), true), nil
+	}
 	output, err := protolintMCPTool.resolveOutput(args.Output)
 	if err != nil {
 		return textResult(err.Error(), true), nil
