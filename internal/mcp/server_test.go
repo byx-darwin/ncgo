@@ -1567,6 +1567,7 @@ func TestServeToolCallNewMissingModule(t *testing.T) {
 }
 
 func TestServeToolCallAddDomain(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -1602,6 +1603,7 @@ func TestServeToolCallAddDomain(t *testing.T) {
 }
 
 func TestServeToolCallAddDomainDryRun(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",

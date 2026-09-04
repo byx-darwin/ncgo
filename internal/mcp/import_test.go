@@ -13,6 +13,7 @@ import (
 var errImportFixture = errors.New("go.mod not found at /repo/no-go-mod/go.mod; this command requires an existing Go module")
 
 func TestServeToolCallImport(t *testing.T) {
+	allowAnyRootForTest(t)
 	old := runImportDetect
 	runImportDetect = func(opts importDetectOptions) (*manifest.Manifest, error) {
 		return &manifest.Manifest{
@@ -62,6 +63,7 @@ func TestServeToolCallImport(t *testing.T) {
 }
 
 func TestServeToolCallImportError(t *testing.T) {
+	allowAnyRootForTest(t)
 	old := runImportDetect
 	runImportDetect = func(opts importDetectOptions) (*manifest.Manifest, error) {
 		return nil, errImportFixture

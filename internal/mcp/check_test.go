@@ -10,6 +10,7 @@ import (
 )
 
 func TestServeToolCallCheck(t *testing.T) {
+	allowAnyRootForTest(t)
 	old := runCheckReport
 	runCheckReport = func(string) (*doctor.Report, error) {
 		return &doctor.Report{
@@ -54,6 +55,7 @@ func TestServeToolCallCheck(t *testing.T) {
 }
 
 func TestServeToolCallCheckJSON(t *testing.T) {
+	allowAnyRootForTest(t)
 	old := runCheckReport
 	runCheckReport = func(string) (*doctor.Report, error) {
 		return &doctor.Report{
@@ -86,6 +88,7 @@ func TestServeToolCallCheckJSON(t *testing.T) {
 }
 
 func TestServeToolCallCheckInvalidOutput(t *testing.T) {
+	allowAnyRootForTest(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "ncgo_check", "arguments": map[string]any{"root": "/repo/demo", "output": "sarif"}},
