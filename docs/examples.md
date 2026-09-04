@@ -31,6 +31,10 @@ ncgo mcp serve
 - `ncgo_doctor`
   - inputs: `root` (optional), `output=text|json|sarif`
   - stable top-level fields: `root`, `scope`, `summary`, `checks`, `ok`
+- `ncgo_check`
+  - inputs: `root`, `output=text|json`
+  - stable top-level fields: `root`, `scope`, `summary`, `checks`, `ok`
+  - read-only; mirrors `ncgo check`'s exit-code semantics via `ok`/`isError`
 - `ncgo_ai_init_claude`
   - inputs: `root`, optional `preset=minimal|team`, `force`, `dryRun`,
     `output=text|json`
@@ -74,6 +78,13 @@ ncgo mcp serve
 - `ncgo_add_rule_center`
   - inputs: `root`, `addr`, optional `force`, `dryRun`, `output=text|json`
   - stable top-level fields: `dryRun`, `writtenPaths`, `nextSteps`
+- `ncgo_import`
+  - inputs: `root`, optional `kind=hertz|kitex` (auto-detected if omitted)
+  - stable top-level fields: `preview`, `module`, `mode`, `service`
+    (`service.name`, `service.kind`, `service.withDatabase`, `service.idl`)
+  - always preview-only: never writes `.ncgo/manifest.yaml`, even though the
+    CLI's `ncgo import` does; `content[0].text` is a YAML preview of the
+    manifest that would be written
 - `ncgo_new`
   - inputs: `name`, `module`, optional `dir`, `mode`, `kind`, `db`,
     `infra`, `noGenerate`, `preset`, `ruleCenterAddr`, `output=text|json`
