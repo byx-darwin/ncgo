@@ -51,6 +51,7 @@ body: |-
           provider, obsErr := hertzobs.NewProvider(ctx, gfconfig.ObservabilityConfig{
               Enabled:     true,
               Endpoint:    cfg.Server.Jaeger.Endpoint,
+              Insecure:    cfg.Server.Jaeger.Insecure,
               ServiceName: cfg.Server.Registry.Name,
           })
           if obsErr != nil {
