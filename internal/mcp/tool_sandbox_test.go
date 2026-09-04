@@ -27,6 +27,9 @@ func TestSandboxRootRejectsEscapePaths(t *testing.T) {
 		{name: "ncgo_ai_context", args: map[string]any{}},
 		{name: "ncgo_add_infra", args: map[string]any{"kind": "redis"}},
 		{name: "ncgo_add_method", args: map[string]any{"spec": "device.Get"}},
+		{name: "ncgo_check", args: map[string]any{}},
+		{name: "ncgo_add_domain", args: map[string]any{"name": "device"}},
+		{name: "ncgo_import", args: map[string]any{}},
 	}
 	escapes := map[string]string{
 		"absolute": "/etc",
