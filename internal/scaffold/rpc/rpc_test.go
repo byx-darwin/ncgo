@@ -195,3 +195,62 @@ func planContains(items []planpkg.Item, kind, action string) bool {
 	}
 	return false
 }
+
+func TestRewriteDockerfileForLocalReplacesRewritesWhenReplacePresent(t *testing.T) {
+	root := t.TempDir()
+	w := &manifest.Workspace{
+		Services: []manifest.WorkspaceService{
+			{Name: "authority", Kind: manifest.KindKitex, Dir: "services/authority"},
+			{Name: "orders", Kind: manifest.KindKitex, Dir: "services/orders"},
+		},
+	}
+	ordersDir := filepath.Join(root, "services", "orders")
+	if err := os.MkdirAll(ordersDir, 0o755); err != nil {
+		t.Fatalf("mkdir orders: %v", err)
+	}
+	authorityDir := filepath.Join(root, "services", "authority")
+	if err := os.MkdirAll(authorityDir, 0o755); err != nil {
+		t.Fatalf("mkdir authority: %v", err)
+	}
+	goMod := "module github.com/acme/commerce/services/authority\n\ngo 1.25\n\nreplace github.com/acme/commerce/services/orders => ../orders\n"
+	if err := os.WriteFile(filepath.Join(authorityDir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(authorityDir, "Dockerfile"), []byte("COPY . .\n"), 0o644); err != nil {
+		t.Fatalf("write Dockerfile: %v", err)
+	}
+	if err := rewriteDockerfileForLocalReplaces(root, authorityDir, "services/authority", w); err != nil {
+		t.Fatalf("rewriteDockerfileForLocalReplaces: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(authorityDir, "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	if !strings.Contains(string(body), "COPY services/orders/ services/orders/\n") {
+		t.Fatalf("Dockerfile not rewritten for sibling:\n%s", body)
+	}
+}
+
+func TestRewriteDockerfileForLocalReplacesNoopWithoutReplace(t *testing.T) {
+	root := t.TempDir()
+	w := &manifest.Workspace{
+		Services: []manifest.WorkspaceService{{Name: "authority", Kind: manifest.KindKitex, Dir: "services/authority"}},
+	}
+	authorityDir := filepath.Join(root, "services", "authority")
+	if err := os.MkdirAll(authorityDir, 0o755); err != nil {
+		t.Fatalf("mkdir authority: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(authorityDir, "Dockerfile"), []byte("COPY . .\n"), 0o644); err != nil {
+		t.Fatalf("write Dockerfile: %v", err)
+	}
+	if err := rewriteDockerfileForLocalReplaces(root, authorityDir, "services/authority", w); err != nil {
+		t.Fatalf("rewriteDockerfileForLocalReplaces: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(authorityDir, "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	if string(body) != "COPY . .\n" {
+		t.Fatalf("Dockerfile should be unchanged, got:\n%s", body)
+	}
+}

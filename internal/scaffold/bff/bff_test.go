@@ -196,3 +196,62 @@ func planContains(items []planpkg.Item, kind, action string) bool {
 	}
 	return false
 }
+
+func TestRewriteDockerfileForLocalReplacesRewritesWhenReplacePresent(t *testing.T) {
+	root := t.TempDir()
+	w := &manifest.Workspace{
+		Services: []manifest.WorkspaceService{
+			{Name: "web-bff", Kind: manifest.KindHertz, Dir: "services/web-bff"},
+			{Name: "shared-types", Kind: manifest.KindHertz, Dir: "services/shared-types"},
+		},
+	}
+	webDir := filepath.Join(root, "services", "web-bff")
+	if err := os.MkdirAll(webDir, 0o755); err != nil {
+		t.Fatalf("mkdir web-bff: %v", err)
+	}
+	sharedDir := filepath.Join(root, "services", "shared-types")
+	if err := os.MkdirAll(sharedDir, 0o755); err != nil {
+		t.Fatalf("mkdir shared-types: %v", err)
+	}
+	goMod := "module github.com/acme/commerce/services/web-bff\n\ngo 1.25\n\nreplace github.com/acme/commerce/services/shared-types => ../shared-types\n"
+	if err := os.WriteFile(filepath.Join(webDir, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "Dockerfile"), []byte("COPY . .\n"), 0o644); err != nil {
+		t.Fatalf("write Dockerfile: %v", err)
+	}
+	if err := rewriteDockerfileForLocalReplaces(root, webDir, "services/web-bff", w); err != nil {
+		t.Fatalf("rewriteDockerfileForLocalReplaces: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(webDir, "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	if !strings.Contains(string(body), "COPY services/shared-types/ services/shared-types/\n") {
+		t.Fatalf("Dockerfile not rewritten for sibling:\n%s", body)
+	}
+}
+
+func TestRewriteDockerfileForLocalReplacesNoopWithoutReplace(t *testing.T) {
+	root := t.TempDir()
+	w := &manifest.Workspace{
+		Services: []manifest.WorkspaceService{{Name: "web-bff", Kind: manifest.KindHertz, Dir: "services/web-bff"}},
+	}
+	webDir := filepath.Join(root, "services", "web-bff")
+	if err := os.MkdirAll(webDir, 0o755); err != nil {
+		t.Fatalf("mkdir web-bff: %v", err)
+	}
+	if err := os.WriteFile(filepath.Join(webDir, "Dockerfile"), []byte("COPY . .\n"), 0o644); err != nil {
+		t.Fatalf("write Dockerfile: %v", err)
+	}
+	if err := rewriteDockerfileForLocalReplaces(root, webDir, "services/web-bff", w); err != nil {
+		t.Fatalf("rewriteDockerfileForLocalReplaces: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(webDir, "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	if string(body) != "COPY . .\n" {
+		t.Fatalf("Dockerfile should be unchanged, got:\n%s", body)
+	}
+}
