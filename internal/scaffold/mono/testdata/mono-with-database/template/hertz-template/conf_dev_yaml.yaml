@@ -21,6 +21,8 @@ body: |-
       # 默认关闭；置 true 并填写 collector 地址以启用
       enable: false
       endpoint: "127.0.0.1:4317"
+      # 明文 gRPC（本地开发无 TLS collector 时保持 true）
+      insecure: true
   # 数据库配置
   database:
     # 是否启用数据库连接
