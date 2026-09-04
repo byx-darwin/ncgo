@@ -21,8 +21,8 @@ Hertz 模板族支撑 `ncgo new --mode mono`(HTTP 服务),由
 `go build ./...` 忽略 `optional/*.go` —— 这些文件是模板素材,不是参与
 ncgo 二进制编译的 Go 源码。
 
-生成的项目构建在 **go-tools v0.1.0** 之上(是其上的薄业务层):`go.mod` 声明
-`go 1.26.5`,并 require `go-common v0.1.0` + `go-framework v0.1.0`
+生成的项目构建在 **go-tools v0.3.0** 之上(是其上的薄业务层):`go.mod` 声明
+`go 1.26.5`,并 require `go-common v0.3.0` + `go-framework v0.3.0`
 (`go-middleware v0.1.0` 在 `WithDatabase=true` 时由 `go mod tidy` 补齐)。
 响应使用 `go-framework/hertz.Responder`,配置使用 `go-framework/config`,
 日志使用 `go-common/log`,错误码 re-export `go-framework/error` 的框架码。
@@ -322,7 +322,7 @@ query 文件。
 > 时,`server.go` 调用
 > `hertzobs "github.com/byx-darwin/go-tools/go-framework/hertz/observability"`
 > 的 `hertzobs.NewProvider(ctx, config.ObservabilityConfig{Enabled, Endpoint,
-> ServiceName})`,执行 `h.Use(provider.ServerMiddleware())`,并
+> Insecure, ServiceName})`,执行 `h.Use(provider.ServerMiddleware())`,并
 > `defer provider.Shutdown()`。原 LoongSuite `observability_otel` / `otel`
 > add-on 已在 PR5 中移除,既有的 `otel` kind 现在返回 invalid kind。
 

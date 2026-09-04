@@ -293,7 +293,7 @@ make swagger
 
 生成后的 Hertz 项目也提供 `make install-tools` 安装 Go 侧开发工具；其中会安装 `protoc-gen-http-swagger`，但不会自动安装 `protoc`。Swagger spec 会通过 `go:embed` 编译进二进制，执行 `make swagger` 后需要重新 `go run .` / `make dev` 或重新构建并重启服务。
 
-生成的项目构建在 go-tools v0.1.0 之上：`go.mod` 声明 `go 1.26.5`，并 require `go-common v0.1.0` + `go-framework v0.1.0`（项目使用数据库时由 `go mod tidy` 补上 `go-middleware v0.1.0`）。响应层使用 `go-framework/hertz` 的 `Responder`，配置使用 `go-framework/config`，错误码 re-export `go-framework/error` 的框架码（`CodeSystem=10000` … `CodeRPCTimeout=10011`）。业务自定义错误码须 `>= 40100`，经 `goerror.HTTPStatus` 兜底返回 HTTP 200。完整约定见 README「生成项目构建在 go-tools v0.1.0 之上」一节。
+生成的项目构建在 go-tools v0.3.0 之上：`go.mod` 声明 `go 1.26.5`，并 require `go-common v0.3.0` + `go-framework v0.3.0`（项目使用数据库时由 `go mod tidy` 补上 `go-middleware v0.1.0`）。响应层使用 `go-framework/hertz` 的 `Responder`，配置使用 `go-framework/config`，错误码 re-export `go-framework/error` 的框架码（`CodeSystem=10000` … `CodeRPCTimeout=10011`）。业务自定义错误码须 `>= 40100`，经 `goerror.HTTPStatus` 兜底返回 HTTP 200。完整约定见 README「生成项目构建在 go-tools v0.3.0 之上」一节。
 
 配置中的 duration 字段（例如 `rpc.request_timeout_seconds`、
 `database.health_check_period_seconds`、`rate_limit.rule.window_seconds`、
@@ -331,7 +331,7 @@ make dev
 starter 已经接入了 `internal/base/data` / repository 占位代码，它们会 import
 `internal/db/gen`。
 
-生成的 Kitex 项目同样构建在 go-tools v0.1.0 之上：`go.mod` 声明 `go 1.26.5`，并 require `go-common v0.1.0` + `go-framework v0.1.0`。RPC 错误经 `internal/pkg/rpcerror`，通过 `go-framework/kitex/rpcerror` 把 `goerror` 错误映射为 Kitex `BizStatusError`；框架码来自 `go-framework/error`（`CodeInternalError=CodeSystem=10000`、`CodeConfigInvalid=10004`、`CodeRPCTimeout=10011`、`CodePermissionDenied=CodeAuthFailed=10002`）。业务码须 `>= 40100`。conf 中的 duration 类字段统一使用 `config.Duration`，在 `conf/dev/conf.yaml` 中以 duration 字符串（`"3s"`、`"30s"` 等）填写。
+生成的 Kitex 项目同样构建在 go-tools v0.3.0 之上：`go.mod` 声明 `go 1.26.5`，并 require `go-common v0.3.0` + `go-framework v0.3.0`。RPC 错误经 `internal/pkg/rpcerror`，通过 `go-framework/kitex/rpcerror` 把 `goerror` 错误映射为 Kitex `BizStatusError`；框架码来自 `go-framework/error`（`CodeInternalError=CodeSystem=10000`、`CodeConfigInvalid=10004`、`CodeRPCTimeout=10011`、`CodePermissionDenied=CodeAuthFailed=10002`）。业务码须 `>= 40100`。conf 中的 duration 类字段统一使用 `config.Duration`，在 `conf/dev/conf.yaml` 中以 duration 字符串（`"3s"`、`"30s"` 等）填写。
 
 适合：以 RPC 为主，并希望把 Kitex 模板树纳入版本控制的服务。
 

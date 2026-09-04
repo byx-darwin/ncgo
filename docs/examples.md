@@ -324,8 +324,8 @@ tools, including `protoc-gen-http-swagger`; it does not install `protoc` itself.
 The Swagger spec is embedded with `go:embed`, so rerun `go run .` / `make dev` or
 rebuild and restart the service after `make swagger`.
 
-Generated projects build on go-tools v0.1.0: the `go.mod` declares `go 1.26.5`
-and requires `go-common v0.1.0` + `go-framework v0.1.0` (`go-middleware v0.1.0`
+Generated projects build on go-tools v0.3.0: the `go.mod` declares `go 1.26.5`
+and requires `go-common v0.3.0` + `go-framework v0.3.0` (`go-middleware v0.1.0`
 is added by `go mod tidy` when the project uses a database). The response layer
 uses `go-framework/hertz` `Responder`, config uses `go-framework/config`, and
 error codes re-export the framework codes from `go-framework/error`
@@ -370,8 +370,8 @@ make dev
 starter already wires `internal/base/data` / repository placeholders that import
 `internal/db/gen`.
 
-The generated Kitex project also builds on go-tools v0.1.0: `go.mod` declares
-`go 1.26.5` and requires `go-common v0.1.0` + `go-framework v0.1.0`. RPC errors
+The generated Kitex project also builds on go-tools v0.3.0: `go.mod` declares
+`go 1.26.5` and requires `go-common v0.3.0` + `go-framework v0.3.0`. RPC errors
 flow through `internal/pkg/rpcerror`, which maps `goerror` errors to Kitex
 `BizStatusError` via `go-framework/kitex/rpcerror`; framework codes come from
 `go-framework/error` (`CodeInternalError=CodeSystem=10000`,

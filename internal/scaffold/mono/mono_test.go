@@ -398,7 +398,7 @@ func TestPostGenerateResultNextStepsSafePrefixExecutes(t *testing.T) {
 			executeSafeNextSteps(t, res.Dir, res.NextSteps)
 
 			// After the real kitex tool + `go mod tidy`, the go.mod must still
-			// pin go 1.26.5 + the go-tools v0.1.0 requires (the
+			// pin go 1.26.5 + the go-tools v0.3.0 requires (the
 			// template-locked versions written before generation).
 			if tc.kind == manifest.KindKitex {
 				assertGoModPinsGoTools(t, res.Dir)
@@ -1766,8 +1766,8 @@ func assertGoModPinsGoTools(t *testing.T, dir string) {
 	body := string(b)
 	for _, want := range []string{
 		"go 1.26.5",
-		"github.com/byx-darwin/go-tools/go-common v0.1.0",
-		"github.com/byx-darwin/go-tools/go-framework v0.1.0",
+		"github.com/byx-darwin/go-tools/go-common v0.3.0",
+		"github.com/byx-darwin/go-tools/go-framework v0.3.0",
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("generated go.mod missing %q (version not template-pinned):\n%s", want, body)

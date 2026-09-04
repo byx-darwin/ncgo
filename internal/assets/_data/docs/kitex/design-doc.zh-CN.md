@@ -24,8 +24,8 @@ Kitex 模板族支撑 `ncgo new --mode mono --kind kitex`(RPC 服务),由
 `go build ./...` 忽略 `optional/*.go` —— 这些文件是模板素材,不是参与
 ncgo 二进制编译的 Go 源码。
 
-生成的项目构建在 **go-tools v0.1.0** 之上(是其上的薄业务层):`go.mod` 声明
-`go 1.26.5`,并 require `go-common v0.1.0` + `go-framework v0.1.0`
+生成的项目构建在 **go-tools v0.3.0** 之上(是其上的薄业务层):`go.mod` 声明
+`go 1.26.5`,并 require `go-common v0.3.0` + `go-framework v0.3.0`
 (`go-middleware v0.1.0` 在项目使用数据库时由 `go mod tidy` 补齐)。配置使用
 `go-framework/config`(+ `config/kitex`),日志使用 `go-common/log`,RPC 错误
 映射使用 `go-framework/kitex/rpcerror`,框架码来自 `go-framework/error`。
@@ -166,7 +166,7 @@ RPC 请求(TTHeader)
   - `CodeNotImplemented` = 10010 —— usecase 桩(占位;有意与
     `frameworkerror.CodeRPCUnavailable` 同值)。
   - `CodePermissionDenied` = `frameworkerror.CodeAuthFailed`(10002)—— caller
-    allowlist 拒绝(go-tools v0.1.0 无 `CodePermissionDenied`,映射到
+    allowlist 拒绝(go-tools v0.3.0 无 `CodePermissionDenied`,映射到
     `CodeAuthFailed`)。
   - `CodeRPCTimeout` = `frameworkerror.CodeRPCTimeout`(10011)—— 请求超时。
   - `CodeConfigInvalid` = `frameworkerror.CodeConfigInvalid`(10004)—— 配置
@@ -473,7 +473,7 @@ kitex 基础模板已经接入 go-framework OTLP,**不需要** `ncgo add infra` 
 add-on。`cfg.Jaeger != nil && cfg.Jaeger.Enable` 时,`server.go` 调用
 `kitexobs "github.com/byx-darwin/go-tools/go-framework/kitex/observability"`
 的 `kitexobs.NewProvider(ctx, config.ObservabilityConfig{Enabled, Endpoint,
-ServiceName})`,把 `provider.ServerSuite()` 挂到 kitex server option,并在
+Insecure, ServiceName})`,把 `provider.ServerSuite()` 挂到 kitex server option,并在
 `server.Run` 退出前 `defer provider.Shutdown()`。
 
 > 历史说明:原 LoongSuite `observability_otel` / `otel` add-on 与

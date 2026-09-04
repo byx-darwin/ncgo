@@ -76,12 +76,12 @@ Deferred optionals remain documented but intentionally not implemented yet:
 | Infra | Optional drop-in Go files under `internal/base/...` |
 | AI context | `AGENTS.md`, `CLAUDE.md`, `.claude/skills/ncgo-dev/SKILL.md`, `.claude/generated/project-context.md`, `.cursor/rules/ncgo.mdc` |
 
-### What generated projects build on (go-tools v0.1.0)
+### What generated projects build on (go-tools v0.3.0)
 
 Generated Hertz/Kitex projects are a thin business layer on top of
-[go-tools](https://github.com/byx-darwin/go-tools) v0.1.0. The generated
-`go.mod` declares `go 1.26.5` and requires `go-common v0.1.0` +
-`go-framework v0.1.0` (`go-middleware v0.1.0` is added by `go mod tidy` when
+[go-tools](https://github.com/byx-darwin/go-tools) v0.3.0. The generated
+`go.mod` declares `go 1.26.5` and requires `go-common v0.3.0` +
+`go-framework v0.3.0` (`go-middleware v0.1.0` is added by `go mod tidy` when
 `WithDatabase=true`).
 
 | Concern | go-tools module |
@@ -123,7 +123,7 @@ Code segments: Framework `10000–10499`, Middleware `20000–20699`, Auth
 ## Requirements
 
 - Go `1.25+` to build and run the `ncgo` CLI itself. **Generated projects
-  require Go `1.26.5`** because they build on go-tools v0.1.0 (their `go.mod`
+  require Go `1.26.5`** because they build on go-tools v0.3.0 (their `go.mod`
   declares `go 1.26.5` and the service `Dockerfile` uses `golang:1.26.5`).
 - `hz >= v0.9.7` when generating Hertz services (auto-installed on demand)
 - `kitex >= v0.16.1` when generating Kitex services (auto-installed on demand)

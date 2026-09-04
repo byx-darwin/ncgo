@@ -44,6 +44,7 @@ body: |-
           provider, err := observability.NewProvider(context.Background(), config.ObservabilityConfig{
               Enabled:     true,
               Endpoint:    cfg.Jaeger.Endpoint,
+              Insecure:    cfg.Jaeger.Insecure,
               ServiceName: cfg.Server.Registry.Name,
           })
           if err != nil {

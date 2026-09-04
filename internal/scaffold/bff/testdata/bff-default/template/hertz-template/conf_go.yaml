@@ -465,7 +465,7 @@ body: |-
               Registry: config.RegistryOption{
                   Name: "{{ToLower .ServiceName}}",
               },
-              Jaeger: &config.JaegerOption{Enable: false, Endpoint: "127.0.0.1:4317"},
+              Jaeger: &config.JaegerOption{Enable: false, Endpoint: "127.0.0.1:4317", Insecure: true},
           },
           Swagger: SwaggerConfig{
               Path:     "/swagger",
