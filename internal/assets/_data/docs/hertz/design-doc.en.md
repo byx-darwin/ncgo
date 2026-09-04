@@ -22,9 +22,9 @@ Files ship inside the ncgo binary via `//go:embed all:_data` (see
 underscore) makes `go build ./...` ignore the `optional/*.go` files —
 they are template snippets, not Go source compiled into ncgo itself.
 
-Generated projects build on **go-tools v0.1.0** (a thin business layer on top
+Generated projects build on **go-tools v0.3.0** (a thin business layer on top
 of it): their `go.mod` declares `go 1.26.5` and requires
-`go-common v0.1.0` + `go-framework v0.1.0` (`go-middleware v0.1.0` is added by
+`go-common v0.3.0` + `go-framework v0.3.0` (`go-middleware v0.1.0` is added by
 `go mod tidy` when `WithDatabase=true`). Responses use
 `go-framework/hertz.Responder`, config uses `go-framework/config`, logging uses
 `go-common/log`, and error codes re-export the framework codes from

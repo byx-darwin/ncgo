@@ -26,9 +26,9 @@ Files ship inside the ncgo binary via `//go:embed all:_data` (see
 underscore) makes `go build ./...` ignore the `optional/*.go` files —
 they are template snippets, not Go source compiled into ncgo itself.
 
-Generated projects build on **go-tools v0.1.0** (a thin business layer on top
+Generated projects build on **go-tools v0.3.0** (a thin business layer on top
 of it): their `go.mod` declares `go 1.26.5` and requires
-`go-common v0.1.0` + `go-framework v0.1.0` (`go-middleware v0.1.0` is added by
+`go-common v0.3.0` + `go-framework v0.3.0` (`go-middleware v0.1.0` is added by
 `go mod tidy` when the project uses a database). Config uses
 `go-framework/config` (+ `config/kitex`), logging uses `go-common/log`, RPC
 error mapping uses `go-framework/kitex/rpcerror`, and framework codes come from
@@ -175,7 +175,7 @@ always a `BizStatusError`.
   - `CodeNotImplemented` = 10010 — usecase stubs (placeholder; it intentionally
     shares its value with `frameworkerror.CodeRPCUnavailable`).
   - `CodePermissionDenied` = `frameworkerror.CodeAuthFailed` (10002) — caller
-    allowlist rejects (go-tools v0.1.0 has no `CodePermissionDenied`; it maps to
+    allowlist rejects (go-tools v0.3.0 has no `CodePermissionDenied`; it maps to
     `CodeAuthFailed`).
   - `CodeRPCTimeout` = `frameworkerror.CodeRPCTimeout` (10011) — request
     deadline exceeded.

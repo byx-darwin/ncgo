@@ -70,9 +70,9 @@ v0.5 MVP 已完成：
 | Infra | `internal/base/...` 下的可选 Go 文件 |
 | AI 上下文 | `AGENTS.md`、`CLAUDE.md`、`.claude/skills/ncgo-dev/SKILL.md`、`.claude/generated/project-context.md`、`.cursor/rules/ncgo.mdc` |
 
-### 生成项目构建在 go-tools v0.1.0 之上
+### 生成项目构建在 go-tools v0.3.0 之上
 
-生成的 Hertz / Kitex 项目是 [go-tools](https://github.com/byx-darwin/go-tools) v0.1.0 之上的薄业务层。生成的 `go.mod` 声明 `go 1.26.5`，并 require `go-common v0.1.0` + `go-framework v0.1.0`（`go-middleware v0.1.0` 在 `WithDatabase=true` 时由 `go mod tidy` 补齐）。
+生成的 Hertz / Kitex 项目是 [go-tools](https://github.com/byx-darwin/go-tools) v0.3.0 之上的薄业务层。生成的 `go.mod` 声明 `go 1.26.5`，并 require `go-common v0.3.0` + `go-framework v0.3.0`（`go-middleware v0.1.0` 在 `WithDatabase=true` 时由 `go mod tidy` 补齐）。
 
 | 关注点 | go-tools 模块 |
 | --- | --- |
@@ -100,7 +100,7 @@ v0.5 MVP 已完成：
 
 ## 要求
 
-- 构建并运行 `ncgo` CLI 本身需要 Go `1.25+`。**生成的项目需要 Go `1.26.5`**，因为它们构建在 go-tools v0.1.0 之上（生成的 `go.mod` 声明 `go 1.26.5`，服务 `Dockerfile` 使用 `golang:1.26.5`）。
+- 构建并运行 `ncgo` CLI 本身需要 Go `1.25+`。**生成的项目需要 Go `1.26.5`**，因为它们构建在 go-tools v0.3.0 之上（生成的 `go.mod` 声明 `go 1.26.5`，服务 `Dockerfile` 使用 `golang:1.26.5`）。
 - 生成 Hertz 服务时需要 `hz >= v0.9.7`（缺失时自动安装）
 - 生成 Kitex 服务时需要 `kitex >= v0.16.1`（缺失时自动安装）
 - Hertz 模板中的 `make swagger` 需要本机已安装 `protoc`，并且 `protoc-gen-http-swagger` 位于 `PATH`
