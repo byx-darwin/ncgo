@@ -110,6 +110,9 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 		if err := manifest.SaveWorkspace(root, w); err != nil {
 			return nil, err
 		}
+		if err := rewriteDockerfileForLocalReplaces(root, serviceDir, serviceRel, w); err != nil {
+			return nil, err
+		}
 		if err := shared.WriteWorkspaceCompose(root, w); err != nil {
 			return nil, err
 		}
@@ -173,6 +176,21 @@ func ensureNotListed(w *manifest.Workspace, name, dir string) error {
 		}
 	}
 	return nil
+}
+
+// rewriteDockerfileForLocalReplaces rewrites serviceDir/Dockerfile when the
+// service's go.mod has a local replace directive pointing at a sibling
+// workspace service, so the Dockerfile COPYs both directories.
+func rewriteDockerfileForLocalReplaces(root, serviceDir, serviceRel string, w *manifest.Workspace) error {
+	replaces, err := shared.ParseLocalReplaces(serviceDir)
+	if err != nil {
+		return fmt.Errorf("rpc: parse go.mod replace: %w", err)
+	}
+	siblings := shared.SiblingDirs(root, serviceRel, replaces, w.Services)
+	if len(siblings) == 0 {
+		return nil
+	}
+	return shared.RewriteServiceDockerfileForSiblings(serviceDir, manifest.KindKitex, serviceRel, siblings)
 }
 
 func mergeService(w *manifest.Workspace, service manifest.WorkspaceService) bool {

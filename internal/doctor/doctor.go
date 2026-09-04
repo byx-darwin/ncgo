@@ -124,6 +124,7 @@ func projectChecks(ctx context.Context, root string) ([]Check, Scope) {
 	if w != nil {
 		out = append(out, wc)
 		out = append(out, workspaceProtoLintChecks(ctx, root, w)...)
+		out = append(out, composeConsistencyChecks(root, w)...)
 		return out, ScopeWorkspace
 	}
 	return append(out, mc), ScopeUnknown

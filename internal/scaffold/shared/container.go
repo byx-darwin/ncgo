@@ -38,6 +38,7 @@ type composeApp struct {
 	Name         string
 	Kind         string
 	Context      string
+	Dockerfile   string // empty means the default "Dockerfile"
 	HostPort     int
 	WithDatabase bool
 	Infra        []string
@@ -61,13 +62,59 @@ func WriteServiceContainerFiles(dir, kind string) error {
 	if err != nil {
 		return err
 	}
-	dockerfile := fmt.Sprintf(`FROM golang:1.26.5-alpine AS builder
+	dockerfile := dockerfileTemplate("COPY . .\n", "", port)
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
+		return fmt.Errorf("scaffold: write Dockerfile: %w", err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, ".dockerignore"), []byte(serviceDockerIgnore), 0o644); err != nil {
+		return fmt.Errorf("scaffold: write .dockerignore: %w", err)
+	}
+	return nil
+}
+
+// RewriteServiceDockerfileForSiblings overwrites dir/Dockerfile with a
+// variant whose builder stage COPYs each sibling directory (workspace-root
+// relative, e.g. "services/authority") plus the service's own directory,
+// then sets WORKDIR to the service's own root-relative path before the
+// build step — so `go build` resolves `../sibling` replace targets exactly
+// as they resolve on disk. Call only when len(siblings) > 0.
+func RewriteServiceDockerfileForSiblings(dir, kind, rootRel string, siblings []string) error {
+	port, err := servicePort(kind)
+	if err != nil {
+		return err
+	}
+	rootRel = filepath.ToSlash(rootRel)
+	copyLines := make([]string, 0, len(siblings)+1)
+	for _, sibling := range siblings {
+		sibling = filepath.ToSlash(sibling)
+		copyLines = append(copyLines, fmt.Sprintf("COPY %s/ %s/\n", sibling, sibling))
+	}
+	copyLines = append(copyLines, fmt.Sprintf("COPY %s/ %s/\n", rootRel, rootRel))
+	dockerfile := dockerfileTemplate(strings.Join(copyLines, ""), rootRel, port)
+	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
+		return fmt.Errorf("scaffold: write Dockerfile: %w", err)
+	}
+	return nil
+}
+
+// dockerfileTemplate renders the shared multi-stage Dockerfile body.
+// copyBlock is the builder-stage COPY instruction(s); workdir, if non-empty,
+// is set (relative to /src) before the go build step runs.
+func dockerfileTemplate(copyBlock, workdir string, port int) string {
+	buildWorkdir := "/src"
+	if workdir != "" {
+		buildWorkdir = "/src/" + workdir
+	}
+	var workdirLine string
+	if workdir != "" {
+		workdirLine = fmt.Sprintf("WORKDIR %s\n", buildWorkdir)
+	}
+	return fmt.Sprintf(`FROM golang:1.26.5-alpine AS builder
 WORKDIR /src
 
 ENV CGO_ENABLED=0 GOOS=linux
 
-COPY . .
-RUN go build -trimpath -ldflags="-s -w" -o /out/app .
+%s%sRUN go build -trimpath -ldflags="-s -w" -o /out/app .
 
 FROM alpine:3.20
 RUN apk add --no-cache ca-certificates
@@ -81,14 +128,7 @@ ENV GO_ENV=docker
 EXPOSE %d
 
 ENTRYPOINT ["./app"]
-`, port)
-	if err := os.WriteFile(filepath.Join(dir, "Dockerfile"), []byte(dockerfile), 0o644); err != nil {
-		return fmt.Errorf("scaffold: write Dockerfile: %w", err)
-	}
-	if err := os.WriteFile(filepath.Join(dir, ".dockerignore"), []byte(serviceDockerIgnore), 0o644); err != nil {
-		return fmt.Errorf("scaffold: write .dockerignore: %w", err)
-	}
-	return nil
+`, copyBlock, workdirLine, port)
 }
 
 // WriteServiceDockerConfig writes conf/docker/conf.yaml so containers can use
@@ -144,12 +184,24 @@ func WriteWorkspaceCompose(root string, w *manifest.Workspace) error {
 	if w == nil {
 		return fmt.Errorf("scaffold: write compose.yaml: nil workspace")
 	}
-	body, err := renderWorkspaceCompose(root, w)
+	apps, err := loadWorkspaceComposeApps(root, w)
+	if err != nil {
+		return err
+	}
+	body, err := renderComposeProject(w.Name, apps)
 	if err != nil {
 		return err
 	}
 	if err := os.WriteFile(filepath.Join(root, "compose.yaml"), []byte(body), 0o644); err != nil {
 		return fmt.Errorf("scaffold: write compose.yaml: %w", err)
+	}
+	for _, app := range apps {
+		if app.Context == "." {
+			if err := ensureRootDockerIgnore(root); err != nil {
+				return err
+			}
+			break
+		}
 	}
 	return nil
 }
@@ -164,12 +216,18 @@ func RefreshWorkspaceComposeForServiceRoot(root string) error {
 	return WriteWorkspaceCompose(workspaceRoot, w)
 }
 
-func renderWorkspaceCompose(root string, w *manifest.Workspace) (string, error) {
-	apps, err := loadWorkspaceComposeApps(root, w)
-	if err != nil {
-		return "", err
+// ensureRootDockerIgnore writes <root>/.dockerignore with the same exclude
+// patterns as the per-service template, but only if the file does not
+// already exist — it never overwrites user content.
+func ensureRootDockerIgnore(root string) error {
+	path := filepath.Join(root, ".dockerignore")
+	if pathExists(path) {
+		return nil
 	}
-	return renderComposeProject(w.Name, apps)
+	if err := os.WriteFile(path, []byte(serviceDockerIgnore), 0o644); err != nil {
+		return fmt.Errorf("scaffold: write .dockerignore: %w", err)
+	}
+	return nil
 }
 
 func loadWorkspaceComposeApps(root string, w *manifest.Workspace) ([]composeApp, error) {
@@ -207,6 +265,14 @@ func loadWorkspaceComposeApps(root string, w *manifest.Workspace) ([]composeApp,
 			app.Kind = m.Service.Kind
 			app.WithDatabase = m.Service.WithDatabase
 			app.Infra = append([]string(nil), m.Infra...)
+		}
+		replaces, err := ParseLocalReplaces(serviceRoot)
+		if err != nil {
+			return nil, fmt.Errorf("scaffold: parse go.mod replace for %s: %w", svc.Name, err)
+		}
+		if siblings := SiblingDirs(root, svc.Dir, replaces, services); len(siblings) > 0 {
+			app.Context = "."
+			app.Dockerfile = filepath.ToSlash(filepath.Join(svc.Dir, "Dockerfile"))
 		}
 		apps = append(apps, app)
 	}
@@ -280,9 +346,13 @@ func renderAppCompose(b *strings.Builder, app composeApp) error {
 	}
 	features := composeFeaturesForApp(app)
 	fmt.Fprintf(b, "  %s:\n", app.Name)
+	dockerfile := app.Dockerfile
+	if dockerfile == "" {
+		dockerfile = "Dockerfile"
+	}
 	b.WriteString("    build:\n")
 	fmt.Fprintf(b, "      context: %s\n", app.Context)
-	b.WriteString("      dockerfile: Dockerfile\n")
+	fmt.Fprintf(b, "      dockerfile: %s\n", dockerfile)
 	b.WriteString("    environment:\n")
 	b.WriteString("      GO_ENV: docker\n")
 	if app.WithDatabase {

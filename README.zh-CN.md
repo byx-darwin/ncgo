@@ -244,6 +244,15 @@ ncgo add bff web-bff --root .
 以及服务级 `compose.yaml`。后续执行 `ncgo add rpc` / `ncgo add bff` 时，工作区根目录
 `compose.yaml` 也会自动刷新。
 
+如果某个服务的 `go.mod` 中存在指向同一工作区内其它服务的本地 `replace <module> =>
+../<sibling>` 指令（用于共享类型/逻辑而不发布独立模块），ncgo 会自动检测到该指令，
+将该服务的 compose 构建上下文放宽为 `.`、`dockerfile` 设为
+`services/<name>/Dockerfile`，并重写该服务的 `Dockerfile`，使其在构建前 `COPY`
+兄弟服务目录和自身目录；同时会确保根目录存在 `.dockerignore`（若已存在则不会覆盖）。
+重新生成 compose（例如对该服务执行 `ncgo add infra <kind>`）会自动感知该 replace；若之后
+手工修改 `go.mod` 却未触发刷新，`ncgo doctor` 会通过 `compose.context.<name>` /
+`compose.dockerfile.<name>` 检查项报出漂移。
+
 当你在 micro 根目录执行 `ncgo doctor --root .` 或 `ncgo protolint --root .` 时，ncgo
 现在会自动遍历 `ncgo.workspace` 里登记的服务，并聚合各服务 `manifest.service.idl`
 上的 proto lint 结果。

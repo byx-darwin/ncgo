@@ -179,3 +179,149 @@ func TestWriteWorkspaceComposeLoadsServiceManifestDependencies(t *testing.T) {
 		}
 	}
 }
+
+func TestRenderAppComposeDefaultDockerfile(t *testing.T) {
+	body, err := renderComposeProject("commerce", []composeApp{{
+		Name:     "web-bff",
+		Kind:     manifest.KindHertz,
+		Context:  "./services/web-bff",
+		HostPort: 18080,
+	}})
+	if err != nil {
+		t.Fatalf("renderComposeProject: %v", err)
+	}
+	if !strings.Contains(body, "dockerfile: Dockerfile\n") {
+		t.Fatalf("expected default Dockerfile, got:\n%s", body)
+	}
+}
+
+func TestLoadWorkspaceComposeAppsWithLocalReplace(t *testing.T) {
+	root := t.TempDir()
+	w := &manifest.Workspace{
+		Ncgo:   manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test-assets"},
+		Mode:   manifest.ModeMicro,
+		Name:   "commerce",
+		Module: "github.com/acme/commerce",
+		Services: []manifest.WorkspaceService{
+			{Name: "authority", Kind: manifest.KindKitex, Dir: "services/authority"},
+			{Name: "orders", Kind: manifest.KindKitex, Dir: "services/orders"},
+		},
+		GeneratedAt: time.Date(2026, 4, 29, 8, 0, 0, 0, time.UTC),
+	}
+	if err := manifest.SaveWorkspace(root, w); err != nil {
+		t.Fatalf("SaveWorkspace: %v", err)
+	}
+	authorityRoot := filepath.Join(root, "services", "authority")
+	ordersRoot := filepath.Join(root, "services", "orders")
+	if err := os.MkdirAll(ordersRoot, 0o755); err != nil {
+		t.Fatalf("mkdir orders: %v", err)
+	}
+	if err := manifest.Save(authorityRoot, &manifest.Manifest{
+		Ncgo:        manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test-assets"},
+		Mode:        manifest.ModeMono,
+		Module:      "github.com/acme/commerce/services/authority",
+		Service:     manifest.Service{Name: "authority", Kind: manifest.KindKitex, IDL: "idl/app/authority.proto"},
+		GeneratedAt: time.Date(2026, 4, 29, 8, 0, 0, 0, time.UTC),
+	}); err != nil {
+		t.Fatalf("Save authority manifest: %v", err)
+	}
+	goMod := "module github.com/acme/commerce/services/authority\n\ngo 1.25\n\nreplace github.com/acme/commerce/services/orders => ../orders\n"
+	if err := os.WriteFile(filepath.Join(authorityRoot, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	if err := WriteWorkspaceCompose(root, w); err != nil {
+		t.Fatalf("WriteWorkspaceCompose: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "compose.yaml"))
+	if err != nil {
+		t.Fatalf("read compose.yaml: %v", err)
+	}
+	text := string(body)
+	authorityIdx := strings.Index(text, "  authority:")
+	ordersIdx := strings.Index(text, "  orders:")
+	if authorityIdx < 0 || ordersIdx < 0 {
+		t.Fatalf("compose missing service blocks:\n%s", text)
+	}
+	authorityBlock := text[authorityIdx:ordersIdx]
+	for _, want := range []string{"context: .\n", "dockerfile: services/authority/Dockerfile\n"} {
+		if !strings.Contains(authorityBlock, want) {
+			t.Fatalf("authority block missing %q:\n%s", want, authorityBlock)
+		}
+	}
+	ordersBlock := text[ordersIdx:]
+	for _, want := range []string{"context: ./services/orders\n", "dockerfile: Dockerfile\n"} {
+		if !strings.Contains(ordersBlock, want) {
+			t.Fatalf("orders block missing %q:\n%s", want, ordersBlock)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(root, ".dockerignore")); err != nil {
+		t.Fatalf("expected root .dockerignore to be created: %v", err)
+	}
+}
+
+func TestWriteWorkspaceComposeDoesNotOverwriteExistingRootDockerIgnore(t *testing.T) {
+	root := t.TempDir()
+	w := &manifest.Workspace{
+		Ncgo:   manifest.Meta{Version: "0.0.0-test", AssetsVersion: "test-assets"},
+		Mode:   manifest.ModeMicro,
+		Name:   "commerce",
+		Module: "github.com/acme/commerce",
+		Services: []manifest.WorkspaceService{
+			{Name: "authority", Kind: manifest.KindKitex, Dir: "services/authority"},
+			{Name: "orders", Kind: manifest.KindKitex, Dir: "services/orders"},
+		},
+		GeneratedAt: time.Date(2026, 4, 29, 8, 0, 0, 0, time.UTC),
+	}
+	if err := manifest.SaveWorkspace(root, w); err != nil {
+		t.Fatalf("SaveWorkspace: %v", err)
+	}
+	authorityRoot := filepath.Join(root, "services", "authority")
+	ordersRoot := filepath.Join(root, "services", "orders")
+	if err := os.MkdirAll(ordersRoot, 0o755); err != nil {
+		t.Fatalf("mkdir orders: %v", err)
+	}
+	if err := os.MkdirAll(authorityRoot, 0o755); err != nil {
+		t.Fatalf("mkdir authority: %v", err)
+	}
+	goMod := "module github.com/acme/commerce/services/authority\n\ngo 1.25\n\nreplace github.com/acme/commerce/services/orders => ../orders\n"
+	if err := os.WriteFile(filepath.Join(authorityRoot, "go.mod"), []byte(goMod), 0o644); err != nil {
+		t.Fatalf("write go.mod: %v", err)
+	}
+	custom := "# user owned\n"
+	if err := os.WriteFile(filepath.Join(root, ".dockerignore"), []byte(custom), 0o644); err != nil {
+		t.Fatalf("write existing .dockerignore: %v", err)
+	}
+	if err := WriteWorkspaceCompose(root, w); err != nil {
+		t.Fatalf("WriteWorkspaceCompose: %v", err)
+	}
+	got, err := os.ReadFile(filepath.Join(root, ".dockerignore"))
+	if err != nil {
+		t.Fatalf("read .dockerignore: %v", err)
+	}
+	if string(got) != custom {
+		t.Fatalf("existing .dockerignore was overwritten: %q", got)
+	}
+}
+
+func TestRewriteServiceDockerfileForSiblings(t *testing.T) {
+	dir := t.TempDir()
+	if err := WriteServiceContainerFiles(dir, manifest.KindKitex); err != nil {
+		t.Fatalf("WriteServiceContainerFiles: %v", err)
+	}
+	if err := RewriteServiceDockerfileForSiblings(dir, manifest.KindKitex, "services/authority", []string{"services/orders"}); err != nil {
+		t.Fatalf("RewriteServiceDockerfileForSiblings: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "Dockerfile"))
+	if err != nil {
+		t.Fatalf("read Dockerfile: %v", err)
+	}
+	text := string(body)
+	if strings.Contains(text, "COPY . .\n") {
+		t.Fatalf("expected no bare COPY . ., got:\n%s", text)
+	}
+	for _, want := range []string{"COPY services/orders/ services/orders/\n", "COPY services/authority/ services/authority/\n", "WORKDIR /src/services/authority\n"} {
+		if !strings.Contains(text, want) {
+			t.Fatalf("Dockerfile missing %q:\n%s", want, text)
+		}
+	}
+}

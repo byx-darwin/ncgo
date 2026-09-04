@@ -288,6 +288,17 @@ Each generated service keeps its own `.ncgo/manifest.yaml`, `Dockerfile`, and
 service-local `compose.yaml`; the workspace root `compose.yaml` is refreshed as
 services are added.
 
+If a service's `go.mod` has a local `replace <module> => ../<sibling>`
+directive pointing at another workspace service (shared types/logic without a
+published module), ncgo detects it and widens that service's compose build
+context to `.` with `dockerfile: services/<name>/Dockerfile`, rewrites the
+service's `Dockerfile` to `COPY` both the sibling and its own directory before
+building, and ensures a root `.dockerignore` exists (never overwriting one you
+already have). Compose detects the replace automatically when the compose is
+regenerated (e.g. `ncgo add infra <kind>` on the service); `ncgo doctor` flags
+drift via `compose.context.<name>` / `compose.dockerfile.<name>` checks if
+`go.mod` is hand-edited afterward without a refresh.
+
 ### Micro workspace template consumption
 
 `ncgo new --mode micro` and `ncgo add rpc/bff` accept `--template <name>`
