@@ -503,7 +503,7 @@ The kitex base template already wires go-framework OTLP; no extra
 `ncgo add infra` add-on is needed. When `cfg.Jaeger != nil && cfg.Jaeger.Enable`,
 `server.go` calls `kitexobs "github.com/byx-darwin/go-tools/go-framework/kitex/observability"`'s
 `kitexobs.NewProvider(ctx, config.ObservabilityConfig{Enabled, Endpoint,
-ServiceName})`, attaches `provider.ServerSuite()` as a kitex server option,
+Insecure, ServiceName})`, attaches `provider.ServerSuite()` as a kitex server option,
 and `defer provider.Shutdown()` before `server.Run` exits.
 
 > Historical note: the LoongSuite `observability_otel` / `otel` add-on and

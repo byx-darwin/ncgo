@@ -322,7 +322,7 @@ query 文件。
 > 时,`server.go` 调用
 > `hertzobs "github.com/byx-darwin/go-tools/go-framework/hertz/observability"`
 > 的 `hertzobs.NewProvider(ctx, config.ObservabilityConfig{Enabled, Endpoint,
-> ServiceName})`,执行 `h.Use(provider.ServerMiddleware())`,并
+> Insecure, ServiceName})`,执行 `h.Use(provider.ServerMiddleware())`,并
 > `defer provider.Shutdown()`。原 LoongSuite `observability_otel` / `otel`
 > add-on 已在 PR5 中移除,既有的 `otel` kind 现在返回 invalid kind。
 

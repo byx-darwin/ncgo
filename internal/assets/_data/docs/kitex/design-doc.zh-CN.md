@@ -473,7 +473,7 @@ kitex 基础模板已经接入 go-framework OTLP,**不需要** `ncgo add infra` 
 add-on。`cfg.Jaeger != nil && cfg.Jaeger.Enable` 时,`server.go` 调用
 `kitexobs "github.com/byx-darwin/go-tools/go-framework/kitex/observability"`
 的 `kitexobs.NewProvider(ctx, config.ObservabilityConfig{Enabled, Endpoint,
-ServiceName})`,把 `provider.ServerSuite()` 挂到 kitex server option,并在
+Insecure, ServiceName})`,把 `provider.ServerSuite()` 挂到 kitex server option,并在
 `server.Run` 退出前 `defer provider.Shutdown()`。
 
 > 历史说明:原 LoongSuite `observability_otel` / `otel` add-on 与

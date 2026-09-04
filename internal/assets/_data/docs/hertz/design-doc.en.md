@@ -310,7 +310,7 @@ When the scaffolder is invoked with `--db postgres`:
 > `cfg.Server.Jaeger != nil && cfg.Server.Jaeger.Enable`, `server.go`
 > calls `hertzobs "github.com/byx-darwin/go-tools/go-framework/hertz/observability"`'s
 > `hertzobs.NewProvider(ctx, config.ObservabilityConfig{Enabled, Endpoint,
-> ServiceName})`, runs `h.Use(provider.ServerMiddleware())`, and
+> Insecure, ServiceName})`, runs `h.Use(provider.ServerMiddleware())`, and
 > `defer provider.Shutdown()`. The LoongSuite `observability_otel` / `otel`
 > add-on was removed in PR5; the legacy `otel` kind now returns invalid
 > kind.
