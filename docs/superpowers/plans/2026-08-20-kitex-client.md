@@ -155,25 +155,25 @@ type Result struct {
 
 func Add(opts Options) (*Result, error) {
     result := &Result{DryRun: opts.DryRun}
-    
+
     // Create pkg/client/<name>/ directory
     clientDir := filepath.Join(opts.Root, "pkg", "client", opts.Name)
     if !opts.DryRun {
         os.MkdirAll(clientDir, 0755)
     }
-    
+
     // Generate client.go
     clientPath := filepath.Join(clientDir, "client.go")
     if err := generateClient(clientPath, opts, result); err != nil {
         return nil, err
     }
-    
+
     // Generate config.go
     configPath := filepath.Join(clientDir, "config.go")
     if err := generateConfig(configPath, opts, result); err != nil {
         return nil, err
     }
-    
+
     return result, nil
 }
 
@@ -197,7 +197,7 @@ func New(addr string) (*Client, error) {
     if err != nil {
         return err
     }
-    
+
     if !opts.DryRun {
         f, err := os.Create(path)
         if err != nil {
@@ -219,7 +219,7 @@ type Config struct {
     Address string
 }
 `, opts.Name)
-    
+
     if !opts.DryRun {
         if err := os.WriteFile(path, []byte(content), 0644); err != nil {
             return err

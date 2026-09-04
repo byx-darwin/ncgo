@@ -188,15 +188,6 @@ func writeGeneratedNotes(b *strings.Builder, extra ...string) {
 	}
 }
 
-func appendLocalNotes(b *strings.Builder, local string) {
-	if strings.TrimSpace(local) == "" {
-		return
-	}
-	b.WriteString("\n## Local Notes\n\n")
-	b.WriteString(strings.TrimRight(local, "\n"))
-	b.WriteString("\n")
-}
-
 func firstSectionParagraphs(doc string, maxParagraphs int) string {
 	doc = stripFirstHeading(doc)
 	if doc == "" || maxParagraphs <= 0 {

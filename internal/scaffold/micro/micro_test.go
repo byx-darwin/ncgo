@@ -77,15 +77,15 @@ func TestGenerateRejectsNonEmptyDir(t *testing.T) {
 
 func TestGenerateWithTemplateDirOverlaysWorkspace(t *testing.T) {
 	pkgDir := t.TempDir()
-	os.WriteFile(filepath.Join(pkgDir, "template.yaml"),
+	_ = os.WriteFile(filepath.Join(pkgDir, "template.yaml"),
 		[]byte("name: test-micro\nkind: micro\ndescription: test\nversion: \"1\"\n"), 0o644)
-	os.MkdirAll(filepath.Join(pkgDir, "workspace"), 0o755)
-	os.WriteFile(filepath.Join(pkgDir, "workspace", "custom.txt.tpl"),
+	_ = os.MkdirAll(filepath.Join(pkgDir, "workspace"), 0o755)
+	_ = os.WriteFile(filepath.Join(pkgDir, "workspace", "custom.txt.tpl"),
 		[]byte("module={{.Module}} name={{.ServiceName}}\n"), 0o644)
-	os.MkdirAll(filepath.Join(pkgDir, "kitex-template"), 0o755)
-	os.WriteFile(filepath.Join(pkgDir, "kitex-template", "a.yaml"), []byte("path: a.go\n"), 0o644)
-	os.MkdirAll(filepath.Join(pkgDir, "hertz-template"), 0o755)
-	os.WriteFile(filepath.Join(pkgDir, "hertz-template", "a.yaml"), []byte("path: a.go\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(pkgDir, "kitex-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(pkgDir, "kitex-template", "a.yaml"), []byte("path: a.go\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(pkgDir, "hertz-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(pkgDir, "hertz-template", "a.yaml"), []byte("path: a.go\n"), 0o644)
 
 	opts := baseOpts(t)
 	opts.TemplateDir = pkgDir

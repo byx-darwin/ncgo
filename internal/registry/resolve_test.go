@@ -30,8 +30,8 @@ func TestResolveTemplateDirFromCache(t *testing.T) {
 	cacheRoot := t.TempDir()
 	name := "base-kitex"
 	pkgDir := filepath.Join(cacheRoot, name)
-	os.MkdirAll(pkgDir, 0o755)
-	os.WriteFile(filepath.Join(pkgDir, "template.yaml"), []byte("kind: kitex\n"), 0o644)
+	_ = os.MkdirAll(pkgDir, 0o755)
+	_ = os.WriteFile(filepath.Join(pkgDir, "template.yaml"), []byte("kind: kitex\n"), 0o644)
 
 	client := NewClient("", nil)
 	client.Root = cacheRoot

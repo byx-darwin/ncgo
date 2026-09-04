@@ -72,10 +72,10 @@ func (f runnerFunc) Run(_ context.Context, _ ncgoexec.Cmd) (ncgoexec.Result, err
 
 func TestClientListFixture(t *testing.T) {
 	fixture := t.TempDir()
-	os.MkdirAll(filepath.Join(fixture, "base-kitex"), 0o755)
-	os.WriteFile(filepath.Join(fixture, "base-kitex", "template.yaml"),
+	_ = os.MkdirAll(filepath.Join(fixture, "base-kitex"), 0o755)
+	_ = os.WriteFile(filepath.Join(fixture, "base-kitex", "template.yaml"),
 		[]byte("name: base-kitex\nkind: kitex\ndescription: base\n"), 0o644)
-	os.MkdirAll(filepath.Join(fixture, "docs"), 0o755) // noise: no template.yaml
+	_ = os.MkdirAll(filepath.Join(fixture, "docs"), 0o755) // noise: no template.yaml
 
 	c := NewClient("https://example.invalid/registry.git", &fakeGit{fixture: fixture})
 	c.Root = t.TempDir()
@@ -91,11 +91,11 @@ func TestClientListFixture(t *testing.T) {
 func TestClientListSortedAndSkipsDotDirs(t *testing.T) {
 	fixture := t.TempDir()
 	for _, name := range []string{"zeta", "alpha"} {
-		os.MkdirAll(filepath.Join(fixture, name), 0o755)
-		os.WriteFile(filepath.Join(fixture, name, "template.yaml"),
+		_ = os.MkdirAll(filepath.Join(fixture, name), 0o755)
+		_ = os.WriteFile(filepath.Join(fixture, name, "template.yaml"),
 			[]byte("name: "+name+"\nkind: hertz\n"), 0o644)
 	}
-	os.MkdirAll(filepath.Join(fixture, ".git"), 0o755) // dot-dir: skipped
+	_ = os.MkdirAll(filepath.Join(fixture, ".git"), 0o755) // dot-dir: skipped
 
 	c := NewClient("u", &fakeGit{fixture: fixture})
 	c.Root = t.TempDir()
@@ -110,11 +110,11 @@ func TestClientListSortedAndSkipsDotDirs(t *testing.T) {
 
 func TestClientListSkipsBrokenTemplateYaml(t *testing.T) {
 	fixture := t.TempDir()
-	os.MkdirAll(filepath.Join(fixture, "good"), 0o755)
-	os.WriteFile(filepath.Join(fixture, "good", "template.yaml"),
+	_ = os.MkdirAll(filepath.Join(fixture, "good"), 0o755)
+	_ = os.WriteFile(filepath.Join(fixture, "good", "template.yaml"),
 		[]byte("name: good\nkind: hertz\n"), 0o644)
-	os.MkdirAll(filepath.Join(fixture, "broken"), 0o755)
-	os.WriteFile(filepath.Join(fixture, "broken", "template.yaml"),
+	_ = os.MkdirAll(filepath.Join(fixture, "broken"), 0o755)
+	_ = os.WriteFile(filepath.Join(fixture, "broken", "template.yaml"),
 		[]byte(": not: valid: yaml: ["), 0o644) // malformed -> skipped, not fatal
 
 	c := NewClient("u", &fakeGit{fixture: fixture})
@@ -130,8 +130,8 @@ func TestClientListSkipsBrokenTemplateYaml(t *testing.T) {
 
 func TestClientPullReturnsExistingDir(t *testing.T) {
 	fixture := t.TempDir()
-	os.MkdirAll(filepath.Join(fixture, "base-hertz"), 0o755)
-	os.WriteFile(filepath.Join(fixture, "base-hertz", "template.yaml"),
+	_ = os.MkdirAll(filepath.Join(fixture, "base-hertz"), 0o755)
+	_ = os.WriteFile(filepath.Join(fixture, "base-hertz", "template.yaml"),
 		[]byte("name: base-hertz\nkind: hertz\n"), 0o644)
 
 	c := NewClient("https://example.invalid/registry.git", &fakeGit{fixture: fixture})
@@ -177,9 +177,9 @@ func TestClientGitMissing(t *testing.T) {
 
 func TestClientExistingCachePulls(t *testing.T) {
 	root := t.TempDir()
-	os.MkdirAll(filepath.Join(root, ".git"), 0o755) // cache already cloned
-	os.MkdirAll(filepath.Join(root, "base-hertz"), 0o755)
-	os.WriteFile(filepath.Join(root, "base-hertz", "template.yaml"),
+	_ = os.MkdirAll(filepath.Join(root, ".git"), 0o755) // cache already cloned
+	_ = os.MkdirAll(filepath.Join(root, "base-hertz"), 0o755)
+	_ = os.WriteFile(filepath.Join(root, "base-hertz", "template.yaml"),
 		[]byte("name: base-hertz\nkind: hertz\n"), 0o644)
 
 	fake := &fakeGit{}
@@ -205,7 +205,7 @@ func TestResolveURLPrecedence(t *testing.T) {
 	if got := ResolveURL(""); got != "https://env" {
 		t.Errorf("env: %s", got)
 	}
-	os.Unsetenv(EnvOverride)
+	_ = os.Unsetenv(EnvOverride)
 	if got := ResolveURL(""); got != DefaultURL {
 		t.Errorf("default: %s", got)
 	}
@@ -238,8 +238,8 @@ func TestMigrateOldCache_MigratesOldCache(t *testing.T) {
 	// Simulate old cache with .git marker
 	oldBase, _ := os.UserCacheDir()
 	oldRoot := filepath.Join(oldBase, "ncgo", "template-registry")
-	os.MkdirAll(filepath.Join(oldRoot, ".git"), 0o755)
-	os.WriteFile(filepath.Join(oldRoot, ".git", "config"), []byte("test"), 0o644)
+	_ = os.MkdirAll(filepath.Join(oldRoot, ".git"), 0o755)
+	_ = os.WriteFile(filepath.Join(oldRoot, ".git", "config"), []byte("test"), 0o644)
 
 	newRoot := filepath.Join(home, ".ncgo", "template-registry")
 	if err := migrateOldCache(newRoot); err != nil {
@@ -273,14 +273,14 @@ func TestMigrateOldCache_NewCacheExists(t *testing.T) {
 
 	// Create new cache with .git
 	newRoot := filepath.Join(home, ".ncgo", "template-registry")
-	os.MkdirAll(filepath.Join(newRoot, ".git"), 0o755)
-	os.WriteFile(filepath.Join(newRoot, ".git", "config"), []byte("new"), 0o644)
+	_ = os.MkdirAll(filepath.Join(newRoot, ".git"), 0o755)
+	_ = os.WriteFile(filepath.Join(newRoot, ".git", "config"), []byte("new"), 0o644)
 
 	// Create old cache too
 	oldBase, _ := os.UserCacheDir()
 	oldRoot := filepath.Join(oldBase, "ncgo", "template-registry")
-	os.MkdirAll(filepath.Join(oldRoot, ".git"), 0o755)
-	os.WriteFile(filepath.Join(oldRoot, ".git", "config"), []byte("old"), 0o644)
+	_ = os.MkdirAll(filepath.Join(oldRoot, ".git"), 0o755)
+	_ = os.WriteFile(filepath.Join(oldRoot, ".git", "config"), []byte("old"), 0o644)
 
 	if err := migrateOldCache(newRoot); err != nil {
 		t.Fatalf("migrateOldCache: %v", err)

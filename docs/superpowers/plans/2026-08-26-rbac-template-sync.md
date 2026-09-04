@@ -720,7 +720,7 @@ Task 1 (proto) ─┬─ Task 2 (handler) ─ Task 3 (repo) ─ Task 4 (domain) 
                  ├─ Task 8 (admin-bff) — 可独立并行
                  ├─ Task 9 (admin-services) — 可独立并行
                  └─ Task 10 (micro-admin) — 可独立并行
-                 
+
 Task 11 (验证) 依赖所有前置 Task
 ```
 

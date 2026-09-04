@@ -227,7 +227,7 @@ message EmptyResp {}
 ## Auth / security (v1 + seams)
 
 - **JWT HS256** (secret from config); claims `{uid string, roles []string, exp}`. **Seam:** RS256/JWKS.
-- **Passwords:** argon2id; basic failed-attempt lockout counter (Redis). 
+- **Passwords:** argon2id; basic failed-attempt lockout counter (Redis).
 - **Refresh/blacklist:** Redis stores refresh tokens + a short-TTL access-token blacklist for logout.
 - **Audit:** every RBAC mutation writes `audit_log`.
 - **Seams (documented TODO):** data-scope/domain, RS256/JWKS, local casbin enforcer+watcher, OTel observability.

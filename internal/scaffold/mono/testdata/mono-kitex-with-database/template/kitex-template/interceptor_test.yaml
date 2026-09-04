@@ -1,0 +1,66 @@
+# Kitex custom template — internal/pkg/interceptor tests
+path: internal/pkg/interceptor/interceptor_test.go
+update_behavior:
+  type: cover
+body: |-
+  package interceptor
+
+  import (
+      "context"
+      "testing"
+      "time"
+
+      "github.com/bytedance/gopkg/cloud/metainfo"
+      "github.com/cloudwego/kitex/pkg/endpoint"
+  )
+
+  func TestRecoveryConvertsPanicToBizError(t *testing.T) {
+      mw := Recovery()
+      err := mw(func(ctx context.Context, req, resp interface{}) error {
+          panic("boom")
+      })(context.Background(), nil, nil)
+      if err == nil {
+          t.Fatal("expected error from panic recovery")
+      }
+  }
+
+  func TestRequestTimeoutReturnsBizTimeout(t *testing.T) {
+      err := RequestTimeout(time.Millisecond)(func(ctx context.Context, req, resp interface{}) error {
+          <-ctx.Done()
+          return nil
+      })(context.Background(), nil, nil)
+      if err == nil {
+          t.Fatal("expected timeout error")
+      }
+  }
+
+  func TestRequestIDGeneratesPersistentValue(t *testing.T) {
+      var got string
+      mw := RequestID()
+      err := mw(endpoint.Endpoint(func(ctx context.Context, req, resp interface{}) error {
+          got = RequestIDFromContext(ctx)
+          return nil
+      }))(context.Background(), nil, nil)
+      if err != nil || got == "" {
+          t.Fatalf("request id = %q err=%v", got, err)
+      }
+  }
+
+  func TestCallerAllowlist(t *testing.T) {
+      called := false
+      next := endpoint.Endpoint(func(ctx context.Context, req, resp interface{}) error {
+          called = true
+          return nil
+      })
+
+      err := CallerAllowlist(true, HeaderCallerService, []string{"bff-api"}, false)(next)(context.Background(), nil, nil)
+      if err == nil || called {
+          t.Fatalf("missing caller err=%#v called=%v", err, called)
+      }
+
+      ctx := metainfo.WithPersistentValue(context.Background(), HeaderCallerService, "bff-api")
+      err = CallerAllowlist(true, HeaderCallerService, []string{"bff-api"}, false)(next)(ctx, nil, nil)
+      if err != nil || !called {
+          t.Fatalf("allowed caller err=%v called=%v", err, called)
+      }
+  }

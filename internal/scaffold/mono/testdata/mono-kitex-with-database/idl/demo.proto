@@ -1,0 +1,8 @@
+syntax = "proto3";
+
+package demo;
+
+option go_package = "github.com/x/demo/kitex_gen/demo;demo";
+
+service Demo {
+}

@@ -45,12 +45,12 @@ func generateKitexTypes(ctx context.Context, opts Options, result *Result) error
         "-type", "protobuf",
         opts.IDL,
     }
-    
+
     _, err := exec.Kitex(ctx, exec.DefaultRunner, opts.Root, args...)
     if err != nil {
         return fmt.Errorf("kitex generation failed: %w", err)
     }
-    
+
     result.WrittenPaths = append(result.WrittenPaths, "kitex_gen/")
     return nil
 }
@@ -61,12 +61,12 @@ func generateKitexTypes(ctx context.Context, opts Options, result *Result) error
 ```go
 func Add(ctx context.Context, opts Options) (*Result, error) {
     // ... existing code ...
-    
+
     // Generate kitex_gen types
     if err := generateKitexTypes(ctx, opts, result); err != nil {
         return nil, err
     }
-    
+
     // ... rest of code ...
 }
 ```

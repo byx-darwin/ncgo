@@ -451,7 +451,7 @@ func (c *Client) {{.Name}}(ctx context.Context, req *{{if eq $.KitexGenDir $.Ser
 		if err != nil {
 			return fmt.Errorf("kitex-client: create %s: %w", path, err)
 		}
-		defer f.Close()
+		defer func() { _ = f.Close() }()
 		if err := t.Execute(f, data); err != nil {
 			return fmt.Errorf("kitex-client: execute client template: %w", err)
 		}

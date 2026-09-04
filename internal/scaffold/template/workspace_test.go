@@ -9,12 +9,12 @@ import (
 
 func TestOverlayWorkspaceTemplates(t *testing.T) {
 	pkgDir := t.TempDir()
-	os.MkdirAll(filepath.Join(pkgDir, "workspace", "scripts"), 0o755)
-	os.WriteFile(filepath.Join(pkgDir, "workspace", "compose.yaml.tpl"),
+	_ = os.MkdirAll(filepath.Join(pkgDir, "workspace", "scripts"), 0o755)
+	_ = os.WriteFile(filepath.Join(pkgDir, "workspace", "compose.yaml.tpl"),
 		[]byte("name: {{.ServiceName}}\nmodule: {{.Module}}\n"), 0o644)
-	os.WriteFile(filepath.Join(pkgDir, "workspace", "scripts", "build.sh.tpl"),
+	_ = os.WriteFile(filepath.Join(pkgDir, "workspace", "scripts", "build.sh.tpl"),
 		[]byte("#!/bin/sh\n# {{.ServiceName}} build\n"), 0o644)
-	os.WriteFile(filepath.Join(pkgDir, "workspace", "extra.txt"),
+	_ = os.WriteFile(filepath.Join(pkgDir, "workspace", "extra.txt"),
 		[]byte("verbatim copy\n"), 0o644)
 
 	pkg := &Package{
@@ -23,7 +23,7 @@ func TestOverlayWorkspaceTemplates(t *testing.T) {
 	}
 
 	targetDir := t.TempDir()
-	os.WriteFile(filepath.Join(targetDir, "compose.yaml"), []byte("original\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(targetDir, "compose.yaml"), []byte("original\n"), 0o644)
 
 	data := RenderData{ServiceName: "shop", Module: "github.com/acme/shop"}
 	if err := OverlayWorkspaceTemplates(targetDir, pkg, data); err != nil {
@@ -66,10 +66,10 @@ func TestOverlayWorkspaceTemplatesMissingDir(t *testing.T) {
 
 func TestOverlayWorkspaceTemplatesEmpty(t *testing.T) {
 	pkgDir := t.TempDir()
-	os.MkdirAll(filepath.Join(pkgDir, "workspace"), 0o755)
+	_ = os.MkdirAll(filepath.Join(pkgDir, "workspace"), 0o755)
 	pkg := &Package{Dir: pkgDir, TemplateDir: filepath.Join(pkgDir, "workspace")}
 	targetDir := t.TempDir()
-	os.WriteFile(filepath.Join(targetDir, "existing"), []byte("keep\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(targetDir, "existing"), []byte("keep\n"), 0o644)
 	if err := OverlayWorkspaceTemplates(targetDir, pkg, RenderData{}); err != nil {
 		t.Fatalf("empty overlay should not error: %v", err)
 	}

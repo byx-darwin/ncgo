@@ -92,3 +92,16 @@ func TestGenerateGoldenTemplateRuleCenter(t *testing.T) {
 	}
 	golden.Tree(t, "mono-kitex-template-rulecenter", res.Dir)
 }
+
+// TestGenerateGoldenKitexWithDatabase covers the Kitex + database combination,
+// which was previously untested even though both dimensions are individually
+// covered by TestGenerateGoldenKitexDefault and TestGenerateGoldenWithDatabase.
+func TestGenerateGoldenKitexWithDatabase(t *testing.T) {
+	opts := goldenOpts(t, "demo", true)
+	opts.Kind = manifest.KindKitex
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	golden.Tree(t, "mono-kitex-with-database", res.Dir)
+}
