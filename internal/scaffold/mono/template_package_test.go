@@ -21,12 +21,12 @@ import (
 func seedTemplatePackage(t *testing.T, withIDL bool) string {
 	t.Helper()
 	pkg := t.TempDir()
-	os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0o755)
-	os.WriteFile(filepath.Join(pkg, "kitex-template", "main_go.yaml"), []byte(
+	_ = os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(pkg, "kitex-template", "main_go.yaml"), []byte(
 		"path: main.go\nupdate_behavior:\n  type: cover\nbody: |\n  package main\n"), 0o644)
 	if withIDL {
-		os.MkdirAll(filepath.Join(pkg, "idl"), 0o755)
-		os.WriteFile(filepath.Join(pkg, "idl", "{{ToLower .ServiceName}}.proto"),
+		_ = os.MkdirAll(filepath.Join(pkg, "idl"), 0o755)
+		_ = os.WriteFile(filepath.Join(pkg, "idl", "{{ToLower .ServiceName}}.proto"),
 			[]byte("syntax = \"proto3\";\nservice {{.ServiceName}} {}\n"), 0o644)
 	}
 	return pkg
@@ -97,9 +97,9 @@ func TestGenerateTemplatePackagePresetConflict(t *testing.T) {
 
 func TestGenerateTemplatePackageKindMismatch(t *testing.T) {
 	pkg := t.TempDir()
-	os.WriteFile(filepath.Join(pkg, "template.yaml"), []byte("kind: hertz\n"), 0o644)
-	os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0o755)
-	os.WriteFile(filepath.Join(pkg, "kitex-template", "a.yaml"), []byte("path: main.go\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(pkg, "template.yaml"), []byte("kind: hertz\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(pkg, "kitex-template", "a.yaml"), []byte("path: main.go\n"), 0o644)
 	opts := templatePkgOptions(t, pkg)
 	_, err := Generate(context.Background(), opts)
 	if err == nil || !strings.Contains(err.Error(), "does not match expected kind") {
@@ -109,9 +109,9 @@ func TestGenerateTemplatePackageKindMismatch(t *testing.T) {
 
 func TestGenerateTemplatePackageParseError(t *testing.T) {
 	pkg := t.TempDir()
-	os.WriteFile(filepath.Join(pkg, "template.yaml"), []byte("{{invalid"), 0o644)
-	os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0o755)
-	os.WriteFile(filepath.Join(pkg, "kitex-template", "a.yaml"), []byte("path: main.go\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(pkg, "template.yaml"), []byte("{{invalid"), 0o644)
+	_ = os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(pkg, "kitex-template", "a.yaml"), []byte("path: main.go\n"), 0o644)
 	opts := templatePkgOptions(t, pkg)
 	_, err := Generate(context.Background(), opts)
 	if err == nil || !strings.Contains(err.Error(), "parse") {
@@ -126,15 +126,15 @@ func TestGenerateTemplatePackageParseError(t *testing.T) {
 func seedRuleCenterLikePackage(t *testing.T) string {
 	t.Helper()
 	pkg := t.TempDir()
-	os.WriteFile(filepath.Join(pkg, "template.yaml"), []byte("name: rule-center-like\nkind: kitex\nskip_default_templates:\n  - handler.yaml\n  - server.yaml\n  - usecase.yaml\n  - repository.yaml\n"), 0644)
-	os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0755)
-	os.WriteFile(filepath.Join(pkg, "kitex-template", "test.yaml"), []byte("path: main.go\nupdate_behavior:\n  type: cover\nbody: |\n  package main\n"), 0644)
-	os.WriteFile(filepath.Join(pkg, "kitex-template", "ratelimit_shared_resolver.yaml"), []byte("path: internal/service/ratelimit/resolver.go\nupdate_behavior:\n  type: cover\nbody: |\n  package ratelimit\n"), 0644)
-	os.MkdirAll(filepath.Join(pkg, "schema"), 0755)
-	os.WriteFile(filepath.Join(pkg, "schema", "000002_rate_limit_rules.sql"), []byte("-- {{.Module}}\nCREATE TABLE rate_limit_rules (id bigint);"), 0644)
-	os.WriteFile(filepath.Join(pkg, "layout.yaml"), []byte("templates:\n  - path: main.go\n"), 0644)
-	os.MkdirAll(filepath.Join(pkg, "idl"), 0755)
-	os.WriteFile(filepath.Join(pkg, "idl", "demo.proto"), []byte("syntax = \"proto3\";\nservice {{.ServiceName}} {}\n"), 0644)
+	_ = os.WriteFile(filepath.Join(pkg, "template.yaml"), []byte("name: rule-center-like\nkind: kitex\nskip_default_templates:\n  - handler.yaml\n  - server.yaml\n  - usecase.yaml\n  - repository.yaml\n"), 0644)
+	_ = os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0755)
+	_ = os.WriteFile(filepath.Join(pkg, "kitex-template", "test.yaml"), []byte("path: main.go\nupdate_behavior:\n  type: cover\nbody: |\n  package main\n"), 0644)
+	_ = os.WriteFile(filepath.Join(pkg, "kitex-template", "ratelimit_shared_resolver.yaml"), []byte("path: internal/service/ratelimit/resolver.go\nupdate_behavior:\n  type: cover\nbody: |\n  package ratelimit\n"), 0644)
+	_ = os.MkdirAll(filepath.Join(pkg, "schema"), 0755)
+	_ = os.WriteFile(filepath.Join(pkg, "schema", "000002_rate_limit_rules.sql"), []byte("-- {{.Module}}\nCREATE TABLE rate_limit_rules (id bigint);"), 0644)
+	_ = os.WriteFile(filepath.Join(pkg, "layout.yaml"), []byte("templates:\n  - path: main.go\n"), 0644)
+	_ = os.MkdirAll(filepath.Join(pkg, "idl"), 0755)
+	_ = os.WriteFile(filepath.Join(pkg, "idl", "demo.proto"), []byte("syntax = \"proto3\";\nservice {{.ServiceName}} {}\n"), 0644)
 	return pkg
 }
 
@@ -209,13 +209,13 @@ func TestGenerateTemplatePackageRuleCenterLike(t *testing.T) {
 func seedHertzTemplatePackage(t *testing.T) string {
 	t.Helper()
 	pkg := t.TempDir()
-	os.MkdirAll(filepath.Join(pkg, "hertz-template"), 0o755)
-	os.WriteFile(filepath.Join(pkg, "hertz-template", "makefile_yaml.yaml"), []byte(
+	_ = os.MkdirAll(filepath.Join(pkg, "hertz-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(pkg, "hertz-template", "makefile_yaml.yaml"), []byte(
 		"path: Makefile\nupdate_behavior:\n  type: cover\nbody: |\n"+
 			"  APP_NAME = {{.ServiceName | ToLower}}-http\n"+
 			"  MODULE   = {{.Module}}\n"+
 			"  CUSTOM_MAKEFILE = from-package\n"), 0o644)
-	os.WriteFile(filepath.Join(pkg, "hertz-template", "conf_go.yaml"), []byte(
+	_ = os.WriteFile(filepath.Join(pkg, "hertz-template", "conf_go.yaml"), []byte(
 		"path: internal/base/conf/conf.go\nupdate_behavior:\n  type: cover\nbody: |\n"+
 			"  package conf\n"), 0o644)
 	return pkg

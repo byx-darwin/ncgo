@@ -217,8 +217,8 @@ func TestRunNewMonoPrintsTemplateIDLFallbackNotice(t *testing.T) {
 
 	// Package with a kitex-template dir but no idl/ → fallback notice prints.
 	pkg := t.TempDir()
-	os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0o755)
-	os.WriteFile(filepath.Join(pkg, "kitex-template", "main_go.yaml"),
+	_ = os.MkdirAll(filepath.Join(pkg, "kitex-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(pkg, "kitex-template", "main_go.yaml"),
 		[]byte("path: main.go\nbody: |\n  package main\n"), 0o644)
 	if got := run(pkg); !strings.Contains(got, notice) {
 		t.Errorf("fallback notice missing for no-idl package:\n%s", got)

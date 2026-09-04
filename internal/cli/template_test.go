@@ -87,8 +87,8 @@ func TestTemplateCmdIncludesListAndPull(t *testing.T) {
 
 func TestTemplateListOutput(t *testing.T) {
 	fixture := t.TempDir()
-	os.MkdirAll(filepath.Join(fixture, "base-kitex"), 0o755)
-	os.WriteFile(filepath.Join(fixture, "base-kitex", "template.yaml"),
+	_ = os.MkdirAll(filepath.Join(fixture, "base-kitex"), 0o755)
+	_ = os.WriteFile(filepath.Join(fixture, "base-kitex", "template.yaml"),
 		[]byte("name: base-kitex\nkind: kitex\ndescription: base\n"), 0o644)
 
 	var out strings.Builder
@@ -121,8 +121,8 @@ func TestTemplateListEmptyOutput(t *testing.T) {
 
 func TestTemplatePullOutput(t *testing.T) {
 	fixture := t.TempDir()
-	os.MkdirAll(filepath.Join(fixture, "base-hertz"), 0o755)
-	os.WriteFile(filepath.Join(fixture, "base-hertz", "template.yaml"),
+	_ = os.MkdirAll(filepath.Join(fixture, "base-hertz"), 0o755)
+	_ = os.WriteFile(filepath.Join(fixture, "base-hertz", "template.yaml"),
 		[]byte("name: base-hertz\nkind: hertz\n"), 0o644)
 
 	var out strings.Builder

@@ -62,7 +62,7 @@ func TestRunCheckExitOneOnBrokenAnchors(t *testing.T) {
 	root := seedCheckProject(t)
 	p := filepath.Join(root, "internal", "usecase", "device", "device.go")
 	b, _ := os.ReadFile(p)
-	os.WriteFile(p, []byte(strings.ReplaceAll(string(b), "// ncgo:methods:start\n", "")), 0o644)
+	_ = os.WriteFile(p, []byte(strings.ReplaceAll(string(b), "// ncgo:methods:start\n", "")), 0o644)
 	var out bytes.Buffer
 	cmd := &cobra.Command{}
 	cmd.SetOut(&out)

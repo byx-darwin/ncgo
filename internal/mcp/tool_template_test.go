@@ -65,9 +65,9 @@ func scrubGitEnv(t *testing.T) {
 	t.Helper()
 	unset := func(key string) {
 		if v, ok := os.LookupEnv(key); ok {
-			os.Unsetenv(key)
+			_ = os.Unsetenv(key)
 			key, value := key, v
-			t.Cleanup(func() { os.Setenv(key, value) })
+			t.Cleanup(func() { _ = os.Setenv(key, value) })
 		}
 	}
 	for _, key := range []string{

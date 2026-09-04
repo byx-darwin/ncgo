@@ -67,7 +67,7 @@ func TestScanReportsDomainsMethodsAnchors(t *testing.T) {
 
 func TestScanFlagsMissingUsecase(t *testing.T) {
 	root := seedScanProject(t, []string{"device", "ghost"})
-	os.RemoveAll(filepath.Join(root, "internal", "usecase", "ghost"))
+	_ = os.RemoveAll(filepath.Join(root, "internal", "usecase", "ghost"))
 	s, err := Scan(root)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)
@@ -95,7 +95,7 @@ func TestScanFlagsBrokenAnchors(t *testing.T) {
 	root := seedScanProject(t, []string{"device"})
 	p := filepath.Join(root, "internal", "usecase", "device", "device.go")
 	b, _ := os.ReadFile(p)
-	os.WriteFile(p, []byte(strings.ReplaceAll(string(b), "// ncgo:methods:start\n", "")), 0o644)
+	_ = os.WriteFile(p, []byte(strings.ReplaceAll(string(b), "// ncgo:methods:start\n", "")), 0o644)
 	s, err := Scan(root)
 	if err != nil {
 		t.Fatalf("Scan: %v", err)

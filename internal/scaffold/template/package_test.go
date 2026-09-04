@@ -11,12 +11,12 @@ import (
 
 func TestLoadPackageHappy(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "template.yaml"),
+	_ = os.WriteFile(filepath.Join(dir, "template.yaml"),
 		[]byte("name: base-kitex\nkind: kitex\ndescription: d\nversion: \"1\"\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
-	os.WriteFile(filepath.Join(dir, "kitex-template", "main_go.yaml"), []byte("path: main.go\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "idl"), 0o755)
-	os.WriteFile(filepath.Join(dir, "idl", "svc.proto"), []byte("syntax = \"proto3\";\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "kitex-template", "main_go.yaml"), []byte("path: main.go\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "idl"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "idl", "svc.proto"), []byte("syntax = \"proto3\";\n"), 0o644)
 
 	pkg, err := LoadPackage(dir, "kitex")
 	if err != nil {
@@ -32,8 +32,8 @@ func TestLoadPackageHappy(t *testing.T) {
 
 func TestLoadPackageNoMeta(t *testing.T) {
 	dir := t.TempDir()
-	os.MkdirAll(filepath.Join(dir, "hertz-template"), 0o755)
-	os.WriteFile(filepath.Join(dir, "hertz-template", "main_go.yaml"), []byte("path: main.go\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "hertz-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "hertz-template", "main_go.yaml"), []byte("path: main.go\n"), 0o644)
 	pkg, err := LoadPackage(dir, "hertz")
 	if err != nil || pkg.HasMeta {
 		t.Fatalf("expected no-meta success, got %+v, %v", pkg, err)
@@ -42,9 +42,9 @@ func TestLoadPackageNoMeta(t *testing.T) {
 
 func TestLoadPackageKindMismatch(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "template.yaml"), []byte("kind: hertz\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
-	os.WriteFile(filepath.Join(dir, "kitex-template", "a.yaml"), []byte("path: main.go\n"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "template.yaml"), []byte("kind: hertz\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "kitex-template", "a.yaml"), []byte("path: main.go\n"), 0o644)
 	_, err := LoadPackage(dir, "kitex")
 	if err == nil || !strings.Contains(err.Error(), "does not match expected kind") {
 		t.Errorf("want kind mismatch error, got %v", err)
@@ -53,7 +53,7 @@ func TestLoadPackageKindMismatch(t *testing.T) {
 
 func TestLoadPackageParseError(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "template.yaml"), []byte("{{invalid"), 0o644)
+	_ = os.WriteFile(filepath.Join(dir, "template.yaml"), []byte("{{invalid"), 0o644)
 	_, err := LoadPackage(dir, "kitex")
 	if err == nil || !strings.Contains(err.Error(), "parse") {
 		t.Errorf("want parse error, got %v", err)
@@ -76,9 +76,9 @@ func TestReadPackageMetaMissing(t *testing.T) {
 
 func TestLoadPackage_SkipDefaultTemplates(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "template.yaml"), []byte("name: test-pkg\nkind: kitex\ndescription: test\nversion: 1\nskip_default_templates:\n  - handler.yaml\n  - server.yaml\n"), 0644)
-	os.MkdirAll(filepath.Join(dir, "kitex-template"), 0755)
-	os.WriteFile(filepath.Join(dir, "kitex-template", "test.yaml"), []byte("path: test.go\nbody: test\n"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "template.yaml"), []byte("name: test-pkg\nkind: kitex\ndescription: test\nversion: 1\nskip_default_templates:\n  - handler.yaml\n  - server.yaml\n"), 0644)
+	_ = os.MkdirAll(filepath.Join(dir, "kitex-template"), 0755)
+	_ = os.WriteFile(filepath.Join(dir, "kitex-template", "test.yaml"), []byte("path: test.go\nbody: test\n"), 0644)
 	pkg, err := LoadPackage(dir, "kitex")
 	if err != nil {
 		t.Fatalf("LoadPackage: %v", err)
@@ -93,14 +93,14 @@ func TestLoadPackage_SkipDefaultTemplates(t *testing.T) {
 
 func TestLoadPackageMicroAsWorkspace(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "template.yaml"),
+	_ = os.WriteFile(filepath.Join(dir, "template.yaml"),
 		[]byte("name: my-micro\nkind: micro\ndescription: d\nversion: \"1\"\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "workspace"), 0o755)
-	os.WriteFile(filepath.Join(dir, "workspace", "compose.yaml.tpl"), []byte("name: {{.Name}}\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
-	os.WriteFile(filepath.Join(dir, "kitex-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "hertz-template"), 0o755)
-	os.WriteFile(filepath.Join(dir, "hertz-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "workspace"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "workspace", "compose.yaml.tpl"), []byte("name: {{.Name}}\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "kitex-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "hertz-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "hertz-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
 
 	pkg, err := LoadPackage(dir, "micro")
 	if err != nil {
@@ -116,13 +116,13 @@ func TestLoadPackageMicroAsWorkspace(t *testing.T) {
 
 func TestLoadPackageMicroAsKitexSource(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "template.yaml"),
+	_ = os.WriteFile(filepath.Join(dir, "template.yaml"),
 		[]byte("name: my-micro\nkind: micro\ndescription: d\nversion: \"1\"\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "workspace"), 0o755)
-	os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
-	os.WriteFile(filepath.Join(dir, "kitex-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "idl", "kitex"), 0o755)
-	os.WriteFile(filepath.Join(dir, "idl", "kitex", "svc.proto"), []byte("syntax = \"proto3\";\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "workspace"), 0o755)
+	_ = os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "kitex-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "idl", "kitex"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "idl", "kitex", "svc.proto"), []byte("syntax = \"proto3\";\n"), 0o644)
 
 	pkg, err := LoadPackage(dir, "kitex")
 	if err != nil {
@@ -141,13 +141,13 @@ func TestLoadPackageMicroAsKitexSource(t *testing.T) {
 
 func TestLoadPackageMicroAsHertzSource(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "template.yaml"),
+	_ = os.WriteFile(filepath.Join(dir, "template.yaml"),
 		[]byte("name: my-micro\nkind: micro\ndescription: d\nversion: \"1\"\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "workspace"), 0o755)
-	os.MkdirAll(filepath.Join(dir, "hertz-template"), 0o755)
-	os.WriteFile(filepath.Join(dir, "hertz-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "idl", "hertz", "app"), 0o755)
-	os.WriteFile(filepath.Join(dir, "idl", "hertz", "app", "api.proto"), []byte("syntax = \"proto3\";\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "workspace"), 0o755)
+	_ = os.MkdirAll(filepath.Join(dir, "hertz-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "hertz-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "idl", "hertz", "app"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "idl", "hertz", "app", "api.proto"), []byte("syntax = \"proto3\";\n"), 0o644)
 
 	pkg, err := LoadPackage(dir, "hertz")
 	if err != nil {
@@ -163,14 +163,14 @@ func TestLoadPackageMicroAsHertzSource(t *testing.T) {
 
 func TestLoadPackageMicroIDLFallback(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "template.yaml"),
+	_ = os.WriteFile(filepath.Join(dir, "template.yaml"),
 		[]byte("name: my-micro\nkind: micro\ndescription: d\nversion: \"1\"\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "workspace"), 0o755)
-	os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
-	os.WriteFile(filepath.Join(dir, "kitex-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "workspace"), 0o755)
+	_ = os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "kitex-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
 	// Flat idl/ instead of idl/kitex/
-	os.MkdirAll(filepath.Join(dir, "idl"), 0o755)
-	os.WriteFile(filepath.Join(dir, "idl", "svc.proto"), []byte("syntax = \"proto3\";\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "idl"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "idl", "svc.proto"), []byte("syntax = \"proto3\";\n"), 0o644)
 
 	pkg, err := LoadPackage(dir, "kitex")
 	if err != nil {
@@ -187,12 +187,12 @@ func TestLoadPackageMicroIDLFallback(t *testing.T) {
 
 func TestLoadPackageMonoKitexUnchanged(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "template.yaml"),
+	_ = os.WriteFile(filepath.Join(dir, "template.yaml"),
 		[]byte("name: base-kitex\nkind: kitex\ndescription: d\nversion: \"1\"\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
-	os.WriteFile(filepath.Join(dir, "kitex-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
-	os.MkdirAll(filepath.Join(dir, "idl"), 0o755)
-	os.WriteFile(filepath.Join(dir, "idl", "svc.proto"), []byte("syntax = \"proto3\";\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "kitex-template"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "kitex-template", "main.yaml"), []byte("path: main.go\n"), 0o644)
+	_ = os.MkdirAll(filepath.Join(dir, "idl"), 0o755)
+	_ = os.WriteFile(filepath.Join(dir, "idl", "svc.proto"), []byte("syntax = \"proto3\";\n"), 0o644)
 
 	pkg, err := LoadPackage(dir, "kitex")
 	if err != nil {
@@ -208,12 +208,12 @@ func TestLoadPackageMonoKitexUnchanged(t *testing.T) {
 
 func TestLoadPackage_SchemaAndLayout(t *testing.T) {
 	dir := t.TempDir()
-	os.WriteFile(filepath.Join(dir, "template.yaml"), []byte("name: test\nkind: kitex\n"), 0644)
-	os.MkdirAll(filepath.Join(dir, "kitex-template"), 0755)
-	os.WriteFile(filepath.Join(dir, "kitex-template", "test.yaml"), []byte("path: test.go\nbody: test\n"), 0644)
-	os.MkdirAll(filepath.Join(dir, "schema"), 0755)
-	os.WriteFile(filepath.Join(dir, "schema", "000002_test.sql"), []byte("CREATE TABLE test;"), 0644)
-	os.WriteFile(filepath.Join(dir, "layout.yaml"), []byte("templates:"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "template.yaml"), []byte("name: test\nkind: kitex\n"), 0644)
+	_ = os.MkdirAll(filepath.Join(dir, "kitex-template"), 0755)
+	_ = os.WriteFile(filepath.Join(dir, "kitex-template", "test.yaml"), []byte("path: test.go\nbody: test\n"), 0644)
+	_ = os.MkdirAll(filepath.Join(dir, "schema"), 0755)
+	_ = os.WriteFile(filepath.Join(dir, "schema", "000002_test.sql"), []byte("CREATE TABLE test;"), 0644)
+	_ = os.WriteFile(filepath.Join(dir, "layout.yaml"), []byte("templates:"), 0644)
 	pkg, err := LoadPackage(dir, "kitex")
 	if err != nil {
 		t.Fatalf("LoadPackage: %v", err)
