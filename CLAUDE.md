@@ -39,6 +39,7 @@ pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push
 main.go              → cli.Main()
 internal/cli/         → Cobra CLI commands: version, new, add, ai, i18n, protolint, doctor, mcp, upgrade, extract
 internal/mcp/         → MCP stdio server (JSON-RPC 2.0). Tools in tools.go: ncgo_version, ncgo_doctor, ncgo_ai_*, ncgo_i18n_*, ncgo_protolint, ncgo_add_*
+internal/orchestrator/ → CLI/MCP shared orchestration layer: RunAddInfra/RunAddDomain/RunAddMethod/RunAddRuleCenter, RunAIInitClaude/RunAISync, RunDoctor, RunI18nReport/RunI18nCheck, RunProtolint
 internal/scaffold/    → Scaffold generators
   mono/             → Mono service generation (Hertz/Kitex) with golden tests
   micro/            → Micro workspace generation
@@ -49,10 +50,12 @@ internal/scaffold/    → Scaffold generators
   method/           → Method stub insertion at ncgo anchors
   shared/           → Shared helpers (container files, docker, precommit)
 internal/assets/_data/ → Embedded templates (hertz/, kitex/, optional/, docs/)
+internal/registry/    → Template registry client: mirrors ncgo-templates repo to local cache; used by `ncgo template` / `ncgo new --template`
 internal/manifest/    → Manifest/workspace YAML handling
 internal/doctor/      → Diagnostic checks
 internal/protolint/   → Proto lint rules
 internal/ai/          → AI context sync and init
+internal/scan/        → Scans generated service code (domain/usecase/anchor consistency); used by `ncgo check` and ncgo_ai_context MCP tool
 internal/upgrade/     → Manifest metadata updates
 internal/extract/     → Domain extraction (mono-to-micro)
 internal/exec/        → External command execution (hz/kitex)
