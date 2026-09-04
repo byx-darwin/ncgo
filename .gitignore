@@ -8,7 +8,11 @@
 
 # Worktrees
 .worktrees/
+.worktree/
 .claude/worktrees/
+
+# Local workflow/tool cache (gf-workflow contracts, bug-report queue, etc.)
+.cache/
 
 # Go
 /dist/
