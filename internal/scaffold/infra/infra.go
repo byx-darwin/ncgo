@@ -45,23 +45,132 @@ const (
 	KindPolarisAdapterAlias = "polaris-adapter"
 )
 
+// Plugin describes one `ncgo add infra <kind>` add-on. Concrete plugin types
+// live in plugin_<kind>.go and self-register via Register() in an init().
+type Plugin interface {
+	Kind() string
+	Aliases() []string
+	// ServiceScope reports which manifest.Kind values this plugin supports:
+	// "common" (both hertz and kitex), "hertz", or "kitex".
+	ServiceScope() string
+	GoGetDeps() []string
+	// SetupSteps returns an explicit next-steps override, or nil to derive
+	// the default (go get GoGetDeps + hertz config note + "go mod tidy").
+	SetupSteps() []string
+	// HertzConfigKey returns the conf/dev/conf.yaml top-level key this
+	// plugin's Hertz config snippet writes under, or "" if it has none.
+	HertzConfigKey() string
+	AssetFiles(serviceKind string) ([]addOnFile, error)
+}
+
+// extraFilesPlugin is an optional capability: plugins that need to append
+// files conditioned on project state (e.g. redis's Hertz shared helper)
+// implement it.
+type extraFilesPlugin interface {
+	ExtraFiles(root, serviceKind string) ([]addOnFile, error)
+}
+
+// hertzServerWirer, kitexServerWirer, kitexClientWirer are optional
+// capabilities for --wire support. A plugin implements only the hooks
+// relevant to it; the absence of an interface means that wire target is a
+// no-op for that kind, matching the current switch statements having no
+// case for it.
+type hertzServerWirer interface {
+	WireHertzServer(src, module string, plan *[]PlanItem) (string, error)
+}
+
+type kitexServerWirer interface {
+	WireKitexServer(src, module string, plan *[]PlanItem) (string, error)
+}
+
+type kitexClientWirer interface {
+	WireKitexClient(src, module string, plan *[]PlanItem) (string, error)
+}
+
+// pluginRegistry is a lookup table from kind or alias to Plugin. The zero
+// value is not usable; construct with newRegistry.
+type pluginRegistry struct {
+	byName map[string]Plugin // canonical Kind() -> Plugin
+	alias  map[string]string // alias -> canonical Kind()
+}
+
+func newRegistry() *pluginRegistry {
+	return &pluginRegistry{byName: map[string]Plugin{}, alias: map[string]string{}}
+}
+
+func (r *pluginRegistry) register(p Plugin) {
+	if _, exists := r.byName[p.Kind()]; exists {
+		panic(fmt.Sprintf("infra: duplicate plugin registration for kind %q", p.Kind()))
+	}
+	r.byName[p.Kind()] = p
+	for _, a := range p.Aliases() {
+		if _, exists := r.alias[a]; exists {
+			panic(fmt.Sprintf("infra: duplicate plugin alias registration for %q", a))
+		}
+		r.alias[a] = p.Kind()
+	}
+}
+
+func (r *pluginRegistry) byKind(kindOrAlias string) (Plugin, bool) {
+	if p, ok := r.byName[kindOrAlias]; ok {
+		return p, true
+	}
+	if canonical, ok := r.alias[kindOrAlias]; ok {
+		p, ok := r.byName[canonical]
+		return p, ok
+	}
+	return nil, false
+}
+
+var pluginRegistryInstance = newRegistry()
+
+// Register adds a plugin to the package-level registry. Called from each
+// plugin file's init(). Panics on duplicate Kind()/alias — the plugin set
+// is closed and known at compile time, so a collision is a programming
+// error, not a runtime condition to recover from.
+func Register(p Plugin) { pluginRegistryInstance.register(p) }
+
+func pluginByKind(kind string) (Plugin, bool) { return pluginRegistryInstance.byKind(kind) }
+
 // SupportedKinds returns all add-on names in canonical order. Some kinds are
 // service-kind specific; Add validates that after loading the manifest.
 func SupportedKinds() []string {
 	return []string{KindRedis, KindKafka, KindES, KindClickHouse, KindObservabilityLog, KindLoggingAlias, KindReleaseCanary, KindCanaryAlias, KindRegistryPolaris, KindRateLimit, KindRateLimitAlias, KindPolarisAdapter, KindPolarisAdapterAlias}
 }
 
+// kindOrder is the canonical dispatch/iteration order for kinds and their
+// aliases, matching SupportedKinds().
+var kindOrder = []string{
+	KindRedis, KindKafka, KindES, KindClickHouse,
+	KindObservabilityLog, KindLoggingAlias,
+	KindReleaseCanary, KindCanaryAlias,
+	KindRegistryPolaris,
+	KindRateLimit, KindRateLimitAlias,
+	KindPolarisAdapter, KindPolarisAdapterAlias,
+}
+
 func commonKinds() []string {
-	return []string{KindRedis, KindKafka, KindES, KindClickHouse, KindObservabilityLog, KindReleaseCanary}
+	out := make([]string, 0, 6)
+	for _, kind := range kindOrder {
+		p, ok := pluginByKind(kind)
+		if !ok || p.Kind() != kind { // skip aliases, only canonical kinds
+			continue
+		}
+		if p.ServiceScope() == "common" {
+			out = append(out, kind)
+		}
+	}
+	return out
 }
 
 func kitexOnlyKinds() []string {
 	return []string{KindRegistryPolaris, KindRateLimit, KindPolarisAdapter}
 }
 
-// goGetDeps is the source of truth for `go get` dependency next-steps. Keeping
-// it here rather than parsing the file header avoids relying on free-form
-// comments.
+// goGetDeps mirrors each plugin's GoGetDeps() in canonical dispatch order.
+// Production code derives next-steps from the registry (see nextSteps);
+// this map is retained only because internal/scaffold/infra/infra_test.go
+// asserts against it directly.
 var goGetDeps = map[string][]string{
 	KindRedis:           {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common"},
 	KindKafka:           {"github.com/byx-darwin/go-tools/go-middleware", "github.com/byx-darwin/go-tools/go-common", "github.com/byx-darwin/go-tools/go-framework"},
@@ -74,51 +183,9 @@ var goGetDeps = map[string][]string{
 	KindPolarisAdapter: {"github.com/polarismesh/polaris-go", "gopkg.in/yaml.v3", "github.com/byx-darwin/go-tools/go-common", "go.opentelemetry.io/otel", "go.opentelemetry.io/otel/metric"},
 }
 
-var setupSteps = map[string][]string{
-	KindRateLimit: {
-		"review conf/dev/conf.yaml rate_limit block (source.type: config|database|rule_center)",
-		"observe shadow logs (grep 'ratelimit shadow denied'), then set mode: enforce",
-		"optional: set static.max_qps / static.max_connections for a global safety net",
-		"go mod tidy",
-	},
-	KindPolarisAdapter: {
-		"go get github.com/polarismesh/polaris-go",
-		"go get gopkg.in/yaml.v3",
-		"go get github.com/byx-darwin/go-tools/go-common",
-		"go get go.opentelemetry.io/otel/metric",
-		"set POLARIS_TOKEN / POLARIS_NAMESPACE env vars (never hardcode credentials)",
-		"wire release.NewPolarisSelector(...) into KitexCanaryLoadBalancer.RuleProvider",
-		"verify kitex resolver returns full stable+canary instance set (see troubleshooting)",
-		"go mod tidy",
-	},
-}
-
-var commonAssetKinds = map[string]bool{
-	KindObservabilityLog: true,
-	KindReleaseCanary:    true,
-}
-
-var outputRelPaths = map[string]string{
-	KindRedis:            filepath.Join("internal", "base", "data", "redis.go"),
-	KindKafka:            filepath.Join("internal", "base", "data", "kafka.go"),
-	KindES:               filepath.Join("internal", "base", "data", "es.go"),
-	KindClickHouse:       filepath.Join("internal", "base", "data", "clickhouse.go"),
-	KindRegistryPolaris:  filepath.Join("internal", "base", "registry", "polaris.go"),
-	KindObservabilityLog: filepath.Join("internal", "base", "logging", "logging.go"),
-	KindReleaseCanary:    filepath.Join("internal", "base", "release", "canary.go"),
-	KindPolarisAdapter:   filepath.Join("internal", "base", "release", "polaris_adapter.go"),
-}
-
 const hertzRedisSharedHelperRelPath = "internal/base/data/redis_shared.go"
 
 const hertzConfigRelPath = "conf/dev/conf.yaml"
-
-var hertzConfigSnippetKeys = map[string]string{
-	KindRedis:      "redis",
-	KindKafka:      "kafka",
-	KindES:         "es",
-	KindClickHouse: "clickhouse",
-}
 
 // Options configures Add.
 type Options struct {
@@ -166,9 +233,14 @@ func Add(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	files, err = appendHertzRedisHelperIfMissing(files, root, m.Service.Kind, kind)
-	if err != nil {
-		return nil, err
+	if pl, ok := pluginByKind(kind); ok {
+		if p, ok := pl.(extraFilesPlugin); ok {
+			extra, err := p.ExtraFiles(root, m.Service.Kind)
+			if err != nil {
+				return nil, err
+			}
+			files = append(files, extra...)
+		}
 	}
 	if opts.Wire && !wireSupportedKind(kind) {
 		return nil, unsupportedWireError()
@@ -284,74 +356,11 @@ type plannedWrite struct {
 }
 
 func assetFiles(serviceKind, infraKind string) ([]addOnFile, error) {
-	if infraKind == KindRateLimit {
-		if serviceKind != manifest.KindKitex {
-			return nil, fmt.Errorf("infra: kind %q is only supported for kitex services", infraKind)
-		}
-		return rateLimitAssetFiles()
-	}
-	if infraKind == KindRegistryPolaris {
-		if serviceKind != manifest.KindKitex {
-			return nil, fmt.Errorf("infra: kind %q is only supported for kitex services", infraKind)
-		}
-		return []addOnFile{
-			{SourcePath: "kitex/optional/registry_polaris.go", OutputRelPath: outputRelPaths[KindRegistryPolaris]},
-			{SourcePath: "kitex/optional/registry_polaris.yaml", OutputRelPath: "polaris.yaml"},
-		}, nil
-	}
-	if infraKind == KindPolarisAdapter {
-		if serviceKind != manifest.KindKitex {
-			return nil, fmt.Errorf("infra: kind %q is only supported for kitex services", infraKind)
-		}
-		return []addOnFile{
-			{SourcePath: "kitex/optional/polaris_canary_adapter.go", OutputRelPath: outputRelPaths[KindPolarisAdapter]},
-			{SourcePath: "kitex/optional/polaris_canary_observer_otel.go", OutputRelPath: filepath.Join("internal", "base", "release", "polaris_observer_otel.go")},
-		}, nil
-	}
-	if infraKind == KindObservabilityLog || infraKind == KindReleaseCanary {
-		files := []addOnFile{{
-			SourcePath:    "optional/" + infraKind + ".go",
-			OutputRelPath: outputRelPaths[infraKind],
-		}}
-		adapterName := frameworkAdapterName(infraKind, serviceKind)
-		switch serviceKind {
-		case manifest.KindHertz:
-			files = append(files, addOnFile{SourcePath: serviceKind + "/optional/" + infraKind + ".go", OutputRelPath: adapterName})
-		case manifest.KindKitex:
-			files = append(files, addOnFile{SourcePath: serviceKind + "/optional/" + infraKind + ".go", OutputRelPath: adapterName})
-		default:
-			return nil, fmt.Errorf("infra: unsupported service kind %q", serviceKind)
-		}
-		if infraKind == KindReleaseCanary {
-			files = append(files, addOnFile{
-				SourcePath:    "optional/release_ops.go",
-				OutputRelPath: filepath.Join("internal", "base", "release", "ops.go"),
-			})
-		}
-		return files, nil
-	}
-	srcPath, err := assetPath(serviceKind, infraKind)
-	if err != nil {
-		return nil, err
-	}
-	rel, ok := outputRelPaths[infraKind]
+	p, ok := pluginByKind(infraKind)
 	if !ok {
-		return nil, fmt.Errorf("infra: kind %q has no output path", infraKind)
+		return nil, fmt.Errorf("infra: kind %q is invalid; want one of %v", infraKind, SupportedKinds())
 	}
-	return []addOnFile{{SourcePath: srcPath, OutputRelPath: rel}}, nil
-}
-
-func appendHertzRedisHelperIfMissing(files []addOnFile, root, serviceKind, infraKind string) ([]addOnFile, error) {
-	if serviceKind != manifest.KindHertz || infraKind != KindRedis {
-		return files, nil
-	}
-	helperPath := filepath.Join(root, filepath.FromSlash(hertzRedisSharedHelperRelPath))
-	if _, err := os.Stat(helperPath); err == nil {
-		return files, nil
-	} else if err != nil && !errors.Is(err, fs.ErrNotExist) {
-		return nil, fmt.Errorf("infra: stat %s: %w", helperPath, err)
-	}
-	return append(files, addOnFile{SourcePath: "hertz/optional/redis_shared.go", OutputRelPath: filepath.FromSlash(hertzRedisSharedHelperRelPath)}), nil
+	return p.AssetFiles(serviceKind)
 }
 
 func renderAssetBody(body []byte, module string) []byte {
@@ -367,7 +376,8 @@ func planHertzConfigWrite(root, serviceKind, infraKind string, force bool) (*pla
 	if serviceKind != manifest.KindHertz {
 		return nil, nil
 	}
-	if _, ok := hertzConfigSnippetKeys[infraKind]; !ok {
+	p, ok := pluginByKind(infraKind)
+	if !ok || p.HertzConfigKey() == "" {
 		return nil, nil
 	}
 	snippet, err := fs.ReadFile(assets.FS(), filepath.ToSlash(filepath.Join("hertz", "optional-config", infraKind+".yaml")))
@@ -386,7 +396,7 @@ func planHertzConfigWrite(root, serviceKind, infraKind string, force bool) (*pla
 		}
 		return nil, fmt.Errorf("infra: read %s: %w", path, err)
 	}
-	merged, changed, err := mergeHertzConfig(current, string(snippet), infraKind, force)
+	merged, changed, err := mergeHertzConfig(current, string(snippet), infraKind, p.HertzConfigKey(), force)
 	if err != nil {
 		return nil, err
 	}
@@ -396,7 +406,7 @@ func planHertzConfigWrite(root, serviceKind, infraKind string, force bool) (*pla
 	return &plannedWrite{Path: path, Body: []byte(merged), Action: "update"}, nil
 }
 
-func mergeHertzConfig(current []byte, snippet, infraKind string, force bool) (string, bool, error) {
+func mergeHertzConfig(current []byte, snippet, infraKind, hertzConfigKey string, force bool) (string, bool, error) {
 	src := string(current)
 	startMarker, endMarker := hertzConfigMarkers(infraKind)
 	if strings.Contains(src, startMarker) || strings.Contains(src, endMarker) {
@@ -408,7 +418,7 @@ func mergeHertzConfig(current []byte, snippet, infraKind string, force bool) (st
 		}
 		return replaceMarkedHertzConfigBlock(src, wrapHertzConfigSnippet(snippet, infraKind), startMarker, endMarker)
 	}
-	if hasTopLevelConfigKey(src, hertzConfigSnippetKeys[infraKind]) {
+	if hasTopLevelConfigKey(src, hertzConfigKey) {
 		return src, false, nil
 	}
 	block := wrapHertzConfigSnippet(snippet, infraKind)
@@ -480,54 +490,10 @@ func frameworkAdapterName(infraKind, serviceKind string) string {
 }
 
 func normalizeKind(kind string) (string, error) {
-	if kind == KindLoggingAlias {
-		return KindObservabilityLog, nil
-	}
-	if kind == KindCanaryAlias {
-		return KindReleaseCanary, nil
-	}
-	if kind == KindRateLimitAlias {
-		return KindRateLimit, nil
-	}
-	if kind == KindPolarisAdapterAlias {
-		return KindPolarisAdapter, nil
-	}
-	for _, k := range SupportedKinds() {
-		if kind == k {
-			return kind, nil
-		}
+	if p, ok := pluginByKind(kind); ok {
+		return p.Kind(), nil
 	}
 	return "", fmt.Errorf("infra: kind %q is invalid; want one of %v", kind, SupportedKinds())
-}
-
-func isKitexOnly(kind string) bool {
-	for _, k := range kitexOnlyKinds() {
-		if kind == k {
-			return true
-		}
-	}
-	return false
-}
-
-// assetPath maps (service.kind, infra kind) to the embedded asset path. Common
-// add-ons may live under optional/ or under both hertz/optional and
-// kitex/optional. Kitex-only add-ons are rejected for Hertz before attempting to
-// read a non-existent asset file.
-func assetPath(serviceKind, infraKind string) (string, error) {
-	if commonAssetKinds[infraKind] {
-		return "optional/" + infraKind + ".go", nil
-	}
-	switch serviceKind {
-	case manifest.KindHertz:
-		if isKitexOnly(infraKind) {
-			return "", fmt.Errorf("infra: kind %q is only supported for kitex services", infraKind)
-		}
-		return serviceKind + "/optional/" + infraKind + ".go", nil
-	case manifest.KindKitex:
-		return serviceKind + "/optional/" + infraKind + ".go", nil
-	default:
-		return "", fmt.Errorf("infra: unsupported service kind %q", serviceKind)
-	}
 }
 
 func plannedFileAction(path string, force bool) (string, error) {
@@ -594,7 +560,11 @@ func buildPlan(filePlans []PlanItem, manifestUpdated bool, wire bool, wiredPaths
 }
 
 func nextSteps(kind, serviceKind, serviceName string) []string {
-	if steps, ok := setupSteps[kind]; ok {
+	p, ok := pluginByKind(kind)
+	if !ok {
+		return []string{"go mod tidy"}
+	}
+	if steps := p.SetupSteps(); steps != nil {
 		out := append([]string(nil), steps...)
 		if serviceName != "" {
 			for i, step := range out {
@@ -605,14 +575,12 @@ func nextSteps(kind, serviceKind, serviceName string) []string {
 		}
 		return out
 	}
-	steps := make([]string, 0, len(goGetDeps[kind])+1)
-	for _, dep := range goGetDeps[kind] {
+	steps := make([]string, 0, len(p.GoGetDeps())+1)
+	for _, dep := range p.GoGetDeps() {
 		steps = append(steps, "go get "+dep)
 	}
-	if serviceKind == manifest.KindHertz {
-		if key, ok := hertzConfigSnippetKeys[kind]; ok {
-			steps = append(steps, "review "+filepath.FromSlash(hertzConfigRelPath)+" and complete the `"+key+"` section for local config or your config-center payload")
-		}
+	if serviceKind == manifest.KindHertz && p.HertzConfigKey() != "" {
+		steps = append(steps, "review "+filepath.FromSlash(hertzConfigRelPath)+" and complete the `"+p.HertzConfigKey()+"` section for local config or your config-center payload")
 	}
 	steps = append(steps, "go mod tidy")
 	return steps
@@ -845,4 +813,18 @@ func mergeKitexRateLimitConfig(src string) (string, bool) {
 		return src, false
 	}
 	return strings.Join(lines, "\n"), true
+}
+
+// frameworkAssetFiles builds an AssetFiles implementation for plugins whose
+// asset is a single file living under hertz/optional/ or kitex/optional/
+// depending on serviceKind, written to a fixed outputRelPath.
+func frameworkAssetFiles(infraKind, outputRelPath string) func(serviceKind string) ([]addOnFile, error) {
+	return func(serviceKind string) ([]addOnFile, error) {
+		switch serviceKind {
+		case manifest.KindHertz, manifest.KindKitex:
+			return []addOnFile{{SourcePath: serviceKind + "/optional/" + infraKind + ".go", OutputRelPath: outputRelPath}}, nil
+		default:
+			return nil, fmt.Errorf("infra: unsupported service kind %q", serviceKind)
+		}
+	}
 }

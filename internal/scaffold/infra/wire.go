@@ -59,7 +59,20 @@ func wire(root, module, serviceKind, kind string, dryRun bool) (*wireResult, err
 }
 
 func wireSupportedKind(kind string) bool {
-	return kind == KindObservabilityLog || kind == KindReleaseCanary || kind == KindRegistryPolaris || kind == KindRateLimit
+	p, ok := pluginByKind(kind)
+	if !ok {
+		return false
+	}
+	if _, ok := p.(hertzServerWirer); ok {
+		return true
+	}
+	if _, ok := p.(kitexServerWirer); ok {
+		return true
+	}
+	if _, ok := p.(kitexClientWirer); ok {
+		return true
+	}
+	return false
 }
 
 func unsupportedWireError() error {
@@ -91,39 +104,15 @@ func wireHertz(root, module, kind string, dryRun bool) (*wireResult, error) {
 	}
 	s := string(body)
 	plan := []PlanItem(nil)
-	switch kind {
-	case KindObservabilityLog:
-		s, err = addGoImportWithPlan(s, module+"/internal/base/logging", path, &plan)
-		if err != nil {
-			return nil, err
-		}
-		s, err = insertOnceMarkerOrAnchorWithPlan(s, "logging.Init(", markerLoggingInit, "\tdo.ProvideValue(injector, cfg)\n", hertzLoggingInit(), path, &plan, "insert_logging_init", "logging.Init")
-		if err != nil {
-			return nil, err
-		}
-		s, err = replaceOnceStrictWithPlan(s, "h.Use(logging.HertzRecovery())", "h.Use(middleware.Recovery())", "h.Use(logging.HertzRecovery())", path, &plan, "hertz recovery")
-		if err != nil {
-			return nil, err
-		}
-		s, err = replaceOnceStrictWithPlan(s, "h.Use(logging.HertzRequestID())", "h.Use(middleware.RequestID())", "h.Use(logging.HertzRequestID())", path, &plan, "hertz request id")
-		if err != nil {
-			return nil, err
-		}
-		s, err = replaceOnceStrictWithPlan(s, "h.Use(logging.HertzAccessLog())", "h.Use(middleware.AccessLog())", "h.Use(logging.HertzAccessLog())", path, &plan, "hertz access log")
-		if err != nil {
-			return nil, err
-		}
-	case KindReleaseCanary:
-		s, err = addGoImportWithPlan(s, module+"/internal/base/release", path, &plan)
-		if err != nil {
-			return nil, err
-		}
-		s, err = insertAfterMarkerOrAnyWithPlan(s, "release.HertzTraffic()", markerCanaryServerTraffic, []string{
-			"\th.Use(logging.HertzRequestID())\n",
-			"\th.Use(middleware.RequestID())\n",
-		}, hertzCanaryTraffic(), path, &plan, "insert_traffic_middleware", "release.HertzTraffic")
-		if err != nil {
-			return nil, err
+	if p, ok := pluginByKind(kind); ok {
+		if w, ok := p.(hertzServerWirer); ok {
+			s, err = w.WireHertzServer(s, module, &plan)
+			if err != nil {
+				return nil, err
+			}
+			for i := range plan {
+				plan[i].Path = path
+			}
 		}
 	}
 	written, err := writeFormatted(path, []byte(s), dryRun)
@@ -143,68 +132,15 @@ func wireKitex(root, module, kind string, dryRun bool) (*wireResult, error) {
 	}
 	s := string(body)
 	serverPlan := []PlanItem(nil)
-	switch kind {
-	case KindObservabilityLog:
-		s, err = addGoImportWithPlan(s, module+"/internal/base/logging", serverPath, &serverPlan)
-		if err != nil {
-			return nil, err
-		}
-		s, err = insertOnceMarkerOrAnchorWithPlan(s, "logging.Init(", markerLoggingInit, "\tif cfg == nil {\n\t\tcfg = conf.Default()\n\t}\n", kitexLoggingInit(), serverPath, &serverPlan, "insert_logging_init", "logging.Init")
-		if err != nil {
-			return nil, err
-		}
-		s, err = replaceOnceStrictWithPlan(s, "logging.KitexRequestID(),", "interceptor.RequestID(),", "logging.KitexRequestID(),", serverPath, &serverPlan, "kitex request id")
-		if err != nil {
-			return nil, err
-		}
-		s, err = replaceOnceStrictWithPlan(s, "logging.KitexAccessLog(),", "interceptor.AccessLog(),", "logging.KitexAccessLog(),", serverPath, &serverPlan, "kitex access log")
-		if err != nil {
-			return nil, err
-		}
-		s, err = replaceOnceStrictWithPlan(s, "logging.KitexRecovery(),", "interceptor.Recovery(),", "logging.KitexRecovery(),", serverPath, &serverPlan, "kitex recovery")
-		if err != nil {
-			return nil, err
-		}
-	case KindReleaseCanary:
-		s, err = addGoImportWithPlan(s, module+"/internal/base/release", serverPath, &serverPlan)
-		if err != nil {
-			return nil, err
-		}
-		s, err = insertAfterMarkerOrAnyWithPlan(s, "release.KitexTraffic()", markerCanaryServerTraffic, []string{
-			"\t\t\tlogging.KitexRequestID(),\n",
-			"\t\t\tinterceptor.RequestID(),\n",
-		}, "\t\t\trelease.KitexTraffic(),\n", serverPath, &serverPlan, "insert_traffic_middleware", "release.KitexTraffic")
-		if err != nil {
-			return nil, err
-		}
-	case KindRegistryPolaris:
-		s, err = addGoImportWithPlan(s, module+"/internal/base/registry", serverPath, &serverPlan)
-		if err != nil {
-			return nil, err
-		}
-		s, err = insertOnceMarkerOrAnchorWithPlan(s, "kitexserver.WithRegistry(", markerRegistryServer, "\topts = append(opts, extraOptions...)\n", kitexRegistryServer(), serverPath, &serverPlan, "insert_registry_server", "registry.NewRegistry")
-		if err != nil {
-			return nil, err
-		}
-	case KindRateLimit:
-		s, err = addGoImportWithPlan(s, module+"/internal/base/middleware", serverPath, &serverPlan)
-		if err != nil {
-			return nil, err
-		}
-		// The exists sentinel is the exact inserted form (tab-indented call
-		// followed by newline). The template ships a hint comment
-		// `// middleware.RateLimit(cfg.RateLimit),` which MUST NOT satisfy
-		// this check — prefixing with tabs guarantees only real wired code
-		// matches (the comment has `// ` between the tabs and the call).
-		s, err = insertAfterMarkerOrAnyWithPlan(s, "\t\t\tmiddleware.RateLimit(cfg.RateLimit),\n", markerRateLimitServerMiddleware, []string{
-			"\t\t\tinterceptor.RequestID(),\n",
-		}, "\t\t\tmiddleware.RateLimit(cfg.RateLimit),\n", serverPath, &serverPlan, "insert_ratelimit_middleware", "middleware.RateLimit")
-		if err != nil {
-			return nil, err
-		}
-		s, err = insertOnceMarkerOrAnchorWithPlan(s, "middleware.StaticLimitOption(", markerRateLimitStaticLimit, "\topts = append(opts, extraOptions...)\n", "\tif opt := middleware.StaticLimitOption(cfg.RateLimit.Static); opt != nil {\n\t\topts = append(opts, opt)\n\t}\n", serverPath, &serverPlan, "insert_ratelimit_static", "middleware.StaticLimitOption")
-		if err != nil {
-			return nil, err
+	if p, ok := pluginByKind(kind); ok {
+		if w, ok := p.(kitexServerWirer); ok {
+			s, err = w.WireKitexServer(s, module, &serverPlan)
+			if err != nil {
+				return nil, err
+			}
+			for i := range serverPlan {
+				serverPlan[i].Path = serverPath
+			}
 		}
 	}
 	written, err := writeFormatted(serverPath, []byte(s), dryRun)
@@ -237,35 +173,15 @@ func wireKitexClient(path, module, kind string, dryRun bool) (*wireResult, error
 	}
 	s := string(body)
 	plan := []PlanItem(nil)
-	anchor := "\tif cfg.EnableMetaInfo {\n\t\toptions = append(options, kitexclient.WithMetaHandler(transmeta.ClientTTHeaderHandler))\n\t}\n"
-	switch kind {
-	case KindObservabilityLog:
-		s, err = addGoImportWithPlan(s, module+"/internal/base/logging", path, &plan)
-		if err != nil {
-			return nil, err
-		}
-		loggingBlock := "\toptions = append(options, kitexclient.WithMiddleware(endpoint.Chain(\n\t\tlogging.KitexRequestID(),\n\t\tlogging.KitexAccessLog(),\n\t)))\n"
-		s, err = insertOnceMarkerOrAnchorWithPlan(s, "logging.KitexAccessLog()", markerKitexClientMiddleware, anchor, loggingBlock, path, &plan, "insert_client_middleware", "logging.KitexAccessLog")
-		if err != nil {
-			return nil, err
-		}
-	case KindReleaseCanary:
-		s, err = addGoImportWithPlan(s, module+"/internal/base/release", path, &plan)
-		if err != nil {
-			return nil, err
-		}
-		s, err = insertOnceMarkerOrAnchorWithPlan(s, "release.KitexTraffic()", markerKitexClientMiddleware, anchor, "\toptions = append(options, kitexclient.WithMiddleware(release.KitexTraffic()))\n", path, &plan, "insert_client_middleware", "release.KitexTraffic")
-		if err != nil {
-			return nil, err
-		}
-	case KindRegistryPolaris:
-		s, err = addGoImportWithPlan(s, module+"/internal/base/registry", path, &plan)
-		if err != nil {
-			return nil, err
-		}
-		s, err = insertOnceMarkerOrAnchorWithPlan(s, "kitexclient.WithResolver(", markerRegistryClient, anchor, kitexRegistryClient(), path, &plan, "insert_registry_client", "registry.NewResolver")
-		if err != nil {
-			return nil, err
+	if p, ok := pluginByKind(kind); ok {
+		if w, ok := p.(kitexClientWirer); ok {
+			s, err = w.WireKitexClient(s, module, &plan)
+			if err != nil {
+				return nil, err
+			}
+			for i := range plan {
+				plan[i].Path = path
+			}
 		}
 	}
 	written, err := writeFormatted(path, []byte(s), dryRun)
