@@ -142,6 +142,7 @@ func TestServeToolCallVersion(t *testing.T) {
 }
 
 func TestServeToolCallDoctor(t *testing.T) {
+	allowAnyRootForTest(t)
 	old := runDoctorReport
 	runDoctorReport = func(context.Context, doctor.Options) *doctor.Report {
 		return &doctor.Report{
@@ -190,6 +191,7 @@ func TestServeToolCallDoctor(t *testing.T) {
 }
 
 func TestServeToolCallDoctorSARIF(t *testing.T) {
+	allowAnyRootForTest(t)
 	old := runDoctorReport
 	runDoctorReport = func(context.Context, doctor.Options) *doctor.Report {
 		return &doctor.Report{
@@ -229,6 +231,7 @@ func TestServeToolCallDoctorSARIF(t *testing.T) {
 }
 
 func TestServeToolCallDoctorInvalidOutput(t *testing.T) {
+	allowAnyRootForTest(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "ncgo_doctor", "arguments": map[string]any{"root": "/repo/demo", "output": "xml"}},
@@ -251,6 +254,7 @@ func TestServeToolCallDoctorInvalidOutput(t *testing.T) {
 }
 
 func TestServeToolCallAIInitClaude(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := t.TempDir()
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -282,6 +286,7 @@ func TestServeToolCallAIInitClaude(t *testing.T) {
 }
 
 func TestServeToolCallAIInitClaudeJSON(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := t.TempDir()
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -310,6 +315,7 @@ func TestServeToolCallAIInitClaudeJSON(t *testing.T) {
 }
 
 func TestServeToolCallAIInitClaudeInvalidOutput(t *testing.T) {
+	allowAnyRootForTest(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "ncgo_ai_init_claude", "arguments": map[string]any{"root": "/repo/demo", "output": "xml"}},
@@ -332,6 +338,7 @@ func TestServeToolCallAIInitClaudeInvalidOutput(t *testing.T) {
 }
 
 func TestServeToolCallAISyncIncludesStructuredFields(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPProtoWorkspace(t)
 	serviceRoot := filepath.Join(root, "services", "user-rpc")
 	input := EncodeMessage(map[string]any{
@@ -373,6 +380,7 @@ func TestServeToolCallAISyncIncludesStructuredFields(t *testing.T) {
 }
 
 func TestServeToolCallAISyncJSON(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPProtoWorkspace(t)
 	serviceRoot := filepath.Join(root, "services", "user-rpc")
 	input := EncodeMessage(map[string]any{
@@ -402,6 +410,7 @@ func TestServeToolCallAISyncJSON(t *testing.T) {
 }
 
 func TestServeToolCallAISyncTargetParam(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -426,6 +435,7 @@ func TestServeToolCallAISyncTargetParam(t *testing.T) {
 }
 
 func TestServeToolCallAISyncInvalidOutput(t *testing.T) {
+	allowAnyRootForTest(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
 		"params": map[string]any{"name": "ncgo_ai_sync", "arguments": map[string]any{"root": "/repo/demo", "output": "xml"}},
@@ -478,6 +488,7 @@ func TestServeToolListHasAIContext(t *testing.T) {
 }
 
 func TestServeToolCallAIContext(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedAIContextProject(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -513,6 +524,7 @@ func TestServeToolCallAIContext(t *testing.T) {
 }
 
 func TestServeToolCallAIContextNoManifest(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := t.TempDir()
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -533,6 +545,7 @@ func TestServeToolCallAIContextNoManifest(t *testing.T) {
 }
 
 func TestServeToolCallAddInfra(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -581,6 +594,7 @@ func TestServeToolCallAddInfra(t *testing.T) {
 }
 
 func TestServeToolCallI18NReport(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPI18NProject(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -622,6 +636,7 @@ func TestServeToolCallI18NReport(t *testing.T) {
 }
 
 func TestServeToolCallI18NReportJSON(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPI18NProject(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -652,6 +667,7 @@ func TestServeToolCallI18NReportJSON(t *testing.T) {
 }
 
 func TestServeToolCallI18NReportMissing(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := t.TempDir()
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -675,6 +691,7 @@ func TestServeToolCallI18NReportMissing(t *testing.T) {
 }
 
 func TestServeToolCallI18NReportInvalidOutput(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPI18NProject(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -698,6 +715,7 @@ func TestServeToolCallI18NReportInvalidOutput(t *testing.T) {
 }
 
 func TestServeToolCallI18NCheckDev(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPI18NProject(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -733,6 +751,7 @@ func TestServeToolCallI18NCheckDev(t *testing.T) {
 }
 
 func TestServeToolCallI18NCheckJSON(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPI18NProject(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -760,6 +779,7 @@ func TestServeToolCallI18NCheckJSON(t *testing.T) {
 }
 
 func TestServeToolCallI18NCheckRelease(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPI18NCheckReleaseProject(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -789,6 +809,7 @@ func TestServeToolCallI18NCheckRelease(t *testing.T) {
 }
 
 func TestServeToolCallI18NCheckInvalidMode(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPI18NProject(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -812,6 +833,7 @@ func TestServeToolCallI18NCheckInvalidMode(t *testing.T) {
 }
 
 func TestServeToolCallI18NCheckInvalidOutput(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPI18NProject(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -835,6 +857,7 @@ func TestServeToolCallI18NCheckInvalidOutput(t *testing.T) {
 }
 
 func TestServeToolCallProtolintOK(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := mcpFixtureRoot(t, "..", "scaffold", "mono", "testdata", "mono-default", "idl")
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -870,6 +893,7 @@ func TestServeToolCallProtolintOK(t *testing.T) {
 }
 
 func TestServeToolCallProtolintFailure(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := mcpFixtureRoot(t, "..", "protolint", "testdata", "kitexenvelope")
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -899,6 +923,7 @@ func TestServeToolCallProtolintFailure(t *testing.T) {
 }
 
 func TestServeToolCallProtolintSARIF(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := mcpFixtureRoot(t, "..", "protolint", "testdata", "kitexenvelope")
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -926,6 +951,7 @@ func TestServeToolCallProtolintSARIF(t *testing.T) {
 }
 
 func TestServeToolCallProtolintWarningsAreNonBlocking(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := mcpFixtureRoot(t, "..", "protolint", "testdata", "phase2warnings")
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -955,6 +981,7 @@ func TestServeToolCallProtolintWarningsAreNonBlocking(t *testing.T) {
 }
 
 func TestServeToolCallProtolintIgnoreRule(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := mcpFixtureRoot(t, "..", "protolint", "testdata", "kitexenvelope")
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -987,6 +1014,7 @@ func TestServeToolCallProtolintIgnoreRule(t *testing.T) {
 }
 
 func TestServeToolCallProtolintWorkspaceAutoDiscovery(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPProtoWorkspace(t)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -1016,6 +1044,7 @@ func TestServeToolCallProtolintWorkspaceAutoDiscovery(t *testing.T) {
 }
 
 func TestServeToolCallProtolintInvalidArgs(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := mcpFixtureRoot(t, "..", "protolint", "testdata", "kitexenvelope")
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -1077,6 +1106,7 @@ func TestServeToolCallProtolintInvalidArgs(t *testing.T) {
 }
 
 func TestServeToolCallAddInfraDryRun(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -1125,6 +1155,7 @@ func TestServeToolCallAddInfraDryRun(t *testing.T) {
 }
 
 func TestServeToolCallAddInfraJSON(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -1152,6 +1183,7 @@ func TestServeToolCallAddInfraJSON(t *testing.T) {
 }
 
 func TestServeToolCallAddInfraInvalidOutput(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPProject(t, manifest.KindHertz)
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -1455,6 +1487,7 @@ func TestAddInfraToolKindEnumIncludesPolarisAdapter(t *testing.T) {
 }
 
 func TestServeToolCallNew(t *testing.T) {
+	allowAnyRootForTest(t)
 	dir := t.TempDir()
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -1488,6 +1521,7 @@ func TestServeToolCallNew(t *testing.T) {
 }
 
 func TestServeToolCallNewMicro(t *testing.T) {
+	allowAnyRootForTest(t)
 	dir := t.TempDir()
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
@@ -1595,6 +1629,7 @@ func TestServeToolCallAddDomainDryRun(t *testing.T) {
 }
 
 func TestServeToolCallAddMethodJSON(t *testing.T) {
+	allowAnyRootForTest(t)
 	root := seedMCPProject(t, manifest.KindHertz)
 	if _, err := domain.Add(domain.Options{Root: root, Name: "device"}); err != nil {
 		t.Fatalf("seed domain: %v", err)
@@ -1621,4 +1656,16 @@ func TestServeToolCallAddMethodJSON(t *testing.T) {
 			t.Errorf("add method json missing %q: %v", k, obj)
 		}
 	}
+}
+
+// allowAnyRootForTest relaxes the workspace-boundary check that sandboxRoot
+// enforces via resolvePath, for tests that use t.TempDir() or a sibling
+// package directory (both outside the internal/mcp package's cwd during `go
+// test`) as a stand-in workspace root. Mirrors the override already used by
+// tool_template_test.go for the same reason.
+func allowAnyRootForTest(t *testing.T) {
+	t.Helper()
+	orig := resolvePath
+	resolvePath = func(target string) (string, error) { return filepath.Abs(target) }
+	t.Cleanup(func() { resolvePath = orig })
 }

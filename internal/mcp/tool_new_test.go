@@ -151,6 +151,7 @@ func TestFormatMCPNewOutputNoAutoSteps(t *testing.T) {
 // TestServeToolCallNewAutoStepArgs verifies ncgo_new accepts aiTarget and
 // noAutoSteps args end-to-end and omits autoSteps when generation is skipped.
 func TestServeToolCallNewAutoStepArgs(t *testing.T) {
+	allowAnyRootForTest(t)
 	dir := t.TempDir()
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
