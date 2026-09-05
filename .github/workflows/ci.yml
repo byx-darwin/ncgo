@@ -28,6 +28,19 @@ jobs:
       - name: Download modules
         run: go mod download
 
+      - name: Install code-gen tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y protobuf-compiler
+          go install github.com/cloudwego/hertz/cmd/hz@v0.9.7
+          go install github.com/cloudwego/kitex/tool/cmd/kitex@v0.16.1
+          go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+          echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+          protoc --version
+          hz --version
+          kitex --version
+          sqlc version
+
       - name: Check formatting
         run: |
           unformatted="$(gofmt -l $(find . -name '*.go' -not -path './.git/*'))"
