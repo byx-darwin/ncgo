@@ -16,8 +16,12 @@ English version: [CONTRIBUTING.md](CONTRIBUTING.md)
 - Go `1.25+`
 - 如果会涉及 Hertz 生成流程：`hz >= v0.9.7`
 - 如果会涉及 Kitex 生成流程：`kitex >= v0.16.1`
+- 如果需要在本地运行数据库相关生成流程测试（`TestGenerateHertzWithDatabaseCompiles`、`TestGenerateKitexCompiles`）：`sqlc`，安装方式为 `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`
+- 任何涉及 IDL 代码生成或校验的流程都需要 `protoc`（Protocol Buffers 编译器）
 
 如果你当前只需要检查脚手架输入文件，优先使用 `--no-generate` 工作流。
+
+CI 现在会安装锁定版本的 `hz`/`kitex`/`protoc`/`sqlc`，并在每次 push 和 PR 时真实运行编译验证测试（`TestGenerateHertzCompiles`、`TestGenerateHertzWithDatabaseCompiles`、`TestGenerateKitexCompiles`），不再被静默跳过。具体版本见 `.github/workflows/ci.yml` 中的 `Install code-gen tools` 步骤。
 
 ## 本地检查
 
