@@ -144,7 +144,7 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if err := shared.WriteServiceContainerFiles(dir, defaultKind(opts.Kind)); err != nil {
 		return nil, err
 	}
-	if defaultKind(opts.Kind) == manifest.KindHertz && opts.WithDatabase {
+	if framework.MustGet(defaultKind(opts.Kind)).ComposeFeatures(opts.WithDatabase).Vegeta {
 		if err := shared.WriteVegetaDockerfile(dir); err != nil {
 			return nil, err
 		}
