@@ -12,79 +12,11 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scaffold/framework"
 	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
 	scaffoldtemplate "github.com/byx-darwin/ncgo/internal/scaffold/template"
 	"gopkg.in/yaml.v3"
 )
-
-const hertzAPIProto = `syntax = "proto2";
-
-package api;
-
-import "google/protobuf/descriptor.proto";
-
-option go_package = "/api";
-
-extend google.protobuf.FieldOptions {
-  optional string raw_body = 50101;
-  optional string query = 50102;
-  optional string header = 50103;
-  optional string cookie = 50104;
-  optional string body = 50105;
-  optional string path = 50106;
-  optional string vd = 50107;
-  optional string form = 50108;
-  optional string js_conv = 50109;
-  optional string file_name = 50110;
-  optional string none = 50111;
-
-  // 50131~50160 used to extend field option by hz
-  optional string form_compatible = 50131;
-  optional string js_conv_compatible = 50132;
-  optional string file_name_compatible = 50133;
-  optional string none_compatible = 50134;
-
-  optional string go_tag = 51001;
-}
-
-extend google.protobuf.MethodOptions {
-  optional string get = 50201;
-  optional string post = 50202;
-  optional string put = 50203;
-  optional string delete = 50204;
-  optional string patch = 50205;
-  optional string options = 50206;
-  optional string head = 50207;
-  optional string any = 50208;
-  optional string gen_path = 50301;
-  optional string api_version = 50302;
-  optional string tag = 50303;
-  optional string name = 50304;
-  optional string api_level = 50305;
-  optional string serializer = 50306;
-  optional string param = 50307;
-  optional string baseurl = 50308;
-  optional string handler_path = 50309;
-
-  // 50331~50360 used to extend method option by hz
-  optional string handler_path_compatible = 50331;
-}
-
-extend google.protobuf.EnumValueOptions {
-  optional int32 http_code = 50401;
-}
-
-extend google.protobuf.ServiceOptions {
-  optional string base_domain = 50402;
-
-  // 50731~50760 used to extend service option by hz
-  optional string base_domain_compatible = 50731;
-  optional string service_path = 50732;
-}
-
-extend google.protobuf.MessageOptions {
-  optional string reserve = 50830;
-}`
 
 // writeTemplate copies the kind-specific custom-template files from the
 // embedded snapshot into <dir>/template/. For hertz it also writes a
@@ -631,10 +563,7 @@ func overlayTemplatePackage(dir string, opts Options, pkg *scaffoldtemplate.Pack
 // mirroring defaultIDL so the rendered file lands on the generator's default
 // IDL path. Hertz uses the dashed lowercase name; Kitex the dash-stripped one.
 func idlNameToken(opts Options) string {
-	if defaultKind(opts.Kind) == manifest.KindKitex {
-		return kitexIDLBase(opts)
-	}
-	return strings.ToLower(opts.Name)
+	return framework.MustGet(defaultKind(opts.Kind)).IDLNameToken(framework.GeneratorOptions{Name: opts.Name, Module: opts.Module})
 }
 
 // writeIDLPlaceholder drops the starter IDL files into the scaffold.
@@ -648,10 +577,8 @@ func idlNameToken(opts Options) string {
 // IDL (kitex_gen/api/ratelimit/v1) on its first run instead of only after the
 // user runs `make update`. Any IDL that already exists on disk is left alone.
 func writeIDLPlaceholder(dir, idl string, opts Options) error {
-	if defaultKind(opts.Kind) == manifest.KindHertz {
-		if err := writeHertzProtoSupportFiles(dir); err != nil {
-			return err
-		}
+	if err := framework.MustGet(defaultKind(opts.Kind)).WriteIDLSupportFiles(dir); err != nil {
+		return err
 	}
 	full := filepath.Join(dir, filepath.FromSlash(idl))
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
@@ -697,132 +624,8 @@ func ruleCenterIDLBody(srcFS fs.FS) ([]byte, error) {
 	return []byte(tpl.Body), nil
 }
 
-func writeHertzProtoSupportFiles(dir string) error {
-	if err := writeHertzAPIProto(dir); err != nil {
-		return err
-	}
-	srcFS := assets.FS()
-	for _, name := range []string{"annotations.proto", "openapi.proto"} {
-		assetPath := filepath.ToSlash(filepath.Join("hertz", "openapi", name))
-		body, err := fs.ReadFile(srcFS, assetPath)
-		if err != nil {
-			return fmt.Errorf("scaffold: read embedded %s: %w", assetPath, err)
-		}
-		full := filepath.Join(dir, "idl", "openapi", name)
-		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-			return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(full), err)
-		}
-		if err := os.WriteFile(full, body, 0o644); err != nil {
-			return fmt.Errorf("scaffold: write %s: %w", full, err)
-		}
-	}
-	// validate.proto (PGV) ships in its own idl/validate/ subdir so the service
-	// proto's `import "validate/validate.proto";` resolves under `-I idl` (hz)
-	// and protolint's [root, root/idl] import roots.
-	validateBody, err := fs.ReadFile(srcFS, filepath.ToSlash(filepath.Join("hertz", "validate", "validate.proto")))
-	if err != nil {
-		return fmt.Errorf("scaffold: read embedded hertz/validate/validate.proto: %w", err)
-	}
-	validatePath := filepath.Join(dir, "idl", "validate", "validate.proto")
-	if err := os.MkdirAll(filepath.Dir(validatePath), 0o755); err != nil {
-		return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(validatePath), err)
-	}
-	if err := os.WriteFile(validatePath, validateBody, 0o644); err != nil {
-		return fmt.Errorf("scaffold: write %s: %w", validatePath, err)
-	}
-	return nil
-}
-
-func writeHertzAPIProto(dir string) error {
-	full := filepath.Join(dir, "idl", "api.proto")
-	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
-		return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(full), err)
-	}
-	if err := os.WriteFile(full, []byte(hertzAPIProto), 0o644); err != nil {
-		return fmt.Errorf("scaffold: write %s: %w", full, err)
-	}
-	return nil
-}
-
 func renderIDLPlaceholder(opts Options) string {
-	if defaultKind(opts.Kind) == manifest.KindKitex {
-		base := kitexIDLBase(opts)
-		service := exportName(opts.Name)
-		return fmt.Sprintf(`syntax = "proto3";
-
-package %s;
-
-option go_package = "%s/kitex_gen/%s;%s";
-
-service %s {
-}
-`, base, opts.Module, base, base, service)
-	}
-	service := exportName(opts.Name)
-	return strings.Join([]string{
-		`syntax = "proto3";`,
-		``,
-		`package app;`,
-		``,
-		fmt.Sprintf(`option go_package = %q;`, opts.Module+`/internal/pb;pb`),
-		``,
-		`import "api.proto";`,
-		`import "openapi/annotations.proto";`,
-		`import "validate/validate.proto";`,
-		``,
-		`option (openapi.document) = {`,
-		`  info: {`,
-		fmt.Sprintf(`    title: %q;`, service+` API`),
-		`    version: "v1";`,
-		fmt.Sprintf(`    description: %q;`, `Generated by ncgo for Hertz HTTP APIs.`),
-		`  };`,
-		`};`,
-		``,
-		`message PingReq {`,
-		`  string name = 1 [`,
-		`    (api.query) = "name",`,
-		`    (api.vd) = "len($) > 0 && len($) < 65",`,
-		`    (openapi.parameter) = { required: true },`,
-		`    (validate.rules) = { string: { min_len: 1, max_len: 64 } },`,
-		`    (openapi.property) = {`,
-		`      title: "Name";`,
-		`      description: "Ping 请求中的 name 查询参数";`,
-		`      type: "string";`,
-		`      min_length: 1;`,
-		`      max_length: 64;`,
-		`    }`,
-		`  ];`,
-		`}`,
-		``,
-		`message PingResp {`,
-		`  option (openapi.schema) = {`,
-		`    title: "Ping response";`,
-		`    description: "Ping 接口返回结果";`,
-		`    required: ["message"];`,
-		`  };`,
-		``,
-		`  string message = 1 [`,
-		`    (openapi.property) = {`,
-		`      title: "Response message";`,
-		`      description: "服务返回的响应文本";`,
-		`      type: "string";`,
-		`      min_length: 1;`,
-		`      max_length: 128;`,
-		`    }`,
-		`  ];`,
-		`}`,
-		``,
-		fmt.Sprintf(`service %sService {`, service),
-		`  rpc Ping(PingReq) returns (PingResp) {`,
-		`    option (api.get) = "/ping";`,
-		`    option (openapi.operation) = {`,
-		`      summary: "Ping";`,
-		`      description: "基础连通性测试接口";`,
-		`    };`,
-		`  }`,
-		`}`,
-		``,
-	}, "\n")
+	return framework.MustGet(defaultKind(opts.Kind)).RenderIDLPlaceholder(framework.GeneratorOptions{Name: opts.Name, Module: opts.Module})
 }
 
 func buildManifest(opts Options, idl string) *manifest.Manifest {
@@ -896,10 +699,7 @@ func nextSteps(opts Options, idl string) []string {
 // generatorCommand returns the literal shell line a user can paste to
 // invoke the appropriate code generator.
 func generatorCommand(opts Options, idl string) string {
-	if defaultKind(opts.Kind) == manifest.KindKitex {
-		return fmt.Sprintf("kitex -module %s -template-dir template/kitex-template -type protobuf %s", opts.Module, idl)
-	}
-	return fmt.Sprintf("hz new --mod=%s --idl=%s -I idl --handler_dir=internal/handler --model_dir=internal/pb --router_dir=internal/router --customize_layout=template/layout.yaml --customize_layout_data_path=template/data.json --customize_package=template/package.yaml", opts.Module, idl)
+	return framework.MustGet(defaultKind(opts.Kind)).GeneratorCommand(framework.GeneratorOptions{Name: opts.Name, Module: opts.Module}, idl)
 }
 
 // postGenerateNextSteps is what we print after hz/kitex already ran
@@ -936,7 +736,7 @@ func postGenerateNextSteps(opts Options) []string {
 // Kitex always wires base/data + repository placeholders, while Hertz only
 // needs sqlc first when the database scaffold is enabled.
 func requiresSQLCBeforeTidy(opts Options) bool {
-	return defaultKind(opts.Kind) == manifest.KindKitex || opts.WithDatabase
+	return framework.MustGet(defaultKind(opts.Kind)).RequiresSQLCBeforeTidy(opts.WithDatabase)
 }
 
 func mustCwd() string {

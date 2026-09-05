@@ -167,8 +167,8 @@ func exportIDLs(root string, opts ExportOptions) ([]string, error) {
 			return nil
 		}
 		// Skip api.proto for Hertz: it's a standard hz support file that ncgo
-		// writes via writeHertzProtoSupportFiles. Exporting it would cause
-		// "Input is shadowed" errors when the template is consumed.
+		// writes via hertzAdapter.WriteIDLSupportFiles (internal/scaffold/framework/adapter_hertz.go).
+		// Exporting it would cause "Input is shadowed" errors when the template is consumed.
 		if opts.Kind == "hertz" && rel == "api.proto" {
 			return nil
 		}

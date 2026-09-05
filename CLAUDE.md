@@ -49,6 +49,7 @@ internal/scaffold/    → Scaffold generators
   infra/            → Optional infra add-ons (Redis, Kafka, ES, observability, canary, logging)
   method/           → Method stub insertion at ncgo anchors
   shared/           → Shared helpers (container files, docker, precommit)
+  framework/        → Framework-adapter interfaces abstracting Hertz/Kitex differences (asset paths, config merge, docker config, IDL/generator invocation); registry-based, mirrors infra's Plugin pattern
 internal/assets/_data/ → Embedded templates (hertz/, kitex/, optional/, docs/)
 internal/registry/    → Template registry client: mirrors ncgo-templates repo to local cache; used by `ncgo template` / `ncgo new --template`
 internal/manifest/    → Manifest/workspace YAML handling

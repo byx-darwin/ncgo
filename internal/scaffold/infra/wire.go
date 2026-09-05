@@ -6,6 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+
+	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scaffold/framework"
 )
 
 // Wire connects generated optional infra helpers into generated service startup
@@ -49,9 +52,9 @@ func wire(root, module, serviceKind, kind string, dryRun bool) (*wireResult, err
 		return nil, unsupportedWireError()
 	}
 	switch serviceKind {
-	case manifestKindHertz:
+	case manifest.KindHertz:
 		return wireHertz(root, module, kind, dryRun)
-	case manifestKindKitex:
+	case manifest.KindKitex:
 		return wireKitex(root, module, kind, dryRun)
 	default:
 		return nil, fmt.Errorf("infra: unsupported service kind %q", serviceKind)
@@ -80,9 +83,6 @@ func unsupportedWireError() error {
 }
 
 const (
-	manifestKindHertz = "hertz"
-	manifestKindKitex = "kitex"
-
 	anchorSourceMarker = "marker"
 	anchorSourceLegacy = "legacy"
 
@@ -97,7 +97,7 @@ const (
 )
 
 func wireHertz(root, module, kind string, dryRun bool) (*wireResult, error) {
-	path := filepath.Join(root, "internal", "base", "server", "server.go")
+	path := filepath.Join(root, filepath.FromSlash(framework.MustGet(manifest.KindHertz).ServerFilePath()))
 	body, err := readSource(path)
 	if err != nil {
 		return nil, err
@@ -125,7 +125,7 @@ func wireHertz(root, module, kind string, dryRun bool) (*wireResult, error) {
 func wireKitex(root, module, kind string, dryRun bool) (*wireResult, error) {
 	paths := []string{}
 	plan := []PlanItem(nil)
-	serverPath := filepath.Join(root, "internal", "base", "server", "server.go")
+	serverPath := filepath.Join(root, filepath.FromSlash(framework.MustGet(manifest.KindKitex).ServerFilePath()))
 	body, err := readSource(serverPath)
 	if err != nil {
 		return nil, err

@@ -22,6 +22,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/assets"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scaffold/framework"
 	planpkg "github.com/byx-darwin/ncgo/internal/scaffold/plan"
 	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
 	"gopkg.in/yaml.v3"
@@ -373,111 +374,35 @@ func renderAssetBody(body []byte, module string) []byte {
 }
 
 func planHertzConfigWrite(root, serviceKind, infraKind string, force bool) (*plannedWrite, error) {
-	if serviceKind != manifest.KindHertz {
+	adapter, ok := framework.Get(serviceKind)
+	if !ok {
+		return nil, nil
+	}
+	assetPath, ok := adapter.HertzConfigAssetPath(infraKind)
+	if !ok {
 		return nil, nil
 	}
 	p, ok := pluginByKind(infraKind)
 	if !ok || p.HertzConfigKey() == "" {
 		return nil, nil
 	}
-	snippet, err := fs.ReadFile(assets.FS(), filepath.ToSlash(filepath.Join("hertz", "optional-config", infraKind+".yaml")))
+	snippet, err := fs.ReadFile(assets.FS(), assetPath)
 	if err != nil {
-		return nil, fmt.Errorf("infra: read embedded hertz/optional-config/%s.yaml: %w", infraKind, err)
+		return nil, fmt.Errorf("infra: read embedded %s: %w", assetPath, err)
 	}
 	path := filepath.Join(root, filepath.FromSlash(hertzConfigRelPath))
 	current, err := os.ReadFile(path)
 	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			return &plannedWrite{
-				Path:   path,
-				Body:   []byte(wrapHertzConfigSnippet(string(snippet), infraKind) + "\n"),
-				Action: "create",
-			}, nil
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("infra: read %s: %w", path, err)
 		}
-		return nil, fmt.Errorf("infra: read %s: %w", path, err)
+		current = nil
 	}
-	merged, changed, err := mergeHertzConfig(current, string(snippet), infraKind, p.HertzConfigKey(), force)
-	if err != nil {
+	write, err := adapter.MergeHertzConfig(infraKind, p.HertzConfigKey(), snippet, current, force)
+	if err != nil || write == nil {
 		return nil, err
 	}
-	if !changed {
-		return nil, nil
-	}
-	return &plannedWrite{Path: path, Body: []byte(merged), Action: "update"}, nil
-}
-
-func mergeHertzConfig(current []byte, snippet, infraKind, hertzConfigKey string, force bool) (string, bool, error) {
-	src := string(current)
-	startMarker, endMarker := hertzConfigMarkers(infraKind)
-	if strings.Contains(src, startMarker) || strings.Contains(src, endMarker) {
-		if !strings.Contains(src, startMarker) || !strings.Contains(src, endMarker) {
-			return "", false, fmt.Errorf("infra: malformed config markers for %q in %s", infraKind, filepath.FromSlash(hertzConfigRelPath))
-		}
-		if !force {
-			return src, false, nil
-		}
-		return replaceMarkedHertzConfigBlock(src, wrapHertzConfigSnippet(snippet, infraKind), startMarker, endMarker)
-	}
-	if hasTopLevelConfigKey(src, hertzConfigKey) {
-		return src, false, nil
-	}
-	block := wrapHertzConfigSnippet(snippet, infraKind)
-	trimmed := strings.TrimRight(src, "\n")
-	if trimmed == "" {
-		return block + "\n", true, nil
-	}
-	return trimmed + "\n\n" + block + "\n", true, nil
-}
-
-func wrapHertzConfigSnippet(snippet, infraKind string) string {
-	startMarker, endMarker := hertzConfigMarkers(infraKind)
-	return startMarker + "\n" + strings.TrimRight(snippet, "\n") + "\n" + endMarker
-}
-
-func hertzConfigMarkers(infraKind string) (string, string) {
-	return "# ncgo:add-infra:start " + infraKind, "# ncgo:add-infra:end " + infraKind
-}
-
-func replaceMarkedHertzConfigBlock(src, block, startMarker, endMarker string) (string, bool, error) {
-	start := strings.Index(src, startMarker)
-	if start < 0 {
-		return src, false, nil
-	}
-	end := strings.Index(src[start:], endMarker)
-	if end < 0 {
-		return "", false, fmt.Errorf("infra: malformed config markers: missing %q", endMarker)
-	}
-	end += start
-	lineEnd := end + len(endMarker)
-	if lineEnd < len(src) && src[lineEnd] == '\r' {
-		lineEnd++
-	}
-	if lineEnd < len(src) && src[lineEnd] == '\n' {
-		lineEnd++
-	}
-	out := src[:start] + block
-	if lineEnd < len(src) {
-		out += src[lineEnd:]
-	} else {
-		out += "\n"
-	}
-	return out, true, nil
-}
-
-func hasTopLevelConfigKey(src, key string) bool {
-	needle := key + ":"
-	for _, line := range strings.Split(src, "\n") {
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if strings.HasPrefix(line, " ") || strings.HasPrefix(line, "\t") {
-			continue
-		}
-		if strings.HasPrefix(line, needle) {
-			return true
-		}
-	}
-	return false
+	return &plannedWrite{Path: path, Body: write.Body, Action: write.Action}, nil
 }
 
 func frameworkAdapterName(infraKind, serviceKind string) string {
@@ -676,10 +601,26 @@ func kitexRateLimitConfPath(root string) string {
 // planKitexRateLimitConfigWrite returns a planned write for the rate_limit
 // config block when serviceKind is kitex and infraKind is rate_limit.
 func planKitexRateLimitConfigWrite(root, serviceKind, infraKind string, force bool) (*plannedWrite, error) {
-	if serviceKind != manifest.KindKitex || infraKind != KindRateLimit {
+	if infraKind != KindRateLimit {
 		return nil, nil
 	}
-	return planKitexRateLimitConfig(root, force)
+	adapter, ok := framework.Get(serviceKind)
+	if !ok {
+		return nil, nil
+	}
+	path := kitexRateLimitConfPath(root)
+	current, err := os.ReadFile(path)
+	if err != nil {
+		if !errors.Is(err, fs.ErrNotExist) {
+			return nil, fmt.Errorf("infra: read %s: %w", path, err)
+		}
+		current = nil
+	}
+	write, err := adapter.MergeRateLimitConfig(current, force)
+	if err != nil || write == nil {
+		return nil, err
+	}
+	return &plannedWrite{Path: path, Body: write.Body, Action: write.Action}, nil
 }
 
 // readSharedFragmentBodyRaw reads a shared fragment yaml (canonical kitex
@@ -700,131 +641,19 @@ func readSharedFragmentBodyRaw(srcFS fs.FS, name string) ([]byte, error) {
 	return []byte(frag.Body), nil
 }
 
-// planKitexRateLimitConfig merges the rate_limit block into conf/dev/conf.yaml
-// for kitex services. If no rate_limit: top-level key exists, a default block
-// is appended. If one exists, enabled is set to true and mode is set to shadow
-// within the block's scope only.
-func planKitexRateLimitConfig(root string, force bool) (*plannedWrite, error) {
-	path := kitexRateLimitConfPath(root)
-	current, err := os.ReadFile(path)
-	if err != nil {
-		if errors.Is(err, fs.ErrNotExist) {
-			body := defaultRateLimitConfBlock()
-			return &plannedWrite{Path: path, Body: []byte(body), Action: "create"}, nil
-		}
-		return nil, fmt.Errorf("infra: read %s: %w", path, err)
-	}
-	merged, changed := mergeKitexRateLimitConfig(string(current))
-	if !changed {
-		return nil, nil
-	}
-	return &plannedWrite{Path: path, Body: []byte(merged), Action: "update"}, nil
-}
-
-func defaultRateLimitConfBlock() string {
-	return `rate_limit:
-  enabled: true
-  mode: shadow
-  backend: memory
-  fail_open: true
-  source:
-    type: config
-    cache_ttl_seconds: 60s
-    fallback_on_error: true
-  static:
-    max_qps: 0
-    max_connections: 0
-`
-}
-
-// mergeKitexRateLimitConfig updates an existing conf.yaml. If rate_limit: is
-// missing, appends the default block. If present, sets enabled: true and
-// mode: shadow within the rate_limit scope only. Returns (merged, changed).
-//
-// Only TOP-LEVEL keys within the rate_limit block are flipped — nested keys
-// (e.g. pre_auth.enabled) are left untouched. Top-level keys are identified
-// by having the same indent as the first direct child of rate_limit:.
-func mergeKitexRateLimitConfig(src string) (string, bool) {
-	if !hasTopLevelConfigKey(src, "rate_limit") {
-		trimmed := strings.TrimRight(src, "\n")
-		if trimmed == "" {
-			return defaultRateLimitConfBlock(), true
-		}
-		return trimmed + "\n\n" + defaultRateLimitConfBlock(), true
-	}
-	// Scoped replacement within rate_limit block. Find the rate_limit:
-	// line and the next top-level key (or EOF). Track the indent of the
-	// first direct child so we only flip top-level keys.
-	lines := strings.Split(src, "\n")
-	startIdx := -1
-	endIdx := len(lines)
-	childIndent := -1
-	for i, line := range lines {
-		if startIdx == -1 {
-			if strings.HasPrefix(line, "rate_limit:") {
-				startIdx = i
-			}
-			continue
-		}
-		// End when we hit another top-level key (non-empty, non-comment,
-		// not indented).
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		if !strings.HasPrefix(line, " ") && !strings.HasPrefix(line, "\t") {
-			endIdx = i
-			break
-		}
-		if childIndent == -1 {
-			childIndent = len(line) - len(strings.TrimLeft(line, " \t"))
-		}
-	}
-	if startIdx == -1 {
-		return src, false
-	}
-	changed := false
-	for i := startIdx + 1; i < endIdx; i++ {
-		line := lines[i]
-		if line == "" || strings.HasPrefix(line, "#") {
-			continue
-		}
-		indent := len(line) - len(strings.TrimLeft(line, " \t"))
-		// Only flip direct children of rate_limit: (at childIndent).
-		// Deeper lines belong to nested sub-blocks and must not be touched.
-		if childIndent >= 0 && indent != childIndent {
-			continue
-		}
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "enabled:") {
-			if !strings.Contains(trimmed, "true") {
-				indentStr := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-				lines[i] = indentStr + "enabled: true"
-				changed = true
-			}
-		} else if strings.HasPrefix(trimmed, "mode:") {
-			if !strings.Contains(trimmed, "shadow") {
-				indentStr := line[:len(line)-len(strings.TrimLeft(line, " \t"))]
-				lines[i] = indentStr + "mode: shadow"
-				changed = true
-			}
-		}
-	}
-	if !changed {
-		return src, false
-	}
-	return strings.Join(lines, "\n"), true
-}
-
 // frameworkAssetFiles builds an AssetFiles implementation for plugins whose
 // asset is a single file living under hertz/optional/ or kitex/optional/
 // depending on serviceKind, written to a fixed outputRelPath.
 func frameworkAssetFiles(infraKind, outputRelPath string) func(serviceKind string) ([]addOnFile, error) {
 	return func(serviceKind string) ([]addOnFile, error) {
-		switch serviceKind {
-		case manifest.KindHertz, manifest.KindKitex:
-			return []addOnFile{{SourcePath: serviceKind + "/optional/" + infraKind + ".go", OutputRelPath: outputRelPath}}, nil
-		default:
+		adapter, ok := framework.Get(serviceKind)
+		if !ok {
 			return nil, fmt.Errorf("infra: unsupported service kind %q", serviceKind)
 		}
+		path, ok := adapter.OptionalAssetPath(infraKind)
+		if !ok {
+			return nil, fmt.Errorf("infra: unsupported service kind %q", serviceKind)
+		}
+		return []addOnFile{{SourcePath: path, OutputRelPath: outputRelPath}}, nil
 	}
 }

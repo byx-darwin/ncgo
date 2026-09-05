@@ -32,6 +32,7 @@ import (
 
 	"github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
+	"github.com/byx-darwin/ncgo/internal/scaffold/framework"
 	scaffoldinfra "github.com/byx-darwin/ncgo/internal/scaffold/infra"
 	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
 	scaffoldtemplate "github.com/byx-darwin/ncgo/internal/scaffold/template"
@@ -237,27 +238,13 @@ func defaultKind(k string) string {
 // Hertz uses the api.proto-importing app/ subdir; Kitex points at the
 // service-named proto consumed by the kitex template Makefile.
 func defaultIDL(opts Options) string {
-	if defaultKind(opts.Kind) == manifest.KindKitex {
-		return filepath.ToSlash(filepath.Join("idl", kitexIDLBase(opts)+".proto"))
-	}
-	return filepath.ToSlash(filepath.Join("idl", "app", opts.Name+".proto"))
-}
-
-// kitexIDLBase matches the generated Makefile's
-// `{{.ServiceInfo.ServiceName | ToLower}}` convention. It also avoids
-// invalid proto / Go identifiers for CLI names like "user-api".
-func kitexIDLBase(opts Options) string {
-	return strings.ToLower(exportName(opts.Name))
+	return framework.MustGet(defaultKind(opts.Kind)).IDLPath(framework.GeneratorOptions{Name: opts.Name, Module: opts.Module})
 }
 
 // runGenerator invokes hz or kitex depending on opts.Kind.
 func runGenerator(ctx context.Context, r exec.Runner, dir string, opts Options, idl string) (exec.Result, error) {
-	switch defaultKind(opts.Kind) {
-	case manifest.KindKitex:
-		return exec.Kitex(ctx, r, dir, kitexArgs(opts, idl)...)
-	default:
-		return exec.HZ(ctx, r, dir, hzArgs(opts, idl)...)
-	}
+	adapter := framework.MustGet(defaultKind(opts.Kind))
+	return adapter.RunGenerator(ctx, r, dir, framework.GeneratorOptions{Name: opts.Name, Module: opts.Module}, idl)
 }
 
 func (o Options) validate() error {
@@ -276,9 +263,7 @@ func (o Options) validate() error {
 	if o.NCGOVersion == "" {
 		return errors.New("scaffold: NCGOVersion is required")
 	}
-	switch defaultKind(o.Kind) {
-	case manifest.KindHertz, manifest.KindKitex:
-	default:
+	if _, ok := framework.Get(defaultKind(o.Kind)); !ok {
 		return fmt.Errorf("scaffold: kind %q is invalid (hertz|kitex)", o.Kind)
 	}
 	return nil
@@ -332,34 +317,6 @@ func ensureEmptyDir(dir string) error {
 		return fmt.Errorf("scaffold: %s is not empty", dir)
 	}
 	return nil
-}
-
-func hzArgs(opts Options, idl string) []string {
-	return []string{
-		"new",
-		"--mod=" + opts.Module,
-		"--idl=" + idl,
-		"-I", "idl",
-		"--handler_dir=internal/handler",
-		"--model_dir=internal/pb",
-		"--router_dir=internal/router",
-		"--customize_layout=template/layout.yaml",
-		"--customize_layout_data_path=template/data.json",
-		"--customize_package=template/package.yaml",
-	}
-}
-
-// kitexArgs are the flags ncgo passes to `kitex` for a kitex monolith
-// scaffold. They mirror the invocation documented in
-// internal/assets/_data/kitex/kitex-template/makefile.yaml so that
-// `make update` later produces the same files.
-func kitexArgs(opts Options, idl string) []string {
-	return []string{
-		"-module", opts.Module,
-		"-template-dir", "template/kitex-template",
-		"-type", "protobuf",
-		idl,
-	}
 }
 
 // dataPayload is what hz reads from data.json: a wildcard mapping with the

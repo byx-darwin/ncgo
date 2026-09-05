@@ -1446,56 +1446,6 @@ func TestAddInfraRateLimitConfMergeExistingBlock(t *testing.T) {
 	}
 }
 
-// TestMergeKitexRateLimitConfigPreservesNestedKeys exercises the I5 fix:
-// top-level enabled:/mode: are flipped, but nested enabled:/mode: keys inside
-// sub-blocks like pre_auth: must be left untouched.
-func TestMergeKitexRateLimitConfigPreservesNestedKeys(t *testing.T) {
-	src := `env: dev
-rate_limit:
-  enabled: false
-  mode: enforce
-  backend: memory
-  pre_auth:
-    enabled: false
-    default_rule:
-      enabled: true
-      mode: strict
-  post_auth:
-    enabled: false
-`
-	merged, changed := mergeKitexRateLimitConfig(src)
-	if !changed {
-		t.Fatalf("expected merge to report changed")
-	}
-	// Top-level keys flipped:
-	if !strings.Contains(merged, "  enabled: true\n") {
-		t.Errorf("expected top-level enabled: true, got:\n%s", merged)
-	}
-	if !strings.Contains(merged, "  mode: shadow\n") {
-		t.Errorf("expected top-level mode: shadow, got:\n%s", merged)
-	}
-	// Nested pre_auth.enabled must remain false:
-	if !strings.Contains(merged, "    enabled: false\n") {
-		t.Errorf("expected nested pre_auth.enabled: false preserved, got:\n%s", merged)
-	}
-	// Nested post_auth.enabled must remain false:
-	if strings.Count(merged, "    enabled: false\n") < 2 {
-		t.Errorf("expected both nested enabled: false preserved, got:\n%s", merged)
-	}
-	// Nested default_rule.enabled must remain true (untouched):
-	if !strings.Contains(merged, "      enabled: true\n") {
-		t.Errorf("expected nested default_rule.enabled: true preserved, got:\n%s", merged)
-	}
-	// Nested mode: strict must remain (not flipped to shadow):
-	if !strings.Contains(merged, "      mode: strict\n") {
-		t.Errorf("expected nested mode: strict preserved, got:\n%s", merged)
-	}
-	// Backend preserved:
-	if !strings.Contains(merged, "  backend: memory\n") {
-		t.Errorf("expected backend preserved, got:\n%s", merged)
-	}
-}
-
 func TestAddInfraRateLimitIdempotentWire(t *testing.T) {
 	root := seedKitexProject(t, nil)
 	writeKitexServerWithRateLimitMarkers(t, root)

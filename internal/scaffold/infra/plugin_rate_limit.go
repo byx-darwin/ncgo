@@ -1,6 +1,10 @@
 package infra
 
-import "fmt"
+import (
+	"fmt"
+
+	"github.com/byx-darwin/ncgo/internal/manifest"
+)
 
 func init() { Register(rateLimitPlugin{}) }
 
@@ -21,7 +25,7 @@ func (rateLimitPlugin) SetupSteps() []string {
 func (rateLimitPlugin) HertzConfigKey() string { return "" }
 
 func (rateLimitPlugin) AssetFiles(serviceKind string) ([]addOnFile, error) {
-	if serviceKind != manifestKindKitex {
+	if serviceKind != manifest.KindKitex {
 		return nil, fmt.Errorf("infra: kind %q is only supported for kitex services", KindRateLimit)
 	}
 	return rateLimitAssetFiles()
