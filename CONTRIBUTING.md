@@ -12,8 +12,12 @@ release labels, and release-related docs.
 - Go `1.25+`
 - `hz >= v0.9.7` when working on Hertz generator flows
 - `kitex >= v0.16.1` when working on Kitex generator flows
+- `sqlc` when running database-backed generator flows locally (`TestGenerateHertzWithDatabaseCompiles`, `TestGenerateKitexCompiles`) — install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`
+- `protoc` (the Protocol Buffers compiler) for any flow that generates or verifies IDL-derived code
 
 If you only need to inspect scaffold inputs, prefer `--no-generate` workflows.
+
+CI installs pinned `hz`/`kitex`/`protoc`/`sqlc` and runs the real compile-verification tests (`TestGenerateHertzCompiles`, `TestGenerateHertzWithDatabaseCompiles`, `TestGenerateKitexCompiles`) on every push and PR — they are no longer silently skipped. See `.github/workflows/ci.yml`'s `Install code-gen tools` step for the exact versions.
 
 ## Local checks / 本地检查
 
