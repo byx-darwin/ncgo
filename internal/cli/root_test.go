@@ -73,6 +73,27 @@ func TestResolveBuildInfoKeepsInjectedValues(t *testing.T) {
 	}
 }
 
+func TestResolveVersionFallsBackToModuleVersion(t *testing.T) {
+	got := resolveVersion("0.1.0-dev", "v1.0.1")
+	if got != "1.0.1" {
+		t.Fatalf("resolveVersion() = %q, want 1.0.1", got)
+	}
+}
+
+func TestResolveVersionKeepsInjectedValue(t *testing.T) {
+	got := resolveVersion("1.0.1", "v9.9.9")
+	if got != "1.0.1" {
+		t.Fatalf("resolveVersion() = %q, want 1.0.1", got)
+	}
+}
+
+func TestResolveVersionIgnoresDevelModule(t *testing.T) {
+	got := resolveVersion("0.1.0-dev", "(devel)")
+	if got != "0.1.0-dev" {
+		t.Fatalf("resolveVersion() = %q, want 0.1.0-dev", got)
+	}
+}
+
 func TestNewCmdHasTemplateDirFlag(t *testing.T) {
 	cmd := newNewCmd()
 	f := cmd.Flags().Lookup("template-dir")

@@ -78,28 +78,41 @@ func newVersionCmd() *cobra.Command {
 		Use:   "version",
 		Short: "Print ncgo, build, and embedded assets versions",
 		RunE: func(cmd *cobra.Command, args []string) error {
-			buildVersion, buildTime := effectiveBuildInfo(BuildVersion, BuildTime)
-			fmt.Fprintln(cmd.OutOrStdout(), versionLine(Version, assets.Version(), buildVersion, buildTime))
+			settings, mainModuleVersion := readBuildInfo()
+			buildVersion, buildTime := resolveBuildInfo(BuildVersion, BuildTime, settings)
+			version := resolveVersion(Version, mainModuleVersion)
+			fmt.Fprintln(cmd.OutOrStdout(), versionLine(version, assets.Version(), buildVersion, buildTime))
 			return nil
 		},
 	}
 }
 
 func effectiveBuildInfo(buildVersion, buildTime string) (string, string) {
-	settings := readBuildSettings()
+	settings, _ := readBuildInfo()
 	return resolveBuildInfo(buildVersion, buildTime, settings)
 }
 
-func readBuildSettings() map[string]string {
+func readBuildInfo() (map[string]string, string) {
 	info, ok := debug.ReadBuildInfo()
 	if !ok {
-		return nil
+		return nil, ""
 	}
 	settings := make(map[string]string, len(info.Settings))
 	for _, setting := range info.Settings {
 		settings[setting.Key] = setting.Value
 	}
-	return settings
+	return settings, info.Main.Version
+}
+
+func isDefaultVersion(value string) bool {
+	return value == "" || value == "0.1.0-dev"
+}
+
+func resolveVersion(version, mainModuleVersion string) string {
+	if isDefaultVersion(version) && mainModuleVersion != "" && mainModuleVersion != "(devel)" {
+		return strings.TrimPrefix(mainModuleVersion, "v")
+	}
+	return version
 }
 
 func resolveBuildInfo(buildVersion, buildTime string, settings map[string]string) (string, string) {
