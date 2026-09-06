@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.1] - 2026-09-06
+
+### Changed
+
+- **Release builds**: `goreleaser` now injects `Version`, `BuildVersion` (short commit), and `BuildTime` via `-ldflags` so released binaries report accurate `ncgo version` output instead of the `dev` placeholder.
+- **`.goreleaser.yaml`**: migrated to the v2 configuration schema (`version: 2`, `archives.formats`).
+
 ## [1.0.0] - 2026-09-06
 
 ### Added
