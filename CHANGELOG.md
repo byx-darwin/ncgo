@@ -7,6 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.3] - 2026-09-06
+
+### Fixed
+
+- **Scaffold**: the base Hertz `usecase.go` stub unconditionally imported `context` and go-tools' `goerror` package, both unused until a real method is implemented — every fresh `ncgo new --kind hertz` project failed `go build`/`go vet` immediately. Confirmed fixed by dogfood-generating a project end to end.
+- **`ncgo add infra registry_polaris`**: the printed `go get github.com/kitex-contrib/polaris` next-step failed because that module has no tagged releases; pinned to `@main`, which resolves.
+- **`ncgo doctor`**: `compose.dockerfile.<svc>` false-positived on hand-customized Dockerfiles that drop the trailing slash or add a `./` prefix on `COPY` sources (both valid Docker forms); now parses the COPY source token instead of matching a literal substring.
+
+## [1.0.2] - 2026-09-06
+
+### Fixed
+
+- **`ncgo version`**: fall back to the Go module's resolved version (`debug.BuildInfo().Main.Version`) when `Version` is still the unset placeholder, so `go install github.com/byx-darwin/ncgo@<tag>` reports the real version instead of `0.1.0-dev`.
+
 ## [1.0.1] - 2026-09-06
 
 ### Changed
