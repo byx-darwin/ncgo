@@ -12,6 +12,11 @@ builds:
       - arm64
     main: .
     binary: ncgo
+    ldflags:
+      - -s -w
+      - -X github.com/byx-darwin/ncgo/internal/cli.Version={{.Version}}
+      - -X github.com/byx-darwin/ncgo/internal/cli.BuildVersion={{.ShortCommit}}
+      - -X github.com/byx-darwin/ncgo/internal/cli.BuildTime={{.Date}}
 archives:
   - format: tar.gz
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
