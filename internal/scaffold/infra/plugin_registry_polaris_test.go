@@ -21,6 +21,15 @@ func TestRegistryPolarisPluginMetadata(t *testing.T) {
 	}
 }
 
+func TestRegistryPolarisPluginSetupStepsPinsUnreleasedDep(t *testing.T) {
+	p, _ := pluginByKind(KindRegistryPolaris)
+	steps := p.SetupSteps()
+	want := "go get github.com/kitex-contrib/polaris@main"
+	if len(steps) == 0 || steps[0] != want {
+		t.Errorf("SetupSteps()[0] = %v, want %q (kitex-contrib/polaris has no tagged releases)", steps, want)
+	}
+}
+
 func TestRegistryPolarisPluginAssetFiles(t *testing.T) {
 	p, _ := pluginByKind(KindRegistryPolaris)
 	files, err := p.AssetFiles(manifest.KindKitex)

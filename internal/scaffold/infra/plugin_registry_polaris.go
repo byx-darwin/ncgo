@@ -16,7 +16,15 @@ func (registryPolarisPlugin) ServiceScope() string { return "kitex" }
 func (registryPolarisPlugin) GoGetDeps() []string {
 	return []string{"github.com/kitex-contrib/polaris", "github.com/byx-darwin/go-tools/go-common"}
 }
-func (registryPolarisPlugin) SetupSteps() []string   { return nil }
+func (registryPolarisPlugin) SetupSteps() []string {
+	return []string{
+		// kitex-contrib/polaris has no tagged releases; @main is the only
+		// resolvable version (plain `go get` fails with "no matching versions").
+		"go get github.com/kitex-contrib/polaris@main",
+		"go get github.com/byx-darwin/go-tools/go-common",
+		"go mod tidy",
+	}
+}
 func (registryPolarisPlugin) HertzConfigKey() string { return "" }
 
 func (registryPolarisPlugin) AssetFiles(serviceKind string) ([]addOnFile, error) {
