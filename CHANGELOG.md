@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.0.0] - 2026-09-06
+
 ### Added
 
 - **Rule Center**: `--rule-center-addr` flag on `ncgo new` and `ncgo add rpc` for generating gRPC rule-center client code, SQLC query templates, and configuration stubs for Hertz and Kitex services.
