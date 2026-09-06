@@ -9,12 +9,6 @@ body: |-
   {{ $svc := exportName .ServiceName -}}
   package {{ToLower .ServiceName}}
 
-  import (
-      "context"
-
-      goerror "github.com/byx-darwin/go-tools/go-common/error"
-  )
-
   // {{$svc}}Repo defines the data-access port for this usecase.
   // Implement it in internal/repository/{{ToLower .ServiceName}}/.
   type {{$svc}}Repo interface {
@@ -39,3 +33,4 @@ body: |-
   //       // replace with a domain-specific error code when implementing.
   //       return nil, goerror.In("{{ToLower .ServiceName}}.usecase").Code(10010).Public("not_implemented").Errorf("Ping: not implemented")
   //   }
+  // (add "context" and goerror "github.com/byx-darwin/go-tools/go-common/error" to the import block above when you do)
