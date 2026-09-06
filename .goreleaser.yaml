@@ -1,3 +1,4 @@
+version: 2
 before:
   hooks:
     - go mod tidy
@@ -18,7 +19,7 @@ builds:
       - -X github.com/byx-darwin/ncgo/internal/cli.BuildVersion={{.ShortCommit}}
       - -X github.com/byx-darwin/ncgo/internal/cli.BuildTime={{.Date}}
 archives:
-  - format: tar.gz
+  - formats: [tar.gz]
     name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
 checksum:
   name_template: "checksums.txt"
