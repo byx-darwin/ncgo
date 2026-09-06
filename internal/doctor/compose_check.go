@@ -92,7 +92,7 @@ func composeDockerfileCheck(serviceRoot string, svc manifest.WorkspaceService, s
 	var missing []string
 	for _, sibling := range siblings {
 		sibling = filepath.ToSlash(sibling)
-		if !strings.Contains(text, "COPY "+sibling+"/") {
+		if !dockerfileCopiesSibling(text, sibling) {
 			missing = append(missing, sibling)
 		}
 	}
@@ -105,6 +105,39 @@ func composeDockerfileCheck(serviceRoot string, svc manifest.WorkspaceService, s
 	c.OK = true
 	c.Message = fmt.Sprintf("Dockerfile for %s COPYs all local replace dependencies", svc.Name)
 	return c
+}
+
+// dockerfileCopiesSibling reports whether text contains a `COPY` instruction
+// whose source is sibling, tolerating the presence or absence of a trailing
+// slash and a leading "./" on the source (Docker treats "COPY x y",
+// "COPY x/ y/", and "COPY ./x y" identically, and hand-customized Dockerfiles
+// commonly drop the trailing slash even though ncgo's own scaffold always
+// emits one).
+func dockerfileCopiesSibling(text, sibling string) bool {
+	sibling = strings.Trim(sibling, "/")
+	for _, line := range strings.Split(text, "\n") {
+		fields := strings.Fields(line)
+		if len(fields) < 3 || fields[0] != "COPY" {
+			continue
+		}
+		var sources []string
+		for _, f := range fields[1:] {
+			if strings.HasPrefix(f, "--") {
+				continue
+			}
+			sources = append(sources, f)
+		}
+		if len(sources) < 2 {
+			continue
+		}
+		for _, src := range sources[:len(sources)-1] {
+			src = strings.TrimSuffix(strings.TrimPrefix(src, "./"), "/")
+			if src == sibling {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func loadComposeFile(path string) *composeFile {

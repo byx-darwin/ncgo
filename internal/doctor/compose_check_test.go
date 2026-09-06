@@ -124,3 +124,16 @@ func TestComposeConsistencyChecksMissingDockerfileCopyFails(t *testing.T) {
 		t.Fatalf("expected compose.dockerfile.authority check, got %+v", checks)
 	}
 }
+
+func TestComposeConsistencyChecksToleratesCustomizedCopyStyle(t *testing.T) {
+	goMod := "module github.com/x/commerce/services/authority\n\ngo 1.25\n\nreplace github.com/x/commerce/services/orders => ../orders\n"
+	root, w := seedComposeWorkspace(t, goMod)
+	writeComposeYAML(t, root, ".", "services/authority/Dockerfile")
+	writeAuthorityDockerfile(t, root, "COPY services/orders ./services/orders", "COPY services/authority ./services/authority")
+	checks := composeConsistencyChecks(root, w)
+	for _, c := range checks {
+		if c.ID == "compose.dockerfile.authority" && !c.OK {
+			t.Errorf("expected compose.dockerfile.authority to pass for no-trailing-slash COPY style: %s", c.Message)
+		}
+	}
+}
