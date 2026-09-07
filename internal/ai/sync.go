@@ -168,7 +168,7 @@ func Sync(opts Options) (*Result, error) {
 	inputs := buildInputs(source, local, opts.Lang)
 	inputs.MethodsByDomain = methodsFromScan(opts.Root)
 	inputs.ErrorCodes = ErrorCodes(resolveProfile(source))
-	inputs.EditBoundaries = RenderBoundaries(EditBoundaries(source))
+	inputs.EditBoundaries = RenderBoundaries(EditBoundaries(source, opts.Root))
 	inputs.LocalNotes = local
 	res := newSyncResult(source)
 	res.Target = opts.Target
