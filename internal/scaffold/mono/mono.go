@@ -142,7 +142,12 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 		}
 		templateIDLFallback = fallback
 	}
-	if err := writeIDLPlaceholder(dir, idl, opts); err != nil {
+	// isRuleCenterPkg identifies the rule-center package by its own metadata
+	// (preset name, or the loaded --template-dir package's Meta.Name), never
+	// by the resolved idl path string — an unrelated template package could
+	// otherwise legitimately name its own real IDL file idl/rule-center.proto.
+	isRuleCenterPkg := opts.Preset == "rule-center" || (opts.TemplateDir != "" && pkg != nil && pkg.Meta.Name == "rule-center")
+	if err := writeIDLPlaceholder(dir, idl, opts, isRuleCenterPkg); err != nil {
 		return nil, err
 	}
 	m, err := writeManifest(dir, opts, idl)

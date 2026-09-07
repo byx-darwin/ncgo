@@ -582,8 +582,12 @@ func idlNameToken(opts Options) string {
 // disk by the kitex generator's per-file overlay (never by overlayTemplatePackage,
 // which only copies the package's own idl/ directory — decoy files for this
 // package, Issue #115) — so without this, NoGenerate scaffolds would still get
-// an empty placeholder at idl/rule-center.proto.
-func writeIDLPlaceholder(dir, idl string, opts Options) error {
+// an empty placeholder at idl/rule-center.proto. isRuleCenterPkg is computed by
+// the caller from package identity (preset name or the loaded package's
+// Meta.Name), not from the resolved idl path, so an unrelated template package
+// whose own real IDL file happens to be literally named idl/rule-center.proto
+// is never mistaken for this one.
+func writeIDLPlaceholder(dir, idl string, opts Options, isRuleCenterPkg bool) error {
 	if err := framework.MustGet(defaultKind(opts.Kind)).WriteIDLSupportFiles(dir); err != nil {
 		return err
 	}
@@ -591,7 +595,7 @@ func writeIDLPlaceholder(dir, idl string, opts Options) error {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(full), err)
 	}
-	if (opts.Preset == "rule-center" || opts.TemplateDir != "") && filepath.ToSlash(idl) == "idl/rule-center.proto" {
+	if isRuleCenterPkg && filepath.ToSlash(idl) == "idl/rule-center.proto" {
 		body, err := ruleCenterIDLBody(assets.FS())
 		if err != nil {
 			return err
