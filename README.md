@@ -449,7 +449,27 @@ ncgo ai sync --root user-api --target all
 Files contain `<!-- ncgo:managed -->`; existing files without the marker are
 skipped unless `--force` is passed. Add project-specific notes in
 `AGENTS.local.md`; they are appended to the long-form generated context files,
-while `.claude/generated/project-context.md` stays deterministic.
+while `.claude/generated/project-context.md` stays deterministic — "deterministic"
+means it never embeds scan-derived facts that change between runs, not that
+it's exempt from the `ncgo:custom` anchor mechanism described below.
+
+For custom content placed directly inside a managed file (rather than in
+`AGENTS.local.md`), wrap it in `<!-- ncgo:custom:<name>:start -->` /
+`<!-- ncgo:custom:<name>:end -->` markers (`<name>` matches
+`^[a-z][a-z0-9-]{0,62}$`). On the next `ai sync`, well-formed anchors are
+preserved and re-appended under a `## Custom Notes` section; content left
+outside any anchor is discarded on every sync, same as before. A malformed
+anchor (missing end marker, duplicate name, invalid name) makes `ai sync`
+refuse to overwrite that file — same as a missing `ncgo:managed` marker —
+until you fix the anchor or pass `--force`; `--force` only bypasses that
+malformed-anchor refusal, well-formed anchors are preserved and merged in
+either way.
+
+> **Migration note:** content added directly to a managed file *before*
+> this anchor mechanism existed, and not wrapped in `ncgo:custom` markers,
+> is still overwritten once on the first `ai sync` after upgrading — there's
+> no way to retroactively tell which pre-existing content was intentional.
+> Wrap what you want to keep in `ncgo:custom` markers before that first sync.
 
 Rendered files carry a `<!-- ncgo:generated-at: ... -->` marker with the
 manifest timestamp that produced them. `ncgo check` compares the domains

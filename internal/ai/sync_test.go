@@ -612,6 +612,29 @@ func TestSyncWorkspaceFailsWhenListedServiceManifestIsMissing(t *testing.T) {
 	}
 }
 
+func TestSyncPreservesCustomAnchorOnStandaloneDoc(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	docPath := filepath.Join(root, "docs", "ncgo", "hertz", "design-doc.en.md")
+	if err := os.MkdirAll(filepath.Dir(docPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	pre := ManagedMarker + "\n# stale\n\n" +
+		"<!-- ncgo:custom:team-notes:start -->\n" +
+		"see runbook at go/team-runbook\n" +
+		"<!-- ncgo:custom:team-notes:end -->\n"
+	if err := os.WriteFile(docPath, []byte(pre), 0o644); err != nil {
+		t.Fatalf("seed standalone doc: %v", err)
+	}
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	body, _ := os.ReadFile(docPath)
+	if !strings.Contains(string(body), "## Custom Notes") || !strings.Contains(string(body), "go/team-runbook") {
+		t.Errorf("expected custom anchor preserved in standalone doc, got %q", string(body))
+	}
+}
+
 func TestSyncWritesStandaloneDocs(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindHertz)
@@ -981,5 +1004,95 @@ func TestReadGeneratedAtMissingMarker(t *testing.T) {
 	}
 	if _, ok := ReadGeneratedAt(p); ok {
 		t.Fatal("ReadGeneratedAt should report no marker when absent")
+	}
+}
+
+func TestSyncPreservesCustomAnchorOnManagedFile(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	pre := ManagedMarker + "\n" +
+		"# stale body\n\n" +
+		"<!-- ncgo:custom:docker-dev:start -->\n" +
+		"docker compose up -d\n" +
+		"<!-- ncgo:custom:docker-dev:end -->\n"
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(pre), 0o644); err != nil {
+		t.Fatalf("seed AGENTS.md: %v", err)
+	}
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	body, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if !strings.Contains(string(body), "## Custom Notes") || !strings.Contains(string(body), "docker compose up -d") {
+		t.Errorf("expected custom anchor preserved in AGENTS.md, got %q", string(body))
+	}
+}
+
+func TestSyncTwiceIsIdempotentWithCustomAnchor(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	pre := ManagedMarker + "\n" +
+		"# stale body\n\n" +
+		"<!-- ncgo:custom:docker-dev:start -->\n" +
+		"docker compose up -d\n" +
+		"<!-- ncgo:custom:docker-dev:end -->\n"
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(pre), 0o644); err != nil {
+		t.Fatalf("seed AGENTS.md: %v", err)
+	}
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
+		t.Fatalf("first Sync: %v", err)
+	}
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
+		t.Fatalf("second Sync: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	if n := strings.Count(string(body), "## Custom Notes"); n != 1 {
+		t.Errorf("expected exactly one Custom Notes section after two syncs, got %d in %q", n, string(body))
+	}
+	if n := strings.Count(string(body), "docker compose up -d"); n != 1 {
+		t.Errorf("expected anchor content to appear exactly once after two syncs, got %d in %q", n, string(body))
+	}
+}
+
+func TestSyncRefusesManagedFileWithMalformedAnchor(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	pre := ManagedMarker + "\n<!-- ncgo:custom:oops:start -->\nunterminated\n"
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(pre), 0o644); err != nil {
+		t.Fatalf("seed AGENTS.md: %v", err)
+	}
+	res, err := Sync(Options{Root: root, Target: TargetAll})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(root, "AGENTS.md")); string(got) != pre {
+		t.Errorf("AGENTS.md must not be overwritten when a custom anchor is malformed")
+	}
+	var skipped bool
+	for _, s := range res.Skipped {
+		if s.Path == "AGENTS.md" && strings.Contains(s.Reason, "malformed ncgo:custom anchor") {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Errorf("expected AGENTS.md skip for malformed anchor; got %+v", res.Skipped)
+	}
+}
+
+func TestSyncForceOverwritesManagedFileWithMalformedAnchor(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	pre := ManagedMarker + "\n<!-- ncgo:custom:oops:start -->\nunterminated\n"
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(pre), 0o644); err != nil {
+		t.Fatalf("seed AGENTS.md: %v", err)
+	}
+	if _, err := Sync(Options{Root: root, Force: true, Target: TargetAll}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	body, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if strings.Contains(string(body), "unterminated") {
+		t.Errorf("--force should discard the malformed anchor content, got %q", string(body))
 	}
 }

@@ -7,6 +7,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+
+- **`ncgo ai sync`**: the edit-boundaries table (`## Boundaries` in generated CLAUDE.md/AGENTS.md) only reflected `manifest.Domains` — removing a domain from the manifest silently dropped its `internal/repository/<domain>/` and `internal/usecase/<domain>/` rows even when the directories still existed on disk (e.g. still referenced by hand-written code). Service-scope sync now unions the manifest domain list with directories actually present on disk and flags the extras as "not in manifest; verify manual usage".
+- **`ncgo ai sync`**: managed files (`<!-- ncgo:managed -->`) were fully overwritten on every sync with no way to preserve hand-authored content placed directly inside them. Added `<!-- ncgo:custom:<name>:start/end -->` anchors: well-formed anchors in the previous file version are now preserved and re-appended under a `## Custom Notes` section; a malformed anchor makes sync refuse to overwrite (same as a missing managed marker) instead of silently dropping content. **One-time migration note:** pre-existing custom content not wrapped in these anchors is still overwritten once on the first sync after upgrading.
+
 ## [1.0.3] - 2026-09-06
 
 ### Fixed

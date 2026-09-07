@@ -168,7 +168,7 @@ func Sync(opts Options) (*Result, error) {
 	inputs := buildInputs(source, local, opts.Lang)
 	inputs.MethodsByDomain = methodsFromScan(opts.Root)
 	inputs.ErrorCodes = ErrorCodes(resolveProfile(source))
-	inputs.EditBoundaries = RenderBoundaries(EditBoundaries(source))
+	inputs.EditBoundaries = RenderBoundaries(EditBoundaries(source, opts.Root))
 	inputs.LocalNotes = local
 	res := newSyncResult(source)
 	res.Target = opts.Target
@@ -494,7 +494,9 @@ func writeTarget(opts Options, t target, inputs renderInputs, res *Result) error
 		return nil
 	}
 	rendered := t.Render(inputs)
-	if existing, err := os.ReadFile(full); err == nil {
+	existing, err := os.ReadFile(full)
+	switch {
+	case err == nil:
 		if !isManaged(existing) && !opts.Force {
 			res.Skipped = append(res.Skipped, Skip{
 				Path:   t.RelPath,
@@ -502,7 +504,23 @@ func writeTarget(opts Options, t target, inputs renderInputs, res *Result) error
 			})
 			return nil
 		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
+		if isManaged(existing) {
+			merged, malformed := mergeCustomAnchors(existing, []byte(rendered))
+			if len(malformed) > 0 {
+				if !opts.Force {
+					res.Skipped = append(res.Skipped, Skip{
+						Path:   t.RelPath,
+						Reason: "malformed ncgo:custom anchor(s): " + strings.Join(malformed, "; ") + "; fix markers or pass --force",
+					})
+					return nil
+				}
+			} else {
+				rendered = merged
+			}
+		}
+	case errors.Is(err, fs.ErrNotExist):
+		// no existing file; nothing to merge
+	default:
 		return fmt.Errorf("ai sync: stat %s: %w", full, err)
 	}
 	if opts.DryRun {
@@ -549,7 +567,9 @@ func writeStandaloneDocs(opts Options, res *Result, profile string) error {
 		// Mark the materialized doc as managed so a later sync refreshes it
 		// instead of treating it as a user-owned file without the marker.
 		content := ManagedMarker + "\n" + rewriteDocLinks(string(b))
-		if existing, err := os.ReadFile(full); err == nil {
+		existing, err := os.ReadFile(full)
+		switch {
+		case err == nil:
 			if !isManaged(existing) && !opts.Force {
 				res.Skipped = append(res.Skipped, Skip{
 					Path:   spec.RelPath,
@@ -557,7 +577,23 @@ func writeStandaloneDocs(opts Options, res *Result, profile string) error {
 				})
 				continue
 			}
-		} else if !errors.Is(err, fs.ErrNotExist) {
+			if isManaged(existing) {
+				merged, malformed := mergeCustomAnchors(existing, []byte(content))
+				if len(malformed) > 0 {
+					if !opts.Force {
+						res.Skipped = append(res.Skipped, Skip{
+							Path:   spec.RelPath,
+							Reason: "malformed ncgo:custom anchor(s): " + strings.Join(malformed, "; ") + "; fix markers or pass --force",
+						})
+						continue
+					}
+				} else {
+					content = merged
+				}
+			}
+		case errors.Is(err, fs.ErrNotExist):
+			// no existing file; nothing to merge
+		default:
 			return fmt.Errorf("ai sync: check %s: %w", spec.RelPath, err)
 		}
 		if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
