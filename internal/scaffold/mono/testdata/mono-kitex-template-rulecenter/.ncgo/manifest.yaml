@@ -7,5 +7,5 @@ service:
     name: rulecenter
     kind: kitex
     with_database: false
-    idl: idl/rulecenter.proto
+    idl: idl/rule-center.proto
 generated_at: 2026-04-29T00:00:00Z

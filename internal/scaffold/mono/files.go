@@ -576,6 +576,13 @@ func idlNameToken(opts Options) string {
 // write the full preset proto at scaffold time. That way kitex parses the real
 // IDL (kitex_gen/api/ratelimit/v1) on its first run instead of only after the
 // user runs `make update`. Any IDL that already exists on disk is left alone.
+//
+// This also fires for a `--template-dir` package named "rule-center" (see
+// Generate in mono.go), since its real proto is likewise only materialized on
+// disk by the kitex generator's per-file overlay (never by overlayTemplatePackage,
+// which only copies the package's own idl/ directory — decoy files for this
+// package, Issue #115) — so without this, NoGenerate scaffolds would still get
+// an empty placeholder at idl/rule-center.proto.
 func writeIDLPlaceholder(dir, idl string, opts Options) error {
 	if err := framework.MustGet(defaultKind(opts.Kind)).WriteIDLSupportFiles(dir); err != nil {
 		return err
@@ -584,7 +591,7 @@ func writeIDLPlaceholder(dir, idl string, opts Options) error {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(full), err)
 	}
-	if opts.Preset == "rule-center" && filepath.ToSlash(idl) == "idl/rule-center.proto" {
+	if (opts.Preset == "rule-center" || opts.TemplateDir != "") && filepath.ToSlash(idl) == "idl/rule-center.proto" {
 		body, err := ruleCenterIDLBody(assets.FS())
 		if err != nil {
 			return err

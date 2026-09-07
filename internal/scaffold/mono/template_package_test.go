@@ -499,6 +499,47 @@ func TestGenerateTemplateRuleCenterEquivalentToPreset(t *testing.T) {
 	}
 }
 
+// TestGenerateTemplatePackageRuleCenterIDLSelection proves that --template-dir
+// against the rule-center package selects the package's real, fixed-path proto
+// (idl/rule-center.proto) rather than one of the package's generic decoy idl/
+// files — regression test for Issue #115.
+func TestGenerateTemplatePackageRuleCenterIDLSelection(t *testing.T) {
+	opts := templatePkgOptions(t, seedRuleCenterTemplatePackage(t))
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	// 1. The manifest records the package's real proto path, matching --preset.
+	m, err := manifest.Load(opts.Dir)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	if want, got := "idl/rule-center.proto", m.Service.IDL; got != want {
+		t.Errorf("manifest Service.IDL = %q, want %q", got, want)
+	}
+
+	// 2. That file carries the real RuleService RPC surface, not a decoy.
+	idl := readTreeFile(t, opts.Dir, "idl/rule-center.proto")
+	if !strings.Contains(string(idl), "service RuleService") {
+		t.Errorf("idl/rule-center.proto missing service RuleService:\n%s", idl)
+	}
+
+	// 3. nextSteps target the real proto, not a decoy path.
+	found := false
+	for _, step := range res.NextSteps {
+		if strings.Contains(step, "idl/rule-center.proto") {
+			found = true
+		}
+		if strings.Contains(step, "-center.proto") && !strings.Contains(step, "idl/rule-center.proto") {
+			t.Errorf("nextSteps references a decoy idl path: %v", res.NextSteps)
+		}
+	}
+	if !found {
+		t.Errorf("nextSteps missing idl/rule-center.proto: %v", res.NextSteps)
+	}
+}
+
 // TestGenerateTemplatePackageIDLNameCoupling proves that a template package whose
 // IDL has a FIXED filename (rule-center ships idl/rulecenter.proto) defines the
 // project IDL path even when the service name lowercases to something else. Without
