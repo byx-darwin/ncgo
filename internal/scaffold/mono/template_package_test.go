@@ -373,10 +373,9 @@ func ruleCenterSchemaBody(srcFS fs.FS) ([]byte, error) {
 
 // TestGenerateTemplateRuleCenterEquivalentToPreset proves that generating with
 // `--template <rule-center package>` (B) produces a scaffold equivalent to the
-// `--preset rule-center` scaffold (A), modulo the documented IDL filename
-// difference: preset writes idl/rule-center.proto, template writes
-// idl/rulecenter.proto (same content). The manifest's Service.IDL field
-// records the differing path; everything else must match.
+// `--preset rule-center` scaffold (A) — including an IDENTICAL IDL path
+// (idl/rule-center.proto), fixed by Issue #115. Before that fix, B selected a
+// generic decoy proto from the package's idl/ directory instead.
 func TestGenerateTemplateRuleCenterEquivalentToPreset(t *testing.T) {
 	pinned := time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC)
 	generate := func(name string, preset, templateDir string) (string, Options) {
@@ -445,13 +444,11 @@ func TestGenerateTemplateRuleCenterEquivalentToPreset(t *testing.T) {
 		t.Errorf("preset schema missing CREATE TABLE:\n%s", schema)
 	}
 
-	// 5. IDL content is identical under the two different filenames, and both
-	// carry the RuleService RPC surface.
+	// 5. IDL content is identical at the SAME path, and both carry the
+	// RuleService RPC surface.
+	assertFileEqual(t, dirA, dirB, "idl/rule-center.proto")
 	idlA := readTreeFile(t, dirA, "idl/rule-center.proto")
-	idlB := readTreeFile(t, dirB, "idl/rulecenter.proto")
-	if !bytes.Equal(idlA, idlB) {
-		t.Errorf("IDL content differs (preset idl/rule-center.proto vs template idl/rulecenter.proto)\n--- preset ---\n%s\n--- template ---\n%s", idlA, idlB)
-	}
+	idlB := readTreeFile(t, dirB, "idl/rule-center.proto")
 	for name, body := range map[string][]byte{"preset": idlA, "template": idlB} {
 		if !strings.Contains(string(body), "service RuleService") {
 			t.Errorf("%s IDL missing service RuleService:\n%s", name, body)
@@ -494,8 +491,11 @@ func TestGenerateTemplateRuleCenterEquivalentToPreset(t *testing.T) {
 	if want, got := "idl/rule-center.proto", mA.Service.IDL; got != want {
 		t.Errorf("preset manifest idl = %q, want %q", got, want)
 	}
-	if want, got := "idl/rulecenter.proto", mB.Service.IDL; got != want {
+	if want, got := "idl/rule-center.proto", mB.Service.IDL; got != want {
 		t.Errorf("template manifest idl = %q, want %q", got, want)
+	}
+	if mA.Service.IDL != mB.Service.IDL {
+		t.Errorf("manifest idl differs: preset=%q template=%q", mA.Service.IDL, mB.Service.IDL)
 	}
 }
 
