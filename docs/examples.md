@@ -1081,13 +1081,14 @@ A package that mirrors a built-in preset is *preset-equivalent*. For example,
 the official `rule-center` package declares
 `skip_default_templates: [handler.yaml, server.yaml, usecase.yaml,
 repository.yaml]`, carries `schema/000002_rate_limit_rules.sql`, a root
-`layout.yaml`, and `idl/rulecenter.proto`, so
-`ncgo new my-svc --kind kitex --template rule-center` produces the same tree as
-`--preset rule-center` (merge semantics: embedded defaults are kept except the
-skipped ones, and package templates are overlaid). One residual difference: the
-preset writes the IDL as `idl/rule-center.proto` while the template package
-writes `idl/rulecenter.proto` (same proto content, different filename; the
-Makefile's `IDL_FILE` follows suit).
+`layout.yaml`, and a `kitex-template/ratelimit_proto.yaml` overlay that writes
+the rule-center IDL, so `ncgo new my-svc --kind kitex --template rule-center`
+produces the same tree as `--preset rule-center` (merge semantics: embedded
+defaults are kept except the skipped ones, and package templates are
+overlaid). `--template-dir` against this package now resolves the same IDL
+path as `--preset rule-center`: both write `idl/rule-center.proto` (and the
+Makefile's `IDL_FILE` follows suit) — there is no residual IDL-path
+difference.
 
 The registry URL defaults to the official repository; override with
 `--registry <url>` or `NCGO_REGISTRY`.
