@@ -120,6 +120,9 @@ func TestSyncWritesAllTargets(t *testing.T) {
 			if !strings.Contains(body, "name: ncgo-dev") || !strings.Contains(body, "Implementing a Feature with ncgo") {
 				t.Errorf("%s missing skill frontmatter or workflow body", p)
 			}
+			if !strings.Contains(body, "make update") {
+				t.Errorf("%s missing IDL regeneration step (make update) in workflow body", p)
+			}
 			continue
 		}
 		if p == ".cursor/rules/ncgo.mdc" {
@@ -148,6 +151,9 @@ func TestSyncWritesAllTargets(t *testing.T) {
 				t.Errorf("%s missing design-doc overview summary", p)
 			}
 			continue
+		}
+		if !strings.Contains(body, "make update") {
+			t.Errorf("%s missing IDL regeneration step (make update) in workflow body", p)
 		}
 		// Design doc is no longer embedded in CLAUDE.md/AGENTS.md;
 		// it lives in standalone docs/ncgo/ files.
