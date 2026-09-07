@@ -983,3 +983,64 @@ func TestReadGeneratedAtMissingMarker(t *testing.T) {
 		t.Fatal("ReadGeneratedAt should report no marker when absent")
 	}
 }
+
+func TestSyncPreservesCustomAnchorOnManagedFile(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	pre := ManagedMarker + "\n" +
+		"# stale body\n\n" +
+		"<!-- ncgo:custom:docker-dev:start -->\n" +
+		"docker compose up -d\n" +
+		"<!-- ncgo:custom:docker-dev:end -->\n"
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(pre), 0o644); err != nil {
+		t.Fatalf("seed AGENTS.md: %v", err)
+	}
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	body, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if !strings.Contains(string(body), "## Custom Notes") || !strings.Contains(string(body), "docker compose up -d") {
+		t.Errorf("expected custom anchor preserved in AGENTS.md, got %q", string(body))
+	}
+}
+
+func TestSyncRefusesManagedFileWithMalformedAnchor(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	pre := ManagedMarker + "\n<!-- ncgo:custom:oops:start -->\nunterminated\n"
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(pre), 0o644); err != nil {
+		t.Fatalf("seed AGENTS.md: %v", err)
+	}
+	res, err := Sync(Options{Root: root, Target: TargetAll})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if got, _ := os.ReadFile(filepath.Join(root, "AGENTS.md")); string(got) != pre {
+		t.Errorf("AGENTS.md must not be overwritten when a custom anchor is malformed")
+	}
+	var skipped bool
+	for _, s := range res.Skipped {
+		if s.Path == "AGENTS.md" && strings.Contains(s.Reason, "malformed ncgo:custom anchor") {
+			skipped = true
+		}
+	}
+	if !skipped {
+		t.Errorf("expected AGENTS.md skip for malformed anchor; got %+v", res.Skipped)
+	}
+}
+
+func TestSyncForceOverwritesManagedFileWithMalformedAnchor(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	pre := ManagedMarker + "\n<!-- ncgo:custom:oops:start -->\nunterminated\n"
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(pre), 0o644); err != nil {
+		t.Fatalf("seed AGENTS.md: %v", err)
+	}
+	if _, err := Sync(Options{Root: root, Force: true, Target: TargetAll}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	body, _ := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if strings.Contains(string(body), "unterminated") {
+		t.Errorf("--force should discard the malformed anchor content, got %q", string(body))
+	}
+}

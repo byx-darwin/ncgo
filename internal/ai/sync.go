@@ -494,7 +494,9 @@ func writeTarget(opts Options, t target, inputs renderInputs, res *Result) error
 		return nil
 	}
 	rendered := t.Render(inputs)
-	if existing, err := os.ReadFile(full); err == nil {
+	existing, err := os.ReadFile(full)
+	switch {
+	case err == nil:
 		if !isManaged(existing) && !opts.Force {
 			res.Skipped = append(res.Skipped, Skip{
 				Path:   t.RelPath,
@@ -502,7 +504,23 @@ func writeTarget(opts Options, t target, inputs renderInputs, res *Result) error
 			})
 			return nil
 		}
-	} else if !errors.Is(err, fs.ErrNotExist) {
+		if isManaged(existing) {
+			merged, malformed := mergeCustomAnchors(existing, []byte(rendered))
+			if len(malformed) > 0 {
+				if !opts.Force {
+					res.Skipped = append(res.Skipped, Skip{
+						Path:   t.RelPath,
+						Reason: "malformed ncgo:custom anchor(s): " + strings.Join(malformed, "; ") + "; fix markers or pass --force",
+					})
+					return nil
+				}
+			} else {
+				rendered = merged
+			}
+		}
+	case errors.Is(err, fs.ErrNotExist):
+		// no existing file; nothing to merge
+	default:
 		return fmt.Errorf("ai sync: stat %s: %w", full, err)
 	}
 	if opts.DryRun {
