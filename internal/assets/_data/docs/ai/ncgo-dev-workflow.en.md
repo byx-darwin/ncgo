@@ -16,21 +16,35 @@ contract, so an AI agent can drive it directly.
    `// ncgo:methods:start` and `// ncgo:methods:end` markers in the domain
    usecase file. Method names match `^[A-Z][A-Za-z0-9_]{0,62}$`.
 
-3. **Regenerate database code** — `make sqlc`
+3. **Update the IDL** — edit `idl/<service>.proto`
+   Add or change the rpc/api method definition when the feature exposes a
+   new or modified endpoint, not just an internal usecase change.
+
+4. **Regenerate code from IDL** — `make update`
+   Hertz runs `hz update`; Kitex runs the `kitex` generator. Regenerates the
+   handler stub and generated types (`internal/pb` or `kitex_gen`) from the
+   IDL. Skip this step and the two above it when the feature only changes
+   usecase logic and does not touch the IDL.
+
+5. **Implement the handler** — wire the generated handler to the usecase
+   method added in step 2, following the `handler/* → usecase/*` layer rule
+   (no repo/data import from handler).
+
+6. **Regenerate database code** — `make sqlc`
    Required when the service uses a database (`cfg.Database.Enabled`). Kitex
    services always need this before `go mod tidy`; Hertz services need it
    only when the database scaffold is enabled.
 
-4. **Verify** — `go build ./... && go vet ./... && go test ./... -count=1`
+7. **Verify** — `go build ./... && go vet ./... && go test ./... -count=1`
    The scaffold must stay buildable after each method insertion.
 
-5. **Validate with ncgo check** — `ncgo check --root .`
+8. **Validate with ncgo check** — `ncgo check --root .`
    Verifies the change is internally consistent: every usecase has paired
    `// ncgo:methods:start|end` anchors, `manifest.Domains` matches
    `internal/usecase/*/`, and rendered AI context is not stale. Exits `0` on
    pass, `1` on a failed check, `2` on a command error.
 
-6. **Refresh AI context** — `ncgo ai sync --root .`
+9. **Refresh AI context** — `ncgo ai sync --root .`
    Re-renders this project's AI artifacts (see below) so agent context
    reflects the new domain and methods. Re-run `ncgo check` after sync to
    confirm the stale-context check passes.
@@ -47,6 +61,8 @@ contract, so an AI agent can drive it directly.
 
 - [ ] `.ncgo/manifest.yaml` lists the new domain
 - [ ] `internal/usecase/<domain>/<domain>.go` contains the new method between anchors
+- [ ] `idl/<service>.proto` updated and `make update` re-run, if the feature adds/changes an endpoint
+- [ ] the handler calls the usecase method (no repo/data import from handler)
 - [ ] `go build ./...` passes
 - [ ] `ncgo check --root .` exits 0
 - [ ] `ncgo ai sync --root .` completes and reports the managed files written
@@ -58,6 +74,9 @@ contract, so an AI agent can drive it directly.
   run `ncgo add method` directly or pass `--force`.
 - `ncgo add method` fails "missing markers" — the usecase file was hand-edited
   or never generated; regenerate the domain with `ncgo add domain <name> --force`.
+- `make update` fails — confirm `hz`/`kitex` is installed and on `PATH`, and
+  the IDL file is syntactically valid; see the project's design doc at
+  `docs/ncgo/<profile>/design-doc.en.md`.
 - `make sqlc` fails — confirm `sqlc` is installed and the schema files are
   intact; see the project's design doc at `docs/ncgo/<profile>/design-doc.en.md`.
 - `ncgo check` exits 1 on `check.anchor` — a usecase lost its
