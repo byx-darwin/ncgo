@@ -320,14 +320,19 @@ func seedRuleCenterTemplatePackage(t *testing.T) string {
 		write("kitex-template/"+target, b)
 	}
 
-	// idl/rulecenter.proto: the full RuleService proto (identical to the
-	// preset's ratelimit_proto.yaml body, written under the dashless filename
-	// the default kitex IDL path uses for a service named "rulecenter").
-	proto, err := ruleCenterIDLBody(srcFS)
-	if err != nil {
-		t.Fatalf("seed rule-center pkg: idl body: %v", err)
-	}
-	write("idl/rulecenter.proto", proto)
+	// idl/{{ToLower .ServiceName}}.proto and idl/{{ToLower .ServiceName}}-center.proto:
+	// generic, unrelated placeholder protos that the real byx-darwin/ncgo-templates
+	// rule-center package ships alongside its actual proto. They exist so
+	// pkg.IDLs[0]'s lexical-first selection in mono.go picks the WRONG file
+	// without the Task 2 fix (Issue #115) — "-center.proto" sorts before
+	// ".proto" ('-' < '.'), so {{ToLower .ServiceName}}-center.proto wins.
+	// Neither declares "service RuleService"; the real proto is written to
+	// the fixed path idl/rule-center.proto by the kitex-template/ratelimit_proto.yaml
+	// overlay below (its `path:` field is a literal, non-templated
+	// idl/rule-center.proto), a mechanism this decoy directory has no part in.
+	decoyProto := []byte("syntax = \"proto3\";\npackage ratelimit.v1;\n\nservice {{.ServiceName}}Service {\n  rpc Get{{.ServiceName}}(Get{{.ServiceName}}Req) returns (Get{{.ServiceName}}Resp);\n}\n\nmessage Get{{.ServiceName}}Req {}\nmessage Get{{.ServiceName}}Resp {}\n")
+	write("idl/{{ToLower .ServiceName}}.proto", decoyProto)
+	write("idl/{{ToLower .ServiceName}}-center.proto", decoyProto)
 
 	// schema/000002_rate_limit_rules.sql: pure SQL body extracted from the
 	// embedded yaml (the same bytes the preset writes for
