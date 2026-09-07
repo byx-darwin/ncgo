@@ -612,6 +612,29 @@ func TestSyncWorkspaceFailsWhenListedServiceManifestIsMissing(t *testing.T) {
 	}
 }
 
+func TestSyncPreservesCustomAnchorOnStandaloneDoc(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	docPath := filepath.Join(root, "docs", "ncgo", "hertz", "design-doc.en.md")
+	if err := os.MkdirAll(filepath.Dir(docPath), 0o755); err != nil {
+		t.Fatalf("mkdir: %v", err)
+	}
+	pre := ManagedMarker + "\n# stale\n\n" +
+		"<!-- ncgo:custom:team-notes:start -->\n" +
+		"see runbook at go/team-runbook\n" +
+		"<!-- ncgo:custom:team-notes:end -->\n"
+	if err := os.WriteFile(docPath, []byte(pre), 0o644); err != nil {
+		t.Fatalf("seed standalone doc: %v", err)
+	}
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	body, _ := os.ReadFile(docPath)
+	if !strings.Contains(string(body), "## Custom Notes") || !strings.Contains(string(body), "go/team-runbook") {
+		t.Errorf("expected custom anchor preserved in standalone doc, got %q", string(body))
+	}
+}
+
 func TestSyncWritesStandaloneDocs(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindHertz)
