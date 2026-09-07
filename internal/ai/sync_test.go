@@ -1027,6 +1027,35 @@ func TestSyncPreservesCustomAnchorOnManagedFile(t *testing.T) {
 	}
 }
 
+func TestSyncTwiceIsIdempotentWithCustomAnchor(t *testing.T) {
+	root := t.TempDir()
+	writeManifest(t, root, manifest.KindHertz)
+	pre := ManagedMarker + "\n" +
+		"# stale body\n\n" +
+		"<!-- ncgo:custom:docker-dev:start -->\n" +
+		"docker compose up -d\n" +
+		"<!-- ncgo:custom:docker-dev:end -->\n"
+	if err := os.WriteFile(filepath.Join(root, "AGENTS.md"), []byte(pre), 0o644); err != nil {
+		t.Fatalf("seed AGENTS.md: %v", err)
+	}
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
+		t.Fatalf("first Sync: %v", err)
+	}
+	if _, err := Sync(Options{Root: root, Target: TargetAll}); err != nil {
+		t.Fatalf("second Sync: %v", err)
+	}
+	body, err := os.ReadFile(filepath.Join(root, "AGENTS.md"))
+	if err != nil {
+		t.Fatalf("read AGENTS.md: %v", err)
+	}
+	if n := strings.Count(string(body), "## Custom Notes"); n != 1 {
+		t.Errorf("expected exactly one Custom Notes section after two syncs, got %d in %q", n, string(body))
+	}
+	if n := strings.Count(string(body), "docker compose up -d"); n != 1 {
+		t.Errorf("expected anchor content to appear exactly once after two syncs, got %d in %q", n, string(body))
+	}
+}
+
 func TestSyncRefusesManagedFileWithMalformedAnchor(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindHertz)

@@ -19,16 +19,37 @@ type customAnchor struct {
 // mergeCustomAnchors extracts well-formed `<!-- ncgo:custom:<name>:start -->`
 // ... `<!-- ncgo:custom:<name>:end -->` blocks from oldContent and appends
 // them, in first-seen order, under a new "## Custom Notes" section at the
-// end of rendered. When at least one malformed anchor is found (missing end
-// marker, end without a matching start, invalid name, duplicate name),
-// merged is "" and malformed carries a human-readable reason per problem —
-// callers must refuse to overwrite rather than merge, mirroring the
-// existing "file exists without ncgo:managed marker" skip semantics.
+// end of rendered. Anchors whose name is already present in rendered (for
+// example because AGENTS.local.md's content — including its own anchor
+// markers — was inlined verbatim under "## Local Notes") are skipped, since
+// they're already there and re-appending them would duplicate the name and
+// eventually make extractCustomAnchors flag the file as malformed. When at
+// least one malformed anchor is found in oldContent (missing end marker, end
+// without a matching start, invalid name, duplicate name), merged is "" and
+// malformed carries a human-readable reason per problem — callers must
+// refuse to overwrite rather than merge, mirroring the existing "file exists
+// without ncgo:managed marker" skip semantics.
 func mergeCustomAnchors(oldContent, rendered []byte) (merged string, malformed []string) {
 	anchors, malformed := extractCustomAnchors(string(oldContent))
 	if len(malformed) > 0 {
 		return "", malformed
 	}
+	if len(anchors) == 0 {
+		return string(rendered), nil
+	}
+	renderedAnchors, _ := extractCustomAnchors(string(rendered))
+	renderedNames := make(map[string]bool, len(renderedAnchors))
+	for _, a := range renderedAnchors {
+		renderedNames[a.name] = true
+	}
+	kept := anchors[:0:0]
+	for _, a := range anchors {
+		if renderedNames[a.name] {
+			continue
+		}
+		kept = append(kept, a)
+	}
+	anchors = kept
 	if len(anchors) == 0 {
 		return string(rendered), nil
 	}
