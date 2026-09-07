@@ -147,7 +147,7 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	// by the resolved idl path string — an unrelated template package could
 	// otherwise legitimately name its own real IDL file idl/rule-center.proto.
 	isRuleCenterPkg := opts.Preset == "rule-center" || (opts.TemplateDir != "" && pkg != nil && pkg.Meta.Name == "rule-center")
-	if err := writeIDLPlaceholder(dir, idl, opts, isRuleCenterPkg); err != nil {
+	if err := writeIDLPlaceholder(dir, idl, opts, isRuleCenterPkg, pkg); err != nil {
 		return nil, err
 	}
 	m, err := writeManifest(dir, opts, idl)

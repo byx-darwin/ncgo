@@ -592,6 +592,45 @@ func TestGenerateTemplatePackageIDLNameCoupling(t *testing.T) {
 	}
 }
 
+// TestGenerateTemplatePackageRuleCenterIDLPrefersPackageOwnProto proves that
+// --template-dir writes the loaded rule-center package's OWN
+// kitex-template/ratelimit_proto.yaml proto body to idl/rule-center.proto,
+// not ncgo's embedded copy: it diverges the fixture's own proto file from the
+// embedded one and asserts the divergent (package) content wins. Without this
+// fix, writeIDLPlaceholder always read ncgo's embedded copy, so a
+// forked/upstream package could never make --template-dir see its own,
+// possibly newer, proto.
+func TestGenerateTemplatePackageRuleCenterIDLPrefersPackageOwnProto(t *testing.T) {
+	pkgDir := seedRuleCenterTemplatePackage(t)
+
+	protoPath := filepath.Join(pkgDir, "kitex-template", "ratelimit_proto.yaml")
+	orig, err := os.ReadFile(protoPath)
+	if err != nil {
+		t.Fatalf("read fixture ratelimit_proto.yaml: %v", err)
+	}
+	const marker = "// package-own-proto-marker: this line only exists in the package's own proto"
+	diverged := bytes.Replace(orig, []byte("body: |-\n"), []byte("body: |-\n  "+marker+"\n"), 1)
+	if bytes.Equal(diverged, orig) {
+		t.Fatal("failed to diverge fixture ratelimit_proto.yaml body (unexpected fixture format)")
+	}
+	if err := os.WriteFile(protoPath, diverged, 0o644); err != nil {
+		t.Fatalf("write diverged ratelimit_proto.yaml: %v", err)
+	}
+
+	opts := templatePkgOptions(t, pkgDir)
+	if _, err := Generate(context.Background(), opts); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	idl := readTreeFile(t, opts.Dir, "idl/rule-center.proto")
+	if !strings.Contains(string(idl), marker) {
+		t.Errorf("idl/rule-center.proto did not use the package's own diverged proto:\n%s", idl)
+	}
+	if !strings.Contains(string(idl), "service RuleService") {
+		t.Errorf("idl/rule-center.proto missing service RuleService:\n%s", idl)
+	}
+}
+
 // sortedTemplateNames returns the sorted basenames of a template directory.
 func sortedTemplateNames(t *testing.T, dir string) []string {
 	t.Helper()
