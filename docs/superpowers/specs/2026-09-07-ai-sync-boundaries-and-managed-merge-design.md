@@ -30,14 +30,20 @@
 
 ### 设计
 
+- **范围修正（计划阶段复核代码后发现）**：`EditBoundaries` 现有 workspace
+  scope 分支实际上用的是 `svc.Name`（服务名）拼行，不是 `svc.Domains`——
+  workspace 级表格本来就是"以整个服务目录为粒度"的粗粒度简化，`internal/repository/<domain>/`
+  这种按 domain 细分的路径在 workspace 级根本不对应任何真实相对路径
+  （真实路径是 `services/<svc>/internal/repository/<domain>/`，workspace
+  级渲染并不知道这层前缀）。而 Issue #114 的复现步骤明确是在**单个服务
+  目录下**跑 `ai sync`（`syncScopeService`）。因此本次并集渲染检查**只
+  覆盖 service scope**，workspace scope 分支保持现状不变，避免引入范围
+  外的行为变更。
 - `EditBoundaries` 增加 `root string` 参数：
   - service scope（`source.Scope == syncScopeService`）→ 调用方
-    `sync.go:171` 直接传入 `opts.Root`。
-  - workspace scope（`source.Scope == syncScopeWorkspace`）→ 遍历
-    `source.WorkspaceServices` 时，对每个 `workspaceServiceFacts` 用其
-    `Dir` 字段拼出 `serviceRoot := filepath.Join(opts.Root, svc.Dir)`
-    （与 `loadWorkspaceServiceFacts`、`sync.go:263` 现有的拼接方式一致），
-    对该 service 的 domain 集合单独做并集检查。
+    `sync.go:171` 直接传入 `opts.Root`，用于并集渲染检查。
+  - workspace scope → `root` 参数被忽略，逻辑与现状完全一致（仍用
+    `svc.Name` 拼行，不做文件系统检查）。
 - 渲染集合 = manifest domains ∪ 文件系统里实际存在的
   `internal/repository/<d>/` 和 `internal/usecase/<d>/` 子目录名集合。
 - 对存在于文件系统但不在 manifest domains 里的行，`Reason` 字段追加
