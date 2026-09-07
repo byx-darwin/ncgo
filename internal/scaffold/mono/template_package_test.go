@@ -264,7 +264,9 @@ func TestGenerateTemplatePackageHertzRootOverlay(t *testing.T) {
 // the byx-darwin/ncgo-templates rule-center package, sourcing every file from
 // the embedded assets so the fixture stays in sync with the preset source of
 // truth. It carries skip_default_templates, 8 ratelimit_*.yaml + 5
-// ratelimit_shared_*.yaml kitex templates, the full RuleService proto, the
+// ratelimit_shared_*.yaml kitex templates, two generic decoy protos under
+// idl/ (the real RuleService proto is written separately via the
+// kitex-template/ratelimit_proto.yaml fixed-path overlay), the
 // rate_limit_rules SQL schema, and the rule-center layout.yaml.
 func seedRuleCenterTemplatePackage(t *testing.T) string {
 	t.Helper()
