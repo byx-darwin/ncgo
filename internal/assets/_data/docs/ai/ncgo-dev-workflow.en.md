@@ -23,7 +23,7 @@ contract, so an AI agent can drive it directly.
 4. **Regenerate code from IDL** — `make update`
    Hertz runs `hz update`; Kitex runs the `kitex` generator. Regenerates the
    handler stub and generated types (`internal/pb` or `kitex_gen`) from the
-   IDL. Skip this step and the two above it when the feature only changes
+   IDL. Skip this step and the one above it when the feature only changes
    usecase logic and does not touch the IDL.
 
 5. **Implement the handler** — wire the generated handler to the usecase
