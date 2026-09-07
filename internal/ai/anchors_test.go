@@ -96,3 +96,27 @@ func TestMergeCustomAnchorsInvalidNameIsMalformed(t *testing.T) {
 		t.Fatal("expected malformed anchor for invalid name")
 	}
 }
+
+func TestMergeCustomAnchorsNestedStartIsMalformed(t *testing.T) {
+	old := "<!-- ncgo:managed -->\n<!-- ncgo:custom:outer:start -->\nouter body\n<!-- ncgo:custom:inner:start -->\ninner body\n<!-- ncgo:custom:inner:end -->\n<!-- ncgo:custom:outer:end -->\n"
+	rendered := "<!-- ncgo:managed -->\nnew body\n"
+	_, malformed := mergeCustomAnchors([]byte(old), []byte(rendered))
+	if len(malformed) == 0 {
+		t.Fatal("expected malformed anchor for nested start")
+	}
+	if !strings.Contains(malformed[0], "inner") {
+		t.Errorf("expected malformed reason to name the nested anchor, got %v", malformed)
+	}
+}
+
+func TestMergeCustomAnchorsEndNameMismatchIsMalformed(t *testing.T) {
+	old := "<!-- ncgo:managed -->\n<!-- ncgo:custom:foo:start -->\nbody\n<!-- ncgo:custom:bar:end -->\n"
+	rendered := "<!-- ncgo:managed -->\nnew body\n"
+	_, malformed := mergeCustomAnchors([]byte(old), []byte(rendered))
+	if len(malformed) == 0 {
+		t.Fatal("expected malformed anchor for end/start name mismatch")
+	}
+	if !strings.Contains(malformed[0], "bar") {
+		t.Errorf("expected malformed reason to name the mismatched end marker, got %v", malformed)
+	}
+}
