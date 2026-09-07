@@ -264,7 +264,9 @@ func TestGenerateTemplatePackageHertzRootOverlay(t *testing.T) {
 // the byx-darwin/ncgo-templates rule-center package, sourcing every file from
 // the embedded assets so the fixture stays in sync with the preset source of
 // truth. It carries skip_default_templates, 8 ratelimit_*.yaml + 5
-// ratelimit_shared_*.yaml kitex templates, the full RuleService proto, the
+// ratelimit_shared_*.yaml kitex templates, two generic decoy protos under
+// idl/ (the real RuleService proto is written separately via the
+// kitex-template/ratelimit_proto.yaml fixed-path overlay), the
 // rate_limit_rules SQL schema, and the rule-center layout.yaml.
 func seedRuleCenterTemplatePackage(t *testing.T) string {
 	t.Helper()
@@ -320,14 +322,19 @@ func seedRuleCenterTemplatePackage(t *testing.T) string {
 		write("kitex-template/"+target, b)
 	}
 
-	// idl/rulecenter.proto: the full RuleService proto (identical to the
-	// preset's ratelimit_proto.yaml body, written under the dashless filename
-	// the default kitex IDL path uses for a service named "rulecenter").
-	proto, err := ruleCenterIDLBody(srcFS)
-	if err != nil {
-		t.Fatalf("seed rule-center pkg: idl body: %v", err)
-	}
-	write("idl/rulecenter.proto", proto)
+	// idl/{{ToLower .ServiceName}}.proto and idl/{{ToLower .ServiceName}}-center.proto:
+	// generic, unrelated placeholder protos that the real byx-darwin/ncgo-templates
+	// rule-center package ships alongside its actual proto. They exist so
+	// pkg.IDLs[0]'s lexical-first selection in mono.go picks the WRONG file
+	// without the Task 2 fix (Issue #115) — "-center.proto" sorts before
+	// ".proto" ('-' < '.'), so {{ToLower .ServiceName}}-center.proto wins.
+	// Neither declares "service RuleService"; the real proto is written to
+	// the fixed path idl/rule-center.proto by the kitex-template/ratelimit_proto.yaml
+	// overlay below (its `path:` field is a literal, non-templated
+	// idl/rule-center.proto), a mechanism this decoy directory has no part in.
+	decoyProto := []byte("syntax = \"proto3\";\npackage ratelimit.v1;\n\nservice {{.ServiceName}}Service {\n  rpc Get{{.ServiceName}}(Get{{.ServiceName}}Req) returns (Get{{.ServiceName}}Resp);\n}\n\nmessage Get{{.ServiceName}}Req {}\nmessage Get{{.ServiceName}}Resp {}\n")
+	write("idl/{{ToLower .ServiceName}}.proto", decoyProto)
+	write("idl/{{ToLower .ServiceName}}-center.proto", decoyProto)
 
 	// schema/000002_rate_limit_rules.sql: pure SQL body extracted from the
 	// embedded yaml (the same bytes the preset writes for
@@ -368,10 +375,9 @@ func ruleCenterSchemaBody(srcFS fs.FS) ([]byte, error) {
 
 // TestGenerateTemplateRuleCenterEquivalentToPreset proves that generating with
 // `--template <rule-center package>` (B) produces a scaffold equivalent to the
-// `--preset rule-center` scaffold (A), modulo the documented IDL filename
-// difference: preset writes idl/rule-center.proto, template writes
-// idl/rulecenter.proto (same content). The manifest's Service.IDL field
-// records the differing path; everything else must match.
+// `--preset rule-center` scaffold (A) — including an IDENTICAL IDL path
+// (idl/rule-center.proto), fixed by Issue #115. Before that fix, B selected a
+// generic decoy proto from the package's idl/ directory instead.
 func TestGenerateTemplateRuleCenterEquivalentToPreset(t *testing.T) {
 	pinned := time.Date(2026, 4, 29, 0, 0, 0, 0, time.UTC)
 	generate := func(name string, preset, templateDir string) (string, Options) {
@@ -440,13 +446,11 @@ func TestGenerateTemplateRuleCenterEquivalentToPreset(t *testing.T) {
 		t.Errorf("preset schema missing CREATE TABLE:\n%s", schema)
 	}
 
-	// 5. IDL content is identical under the two different filenames, and both
-	// carry the RuleService RPC surface.
+	// 5. IDL content is identical at the SAME path, and both carry the
+	// RuleService RPC surface.
+	assertFileEqual(t, dirA, dirB, "idl/rule-center.proto")
 	idlA := readTreeFile(t, dirA, "idl/rule-center.proto")
-	idlB := readTreeFile(t, dirB, "idl/rulecenter.proto")
-	if !bytes.Equal(idlA, idlB) {
-		t.Errorf("IDL content differs (preset idl/rule-center.proto vs template idl/rulecenter.proto)\n--- preset ---\n%s\n--- template ---\n%s", idlA, idlB)
-	}
+	idlB := readTreeFile(t, dirB, "idl/rule-center.proto")
 	for name, body := range map[string][]byte{"preset": idlA, "template": idlB} {
 		if !strings.Contains(string(body), "service RuleService") {
 			t.Errorf("%s IDL missing service RuleService:\n%s", name, body)
@@ -489,18 +493,61 @@ func TestGenerateTemplateRuleCenterEquivalentToPreset(t *testing.T) {
 	if want, got := "idl/rule-center.proto", mA.Service.IDL; got != want {
 		t.Errorf("preset manifest idl = %q, want %q", got, want)
 	}
-	if want, got := "idl/rulecenter.proto", mB.Service.IDL; got != want {
+	if want, got := "idl/rule-center.proto", mB.Service.IDL; got != want {
 		t.Errorf("template manifest idl = %q, want %q", got, want)
+	}
+	if mA.Service.IDL != mB.Service.IDL {
+		t.Errorf("manifest idl differs: preset=%q template=%q", mA.Service.IDL, mB.Service.IDL)
 	}
 }
 
-// TestGenerateTemplatePackageIDLNameCoupling proves that a template package whose
-// IDL has a FIXED filename (rule-center ships idl/rulecenter.proto) defines the
-// project IDL path even when the service name lowercases to something else. Without
-// the coupling, Generate would set the project IDL to the default <name>.proto path
-// (idl/mysvc.proto for a service named my-svc), write a stale empty placeholder there,
-// and point the manifest and kitex command at it while the overlay writes the real
-// proto to idl/rulecenter.proto — a broken, miswired scaffold.
+// TestGenerateTemplatePackageRuleCenterIDLSelection proves that --template-dir
+// against the rule-center package selects the package's real, fixed-path proto
+// (idl/rule-center.proto) rather than one of the package's generic decoy idl/
+// files — regression test for Issue #115.
+func TestGenerateTemplatePackageRuleCenterIDLSelection(t *testing.T) {
+	opts := templatePkgOptions(t, seedRuleCenterTemplatePackage(t))
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	// 1. The manifest records the package's real proto path, matching --preset.
+	m, err := manifest.Load(opts.Dir)
+	if err != nil {
+		t.Fatalf("load manifest: %v", err)
+	}
+	if want, got := "idl/rule-center.proto", m.Service.IDL; got != want {
+		t.Errorf("manifest Service.IDL = %q, want %q", got, want)
+	}
+
+	// 2. That file carries the real RuleService RPC surface, not a decoy.
+	idl := readTreeFile(t, opts.Dir, "idl/rule-center.proto")
+	if !strings.Contains(string(idl), "service RuleService") {
+		t.Errorf("idl/rule-center.proto missing service RuleService:\n%s", idl)
+	}
+
+	// 3. nextSteps target the real proto, not a decoy path.
+	found := false
+	for _, step := range res.NextSteps {
+		if strings.Contains(step, "idl/rule-center.proto") {
+			found = true
+		}
+		if strings.Contains(step, "-center.proto") && !strings.Contains(step, "idl/rule-center.proto") {
+			t.Errorf("nextSteps references a decoy idl path: %v", res.NextSteps)
+		}
+	}
+	if !found {
+		t.Errorf("nextSteps missing idl/rule-center.proto: %v", res.NextSteps)
+	}
+}
+
+// TestGenerateTemplatePackageIDLNameCoupling proves that the rule-center
+// package's FIXED idl/rule-center.proto path defines the project IDL path
+// even when the service name lowercases to something else. Without the
+// pkg.Meta.Name == "rule-center" coupling (Issue #115), Generate would set the
+// project IDL to a decoy path derived from the package's generic idl/
+// placeholder files instead.
 func TestGenerateTemplatePackageIDLNameCoupling(t *testing.T) {
 	opts := templatePkgOptions(t, seedRuleCenterTemplatePackage(t))
 	opts.Name = "my-svc"
@@ -510,32 +557,27 @@ func TestGenerateTemplatePackageIDLNameCoupling(t *testing.T) {
 		t.Fatalf("Generate: %v", err)
 	}
 
-	// 1. The package's real proto lands at idl/rulecenter.proto (overlay write).
-	idl := readTreeFile(t, opts.Dir, "idl/rulecenter.proto")
+	// 1. The package's real proto lands at idl/rule-center.proto (overlay write).
+	idl := readTreeFile(t, opts.Dir, "idl/rule-center.proto")
 	for _, marker := range []string{"service RuleService", "rpc GetRule"} {
 		if !strings.Contains(string(idl), marker) {
-			t.Errorf("idl/rulecenter.proto missing %q:\n%s", marker, idl)
+			t.Errorf("idl/rule-center.proto missing %q:\n%s", marker, idl)
 		}
 	}
 
-	// 2. No stale empty placeholder at the default <name>.proto path.
-	if _, err := os.Stat(filepath.Join(opts.Dir, "idl", "mysvc.proto")); err == nil {
-		t.Error("idl/mysvc.proto placeholder should not exist")
-	}
-
-	// 3. The manifest records the package IDL path, not the default <name>.proto.
+	// 2. The manifest records the package IDL path, not the default <name>.proto.
 	m, err := manifest.Load(opts.Dir)
 	if err != nil {
 		t.Fatalf("load manifest: %v", err)
 	}
-	if want, got := "idl/rulecenter.proto", m.Service.IDL; got != want {
+	if want, got := "idl/rule-center.proto", m.Service.IDL; got != want {
 		t.Errorf("manifest Service.IDL = %q, want %q", got, want)
 	}
 
-	// 4. nextSteps (the user-facing kitex command) targets the package IDL only.
+	// 3. nextSteps (the user-facing kitex command) targets the package IDL only.
 	foundReal, foundStale := false, false
 	for _, step := range res.NextSteps {
-		if strings.Contains(step, "idl/rulecenter.proto") {
+		if strings.Contains(step, "idl/rule-center.proto") {
 			foundReal = true
 		}
 		if strings.Contains(step, "idl/mysvc.proto") {
@@ -543,10 +585,49 @@ func TestGenerateTemplatePackageIDLNameCoupling(t *testing.T) {
 		}
 	}
 	if !foundReal {
-		t.Errorf("nextSteps missing idl/rulecenter.proto: %v", res.NextSteps)
+		t.Errorf("nextSteps missing idl/rule-center.proto: %v", res.NextSteps)
 	}
 	if foundStale {
 		t.Errorf("nextSteps references stale idl/mysvc.proto: %v", res.NextSteps)
+	}
+}
+
+// TestGenerateTemplatePackageRuleCenterIDLPrefersPackageOwnProto proves that
+// --template-dir writes the loaded rule-center package's OWN
+// kitex-template/ratelimit_proto.yaml proto body to idl/rule-center.proto,
+// not ncgo's embedded copy: it diverges the fixture's own proto file from the
+// embedded one and asserts the divergent (package) content wins. Without this
+// fix, writeIDLPlaceholder always read ncgo's embedded copy, so a
+// forked/upstream package could never make --template-dir see its own,
+// possibly newer, proto.
+func TestGenerateTemplatePackageRuleCenterIDLPrefersPackageOwnProto(t *testing.T) {
+	pkgDir := seedRuleCenterTemplatePackage(t)
+
+	protoPath := filepath.Join(pkgDir, "kitex-template", "ratelimit_proto.yaml")
+	orig, err := os.ReadFile(protoPath)
+	if err != nil {
+		t.Fatalf("read fixture ratelimit_proto.yaml: %v", err)
+	}
+	const marker = "// package-own-proto-marker: this line only exists in the package's own proto"
+	diverged := bytes.Replace(orig, []byte("body: |-\n"), []byte("body: |-\n  "+marker+"\n"), 1)
+	if bytes.Equal(diverged, orig) {
+		t.Fatal("failed to diverge fixture ratelimit_proto.yaml body (unexpected fixture format)")
+	}
+	if err := os.WriteFile(protoPath, diverged, 0o644); err != nil {
+		t.Fatalf("write diverged ratelimit_proto.yaml: %v", err)
+	}
+
+	opts := templatePkgOptions(t, pkgDir)
+	if _, err := Generate(context.Background(), opts); err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+
+	idl := readTreeFile(t, opts.Dir, "idl/rule-center.proto")
+	if !strings.Contains(string(idl), marker) {
+		t.Errorf("idl/rule-center.proto did not use the package's own diverged proto:\n%s", idl)
+	}
+	if !strings.Contains(string(idl), "service RuleService") {
+		t.Errorf("idl/rule-center.proto missing service RuleService:\n%s", idl)
 	}
 }
 

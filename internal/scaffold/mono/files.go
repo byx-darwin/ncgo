@@ -576,7 +576,25 @@ func idlNameToken(opts Options) string {
 // write the full preset proto at scaffold time. That way kitex parses the real
 // IDL (kitex_gen/api/ratelimit/v1) on its first run instead of only after the
 // user runs `make update`. Any IDL that already exists on disk is left alone.
-func writeIDLPlaceholder(dir, idl string, opts Options) error {
+//
+// This also fires for a `--template-dir` package named "rule-center" (see
+// Generate in mono.go), since its real proto is likewise only materialized on
+// disk by the kitex generator's per-file overlay (never by overlayTemplatePackage,
+// which only copies the package's own idl/ directory — decoy files for this
+// package, Issue #115) — so without this, NoGenerate scaffolds would still get
+// an empty placeholder at idl/rule-center.proto. isRuleCenterPkg is computed by
+// the caller from package identity (preset name or the loaded package's
+// Meta.Name), not from the resolved idl path, so an unrelated template package
+// whose own real IDL file happens to be literally named idl/rule-center.proto
+// is never mistaken for this one.
+//
+// pkg is the loaded --template-dir package (nil for --preset). When non-nil,
+// the proto body is read from pkg's own kitex-template/ratelimit_proto.yaml on
+// disk rather than ncgo's embedded copy: --template-dir exists so a package
+// can evolve independently of the ncgo binary, and always using the embedded
+// bytes would silently hand a `--no-generate` scaffold ncgo's possibly-stale
+// proto instead of the loaded package's own.
+func writeIDLPlaceholder(dir, idl string, opts Options, isRuleCenterPkg bool, pkg *scaffoldtemplate.Package) error {
 	if err := framework.MustGet(defaultKind(opts.Kind)).WriteIDLSupportFiles(dir); err != nil {
 		return err
 	}
@@ -584,8 +602,19 @@ func writeIDLPlaceholder(dir, idl string, opts Options) error {
 	if err := os.MkdirAll(filepath.Dir(full), 0o755); err != nil {
 		return fmt.Errorf("scaffold: mkdir %s: %w", filepath.Dir(full), err)
 	}
-	if opts.Preset == "rule-center" && filepath.ToSlash(idl) == "idl/rule-center.proto" {
-		body, err := ruleCenterIDLBody(assets.FS())
+	if isRuleCenterPkg && filepath.ToSlash(idl) == "idl/rule-center.proto" {
+		var body []byte
+		var err error
+		if pkg != nil {
+			// --template-dir: prefer the package's own ratelimit_proto.yaml. A
+			// missing file is a real packaging problem, not something to paper
+			// over by silently falling back to the (possibly stale) embedded
+			// copy, so this returns an error rather than swallowing it.
+			body, err = ruleCenterIDLBodyFromPackage(pkg)
+		} else {
+			// --preset: there is no loaded package; always use the embedded copy.
+			body, err = ruleCenterIDLBody(assets.FS())
+		}
 		if err != nil {
 			return err
 		}
@@ -615,6 +644,27 @@ func ruleCenterIDLBody(srcFS fs.FS) ([]byte, error) {
 	if err != nil {
 		return nil, fmt.Errorf("scaffold: read embedded ratelimit_proto.yaml: %w", err)
 	}
+	return extractRuleCenterProtoBody(b)
+}
+
+// ruleCenterIDLBodyFromPackage is ruleCenterIDLBody's --template-dir
+// counterpart: it reads ratelimit_proto.yaml from the loaded package's own
+// kitex-template directory on disk instead of ncgo's embedded assets, so a
+// forked/upstream rule-center package's proto wins over ncgo's copy.
+func ruleCenterIDLBodyFromPackage(pkg *scaffoldtemplate.Package) ([]byte, error) {
+	path := filepath.Join(pkg.TemplateDir, "ratelimit_proto.yaml")
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("scaffold: read package ratelimit_proto.yaml: %w", err)
+	}
+	return extractRuleCenterProtoBody(b)
+}
+
+// extractRuleCenterProtoBody pulls the `body:` block scalar out of a
+// ratelimit_proto.yaml kitex per-file template (embedded or loaded from a
+// --template-dir package), shared by ruleCenterIDLBody and
+// ruleCenterIDLBodyFromPackage.
+func extractRuleCenterProtoBody(b []byte) ([]byte, error) {
 	var tpl struct {
 		Body string `yaml:"body"`
 	}

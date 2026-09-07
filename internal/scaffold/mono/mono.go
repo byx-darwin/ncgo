@@ -106,15 +106,23 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 			return nil, err
 		}
 		opts.SkipDefaultTemplates = pkg.Meta.SkipDefaultTemplates
-		// A template package's IDL defines the project IDL path: the manifest,
-		// generator command, and placeholder all target the package's real proto.
-		// This matches defaultIDL for variable-named packages
-		// ({{ToLower .ServiceName}}.proto) and fixes fixed-named packages (e.g.
-		// rule-center's idl/rulecenter.proto) whose filename would otherwise diverge
-		// from the default <name>.proto path, leaving a stale empty placeholder.
-		// writeIDLPlaceholder never clobbers an existing IDL, so the overlay-written
-		// real proto wins.
-		if len(pkg.IDLs) > 0 {
+		// The rule-center package's real proto is written to the fixed path
+		// idl/rule-center.proto by the kitex-template/ratelimit_proto.yaml
+		// per-file overlay (its `path:` field is literal, not templated) —
+		// exactly mirroring the opts.Preset == "rule-center" branch above.
+		// The package's own idl/ directory additionally ships generic decoy
+		// protos unrelated to the service, so the pkg.IDLs[0] scan below must
+		// not be trusted for this package (Issue #115).
+		if pkg.Meta.Name == "rule-center" {
+			idl = filepath.ToSlash(filepath.Join("idl", "rule-center.proto"))
+		} else if len(pkg.IDLs) > 0 {
+			// A template package's IDL defines the project IDL path: the manifest,
+			// generator command, and placeholder all target the package's real proto.
+			// This matches defaultIDL for variable-named packages
+			// ({{ToLower .ServiceName}}.proto) and fixes fixed-named packages whose
+			// filename would otherwise diverge from the default <name>.proto path,
+			// leaving a stale empty placeholder. writeIDLPlaceholder never clobbers
+			// an existing IDL, so the overlay-written real proto wins.
 			rel, err := filepath.Rel(pkg.IDLDir, pkg.IDLs[0])
 			if err == nil {
 				rel = filepath.ToSlash(rel)
@@ -134,7 +142,12 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 		}
 		templateIDLFallback = fallback
 	}
-	if err := writeIDLPlaceholder(dir, idl, opts); err != nil {
+	// isRuleCenterPkg identifies the rule-center package by its own metadata
+	// (preset name, or the loaded --template-dir package's Meta.Name), never
+	// by the resolved idl path string — an unrelated template package could
+	// otherwise legitimately name its own real IDL file idl/rule-center.proto.
+	isRuleCenterPkg := opts.Preset == "rule-center" || (opts.TemplateDir != "" && pkg != nil && pkg.Meta.Name == "rule-center")
+	if err := writeIDLPlaceholder(dir, idl, opts, isRuleCenterPkg, pkg); err != nil {
 		return nil, err
 	}
 	m, err := writeManifest(dir, opts, idl)
