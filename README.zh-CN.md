@@ -387,6 +387,10 @@ ncgo ai sync --root user-api --target all
 
 这些文件带有 `<!-- ncgo:managed -->` 标记。没有该标记的已有文件默认不会覆盖，除非传 `--force`。项目私有说明放在 `AGENTS.local.md`，会附加到长版上下文文件；`.claude/generated/project-context.md` 保持 deterministic。
 
+如果要在 managed 文件内部（而不是 `AGENTS.local.md`）直接插入自定义内容，请用 `<!-- ncgo:custom:<name>:start -->` / `<!-- ncgo:custom:<name>:end -->` 包裹（`<name>` 需匹配 `^[a-z][a-z0-9-]{0,62}$`）。下次 `ai sync` 时，格式正确的锚点内容会被保留，并重新追加到 `## Custom Notes` 小节；锚点之外的内容每次 sync 仍会被覆盖，行为与之前一致。若锚点格式有误（缺少结束标记、名字重复、名字不合法），`ai sync` 会拒绝覆盖该文件——与缺失 `ncgo:managed` 标记时的行为一致——直到你修复锚点或传入 `--force`。
+
+> **迁移说明：** 在引入该锚点机制**之前**就已经直接写入 managed 文件、且没有用 `ncgo:custom` 包裹的自定义内容，在升级后的**第一次** `ai sync` 仍会被覆盖一次——没有办法回溯识别哪些旧内容是用户手工添加的。升级前，请先把想保留的内容包进 `ncgo:custom` 锚点，再执行 sync。
+
 渲染出的文件会携带 `<!-- ncgo:generated-at: ... -->` 标记，记录生成它们的 manifest 时间戳。`ncgo check` 会比较渲染上下文文件里声明的 domains 与当前 `manifest.Domains`；不一致即表示上下文已过期。
 
 当 `--root` 指向 micro 工作区根目录时，生成文件会基于 `ncgo.workspace`
