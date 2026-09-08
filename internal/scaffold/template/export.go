@@ -64,6 +64,19 @@ var ExcludedPaths = []string{
 	"kitex_gen/",   // kitex-generated RPC stubs
 }
 
+// fixedContractIDLs lists idl/ files (relative to the idl/ root) whose
+// service names are fixed external contracts and must not be rewritten,
+// regardless of the exporting project's service name. Unlike
+// ExcludedPaths/Hertz's api.proto skip, these files ARE exported — both
+// their content (service name identifiers, via replaceServiceName) and
+// their exported filename/path (via idlTemplatePath) are left literal
+// instead of parameterized. Makefile references to these files' IDL paths
+// (e.g. `idl/rule-center.proto`) are likewise protected from parameterization
+// in makefileTemplate.
+var fixedContractIDLs = []string{
+	"rule-center.proto", // rule-center preset's fixed `service RuleService`
+}
+
 // ExportOptions describes an export operation.
 type ExportOptions struct {
 	Root        string // project root
@@ -148,7 +161,9 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 
 // exportIDLs variabilizes the project's service IDL into template/idl/.
 // hz standard support files (openapi/, validate/) stay embedded and are
-// excluded. A missing idl/ dir is not an error.
+// excluded. Files listed in fixedContractIDLs are exported but keep both
+// their service name identifiers and their exported filename/path literal
+// (see fixedContractIDLs doc). A missing idl/ dir is not an error.
 func exportIDLs(root string, opts ExportOptions) ([]string, error) {
 	idlRoot := filepath.Join(root, "idl")
 	if fi, err := os.Stat(idlRoot); err != nil || !fi.IsDir() {
@@ -177,8 +192,11 @@ func exportIDLs(root string, opts ExportOptions) ([]string, error) {
 			return fmt.Errorf("read %s: %w", rel, err)
 		}
 		body := regexp.MustCompile(regexp.QuoteMeta(opts.Module)).ReplaceAllString(string(content), "{{.Module}}")
-		body = replaceServiceName(body, opts.ServiceName)
-		tplRel := idlTemplatePath(rel, opts)
+		tplRel := rel
+		if !isFixedContractIDL(rel) {
+			body = replaceServiceName(body, opts.ServiceName)
+			tplRel = idlTemplatePath(rel, opts)
+		}
 		out := filepath.Join(root, "template", "idl", filepath.FromSlash(tplRel))
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 			return err
@@ -190,6 +208,18 @@ func exportIDLs(root string, opts ExportOptions) ([]string, error) {
 		return nil
 	})
 	return exported, err
+}
+
+// isFixedContractIDL reports whether rel (idl/-relative path) is a fixed
+// external contract file whose service name identifiers and exported
+// filename/path must not be parameterized.
+func isFixedContractIDL(rel string) bool {
+	for _, p := range fixedContractIDLs {
+		if rel == p {
+			return true
+		}
+	}
+	return false
 }
 
 // idlTemplatePath parameterizes the service name inside IDL file names so
@@ -410,7 +440,24 @@ func makefileTemplate(root string, opts ExportOptions) (*TemplateFile, error) {
 	body := string(content)
 	re := regexp.MustCompile(regexp.QuoteMeta(opts.Module))
 	body = re.ReplaceAllString(body, "{{.Module}}")
+
+	// Protect references to fixed-contract IDL paths (e.g. "idl/rule-center.proto")
+	// from replaceServiceName: those files are exported with a literal filename
+	// (see fixedContractIDLs), so a Makefile pointing at "idl/<parameterized>.proto"
+	// would no longer match the exported file.
+	placeholders := make(map[string]string, len(fixedContractIDLs))
+	for i, f := range fixedContractIDLs {
+		literal := "idl/" + f
+		placeholder := fmt.Sprintf("\x00NCGO_FIXED_IDL_%d\x00", i)
+		placeholders[placeholder] = literal
+		body = strings.ReplaceAll(body, literal, placeholder)
+	}
+
 	body = replaceServiceName(body, opts.ServiceName)
+
+	for placeholder, literal := range placeholders {
+		body = strings.ReplaceAll(body, placeholder, literal)
+	}
 
 	return &TemplateFile{
 		Path:           "Makefile",

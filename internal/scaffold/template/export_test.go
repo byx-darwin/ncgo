@@ -369,6 +369,72 @@ func TestExport_IDL(t *testing.T) {
 	}
 }
 
+func TestExport_IDL_FixedContractNotRenamed(t *testing.T) {
+	dir := t.TempDir()
+	writeFileExport(t, dir, "main.go", "package main\n")
+	writeFileExport(t, dir, "idl/rule-center.proto",
+		"syntax = \"proto3\";\npackage ratelimit;\n"+
+			"option go_package = \"github.com/acme/test/kitex_gen/api/ratelimit/v1;ratelimit\";\n"+
+			"service RuleService {\n  rpc GetRule(GetRuleReq) returns (GetRuleResp);\n}\n")
+
+	result, err := Export(ExportOptions{Root: dir, Kind: "kitex",
+		Module: "github.com/acme/test", ServiceName: "Rule"})
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	if len(result.IDLs) != 1 || result.IDLs[0] != "idl/rule-center.proto" {
+		t.Fatalf("IDLs = %v", result.IDLs)
+	}
+	body, err := os.ReadFile(filepath.Join(dir, "template", "idl", "rule-center.proto"))
+	if err != nil {
+		t.Fatalf("exported idl missing: %v", err)
+	}
+	s := string(body)
+	if !strings.Contains(s, "service RuleService {") {
+		t.Errorf("fixed contract service name must survive export unchanged:\n%s", s)
+	}
+	if strings.Contains(s, "{{.ServiceName}}") {
+		t.Errorf("fixed contract file must not be parameterized by project service name:\n%s", s)
+	}
+	if !strings.Contains(s, "{{.Module}}/kitex_gen/api/ratelimit/v1") {
+		t.Errorf("module path must still be variabilized:\n%s", s)
+	}
+}
+
+func TestExport_Makefile_FixedContractIDLPathNotRenamed(t *testing.T) {
+	dir := t.TempDir()
+	writeFileExport(t, dir, "main.go", "package main\n")
+	writeFileExport(t, dir, "Makefile", `MODULE := github.com/acme/test
+IDL_FILE = idl/rule-center.proto
+
+.PHONY: update
+update: ; @echo "Generating Kitex RPC code from IDL..."; kitex -module $(MODULE) -template-dir template/kitex-template -type protobuf $(IDL_FILE); echo "Kitex code generation complete"
+`)
+
+	result, err := Export(ExportOptions{Root: dir, Kind: "kitex",
+		Module: "github.com/acme/test", ServiceName: "Rule"})
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	found := false
+	for _, tp := range result.Templates {
+		if tp == "Makefile" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected Makefile in exported templates, got %v", result.Templates)
+	}
+
+	tpl := loadExportedTemplateByPath(t, dir, "kitex", "Makefile")
+	if !strings.Contains(tpl.Body, "idl/rule-center.proto") {
+		t.Errorf("fixed contract IDL path must survive export unchanged in Makefile:\n%s", tpl.Body)
+	}
+	if strings.Contains(tpl.Body, "{{ToLower .ServiceName}}-center.proto") {
+		t.Errorf("fixed contract IDL path must not be parameterized in Makefile:\n%s", tpl.Body)
+	}
+}
+
 func TestExport_MinimalHertz(t *testing.T) {
 	dir := t.TempDir()
 
