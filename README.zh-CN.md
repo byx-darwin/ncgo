@@ -125,6 +125,9 @@ go install .
 ncgo version
 ```
 
+如果想安装带有 `dev-<commit>` 标记的构建（便于和正式发布版本区分），可以改用
+`./scripts/install-dev.sh`，详见 [`CONTRIBUTING.md`](CONTRIBUTING.md#local-install--本地安装)。
+
 ## 30 秒上手
 
 如果你的环境里已经有 `hz`，最短的上手路径是：

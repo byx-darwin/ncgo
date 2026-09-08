@@ -34,6 +34,17 @@ go test ./... -count=1
 Use the smallest useful scope first when iterating, but make sure the final PR
 state passes the full checks above.
 
+## Local install / 本地安装
+
+To install a locally built `ncgo` binary (tagged with a `dev-<commit>` build
+version so it's easy to tell apart from a released build):
+
+```bash
+./scripts/install-dev.sh
+```
+
+安装到 `$(go env GOPATH)/bin`，版本号会带上 `dev-<commit>` 标记，方便和正式发布版本区分。
+
 ## Optional pre-commit workflow / 可选 pre-commit 工作流
 
 This repository now includes `.pre-commit-config.yaml` for contributors who use

@@ -27,6 +27,9 @@ go vet ./...
 # Full validation (CI-equivalent)
 go build ./... && go build . && go vet ./... && go test ./... -count=1 && ./scripts/smoke.sh
 
+# Local install (tags the build as dev-<commit>)
+./scripts/install-dev.sh
+
 # Pre-commit setup
 pre-commit install --install-hooks --hook-type pre-commit --hook-type pre-push
 ```

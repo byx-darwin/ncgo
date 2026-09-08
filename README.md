@@ -150,6 +150,10 @@ go install .
 ncgo version
 ```
 
+To install a build tagged as `dev-<commit>` (so it's easy to tell apart from a
+released build), use `./scripts/install-dev.sh` instead — see
+[`CONTRIBUTING.md`](CONTRIBUTING.md#local-install--本地安装).
+
 ## 30-Second Tour
 
 Assuming `hz` is already on `PATH`, the shortest happy path is:
