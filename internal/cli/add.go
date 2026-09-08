@@ -30,6 +30,7 @@ func newAddCmd() *cobra.Command {
 	cmd.AddCommand(newAddRPCCmd())
 	cmd.AddCommand(newAddBFFCmd())
 	cmd.AddCommand(newAddMethodCmd())
+	cmd.AddCommand(newAddRPCMethodCmd())
 	cmd.AddCommand(newAddRuleCenterCmd())
 	cmd.AddCommand(newAddKitexClientCmd())
 	return cmd
@@ -474,6 +475,63 @@ func runAddMethod(cmd *cobra.Command, spec string, opts *addMethodOptions) error
 		}{Path: res.Path, Domain: res.Domain, Method: res.Method, NextSteps: res.NextSteps})
 	}
 	fmt.Fprintf(out, "inserted %s.%s into %s\n", res.Domain, res.Method, res.Path)
+	fmt.Fprintln(out, "\nnext steps:")
+	for _, s := range res.NextSteps {
+		fmt.Fprintf(out, "  - %s\n", s)
+	}
+	return nil
+}
+
+type addRPCMethodOptions struct {
+	service string
+	rpc     string
+	root    string
+	output  string
+}
+
+func newAddRPCMethodCmd() *cobra.Command {
+	opts := &addRPCMethodOptions{}
+	cmd := &cobra.Command{
+		Use:   "rpc-method",
+		Short: "Append an RPC method stub to an existing top-level usecase.go",
+		Long: "Append a method stub to internal/usecase/<service>/usecase.go, copying " +
+			"its signature from the already-generated handler file. Run `make update` " +
+			"(kitex) or `hz update` (hz) first so the handler already contains the " +
+			"target method.",
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runAddRPCMethod(cmd, opts)
+		},
+	}
+	f := cmd.Flags()
+	f.StringVar(&opts.service, "service", "", "Service name (must match .ncgo/manifest.yaml service.name)")
+	f.StringVar(&opts.rpc, "rpc", "", "RPC method name; must already exist in the generated handler")
+	f.StringVar(&opts.root, "root", ".", "Project root containing .ncgo/manifest.yaml")
+	f.StringVar(&opts.output, "output", "text", "Output format: text or json")
+	_ = cmd.MarkFlagRequired("service")
+	_ = cmd.MarkFlagRequired("rpc")
+	return cmd
+}
+
+func runAddRPCMethod(cmd *cobra.Command, opts *addRPCMethodOptions) error {
+	if err := validateAddOutput("add rpc-method", opts.output); err != nil {
+		return err
+	}
+	res, err := method.AddRPC(method.RPCOptions{Root: opts.root, Service: opts.service, RPC: opts.rpc})
+	if err != nil {
+		return err
+	}
+	out := cmd.OutOrStdout()
+	if opts.output == "json" {
+		enc := json.NewEncoder(out)
+		enc.SetIndent("", "  ")
+		return enc.Encode(struct {
+			Path      string   `json:"path"`
+			Service   string   `json:"service"`
+			Method    string   `json:"method"`
+			NextSteps []string `json:"nextSteps"`
+		}{Path: res.Path, Service: res.Service, Method: res.Method, NextSteps: res.NextSteps})
+	}
+	fmt.Fprintf(out, "inserted %s.%s into %s\n", res.Service, res.Method, res.Path)
 	fmt.Fprintln(out, "\nnext steps:")
 	for _, s := range res.NextSteps {
 		fmt.Fprintf(out, "  - %s\n", s)

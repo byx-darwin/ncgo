@@ -173,6 +173,7 @@ below.
 | `ncgo import` | Generate `.ncgo/manifest.yaml` for an existing Hertz/Kitex project |
 | `ncgo add domain` | Generate usecase / repository / DI register files |
 | `ncgo add method` | Insert a method stub at ncgo anchor markers |
+| `ncgo add rpc-method` | Append an RPC method stub to an existing top-level usecase.go (signature copied from the generated handler) |
 | `ncgo add infra` | Add optional infra helpers such as Redis / logging / canary / polaris_adapter |
 | `ncgo add rpc` / `ncgo add bff` | Add services inside a micro workspace (`--template` / `--template-dir` consume template packages; `add bff` also supports `--preset`) |
 | `ncgo add kitex-client` | Generate a Kitex client wrapper under `pkg/client/<name>/` for BFF services calling RPC services |
@@ -524,6 +525,30 @@ ncgo add method device.ListThemes --root . --in usecase --output json
   ]
 }
 ```
+
+### RPC method stubs from an already-generated handler
+
+```bash
+ncgo add rpc-method --service demo --rpc Ping --root .
+```
+
+`ncgo add rpc-method` targets the **top-level** `internal/usecase/<service>/usecase.go`
+(the file kitex/hz's own `usecase.yaml`/`usecase_go.yaml` templates mark
+`update_behavior: skip`, so it is never touched again once it exists). It does
+not parse the IDL: it extracts the method's already-correct Go signature from
+the already-generated handler file, so **run `make update` (kitex) or
+`hz update` (hz) first** — if the method isn't in the generated handler yet,
+the command errors and tells you to run that first.
+
+`--output json` returns `path`, `service`, `method`, and `nextSteps`:
+
+```bash
+ncgo add rpc-method --service demo --rpc Ping --root . --output json
+```
+
+This command does not touch `ncgo add method` (the domain-layer command) or
+any project-owned aggregation files (e.g. a hand-written `composite.go`) —
+those remain manual.
 
 ### Optional infra
 

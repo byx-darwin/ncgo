@@ -1,0 +1,491 @@
+package method
+
+import (
+	"bytes"
+	"errors"
+	"fmt"
+	"go/ast"
+	"go/format"
+	"go/parser"
+	"go/printer"
+	"go/token"
+	"io/fs"
+	"os"
+	"path/filepath"
+	"sort"
+	"strings"
+
+	"github.com/byx-darwin/ncgo/internal/manifest"
+)
+
+// RPCOptions configures AddRPC.
+type RPCOptions struct {
+	Root    string // project root containing .ncgo/manifest.yaml
+	Service string // must match manifest.Service.Name
+	RPC     string // method name; must already exist in the generated handler
+}
+
+// RPCResult describes the outcome of AddRPC.
+type RPCResult struct {
+	Path      string
+	Service   string
+	Method    string
+	NextSteps []string
+}
+
+// importSpec is one import line to ensure is present in the target file.
+type importSpec struct {
+	Alias string // "" means no explicit alias (import as declared by its own package clause)
+	Path  string
+}
+
+// methodSignature is the Go signature lifted from an already-generated
+// handler file for a single RPC method.
+type methodSignature struct {
+	ParamsSrc string // rendered parameter list, e.g. "ctx context.Context, req *pb.PingReq"
+	RespSrc   string // rendered response type, e.g. "*pb.PingResp"
+	Imports   []importSpec
+}
+
+// AddRPC appends a method stub to an existing top-level usecase.go, copying
+// its signature from the already-generated handler file. See
+// docs/superpowers/specs/2026-09-08-add-rpc-method-usecase-append-design.md.
+func AddRPC(opts RPCOptions) (*RPCResult, error) {
+	if opts.Root == "" {
+		return nil, errors.New("method: Root is required")
+	}
+	if opts.Service == "" {
+		return nil, errors.New("method: Service is required")
+	}
+	if !methodRE.MatchString(opts.RPC) {
+		return nil, fmt.Errorf("method: rpc %q must match %s", opts.RPC, methodRE)
+	}
+	root, err := filepath.Abs(opts.Root)
+	if err != nil {
+		return nil, fmt.Errorf("method: resolve root: %w", err)
+	}
+	m, err := manifest.Load(root)
+	if err != nil {
+		return nil, err
+	}
+	if m.Service.Name != opts.Service {
+		return nil, fmt.Errorf("method: --service %q does not match manifest service %q", opts.Service, m.Service.Name)
+	}
+
+	var sig *methodSignature
+	switch m.Service.Kind {
+	case manifest.KindKitex:
+		sig, err = findKitexHandlerSignature(root, opts.RPC)
+	case manifest.KindHertz:
+		sig, err = findHzHandlerSignature(root, opts.RPC)
+	default:
+		return nil, fmt.Errorf("method: unsupported service kind %q", m.Service.Kind)
+	}
+	if err != nil {
+		return nil, err
+	}
+
+	usecasePath, err := findUsecaseFile(root)
+	if err != nil {
+		return nil, err
+	}
+	if err := appendUsecaseMethod(usecasePath, m.Service.Name, opts.RPC, *sig); err != nil {
+		return nil, err
+	}
+
+	return &RPCResult{
+		Path:    usecasePath,
+		Service: m.Service.Name,
+		Method:  opts.RPC,
+		NextSteps: []string{
+			"go build ./...",
+			"replace the generated not-implemented body with domain logic",
+			"ncgo ai sync --root .",
+		},
+	}, nil
+}
+
+// findUsecaseFile locates the top-level RPC usecase.go by scanning
+// internal/usecase/ one level deep for the single subdirectory containing a
+// file literally named usecase.go. The real generators (kitex's
+// ToLower(.ServiceInfo.ServiceName) and hz's toSnakeCase(opts.ServiceName))
+// derive that subdirectory's name differently from the manifest's stored
+// service name, so the name cannot be reconstructed here — it must be
+// discovered. Domain-layer usecase files (from `ncgo add domain`) are always
+// named <domain>.go, never literally usecase.go, so this scan is unambiguous
+// for a well-formed project.
+func findUsecaseFile(root string) (string, error) {
+	usecaseDir := filepath.Join(root, "internal", "usecase")
+	entries, err := os.ReadDir(usecaseDir)
+	if err != nil {
+		return "", fmt.Errorf("method: read %s (run `make update`/`hz update` first?): %w", usecaseDir, err)
+	}
+	var candidates []string
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		p := filepath.Join(usecaseDir, e.Name(), "usecase.go")
+		if _, statErr := os.Stat(p); statErr == nil {
+			candidates = append(candidates, p)
+		}
+	}
+	switch len(candidates) {
+	case 0:
+		return "", fmt.Errorf("method: no top-level usecase.go found under %s; run `make update`/`hz update` first", usecaseDir)
+	case 1:
+		return candidates[0], nil
+	default:
+		return "", fmt.Errorf("method: multiple usecase.go files found under %s (%s); ambiguous, please report this as unexpected", usecaseDir, strings.Join(candidates, ", "))
+	}
+}
+
+func findKitexHandlerSignature(root string, rpcName string) (*methodSignature, error) {
+	handlerDir := filepath.Join(root, "internal", "handler")
+	entries, err := os.ReadDir(handlerDir)
+	if err != nil {
+		return nil, fmt.Errorf("method: read %s (run `make update` first?): %w", handlerDir, err)
+	}
+	type kitexMatch struct {
+		path string
+		sig  *methodSignature
+	}
+	var candidates []string
+	var matches []kitexMatch
+	for _, e := range entries {
+		if !e.IsDir() {
+			continue
+		}
+		p := filepath.Join(handlerDir, e.Name(), "handler.go")
+		if _, statErr := os.Stat(p); statErr != nil {
+			continue
+		}
+		candidates = append(candidates, p)
+		fset := token.NewFileSet()
+		file, ferr := parser.ParseFile(fset, p, nil, 0)
+		if ferr != nil {
+			return nil, fmt.Errorf("method: read kitex handler %s (run `make update` first?): %w", p, ferr)
+		}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || fn.Name.Name != rpcName {
+				continue
+			}
+			if !strings.HasSuffix(receiverTypeName(fn.Recv), "Impl") {
+				continue
+			}
+			sig, berr := buildSignature(fset, file, p, fn.Type.Params, fn.Type.Results)
+			if berr != nil {
+				return nil, berr
+			}
+			matches = append(matches, kitexMatch{path: p, sig: sig})
+			break
+		}
+	}
+	switch len(matches) {
+	case 0:
+		if len(candidates) == 0 {
+			return nil, fmt.Errorf("method: no handler.go found under %s; run `make update` after adding it to the IDL", handlerDir)
+		}
+		return nil, fmt.Errorf("method: rpc %q not found in %s; run `make update` after adding it to the IDL", rpcName, strings.Join(candidates, ", "))
+	case 1:
+		return matches[0].sig, nil
+	default:
+		var paths []string
+		for _, mm := range matches {
+			paths = append(paths, mm.path)
+		}
+		return nil, fmt.Errorf("method: rpc %q found in multiple generated handlers (%s); ambiguous, please report this as unexpected", rpcName, strings.Join(paths, ", "))
+	}
+}
+
+// receiverTypeName extracts the receiver's type name from a method's
+// receiver field list, handling both pointer (*ast.StarExpr) and value
+// (*ast.Ident) receivers.
+func receiverTypeName(recv *ast.FieldList) string {
+	if recv == nil || len(recv.List) == 0 {
+		return ""
+	}
+	expr := recv.List[0].Type
+	if star, ok := expr.(*ast.StarExpr); ok {
+		expr = star.X
+	}
+	if id, ok := expr.(*ast.Ident); ok {
+		return id.Name
+	}
+	return ""
+}
+
+func findHzHandlerSignature(root string, rpcName string) (*methodSignature, error) {
+	handlerDir := filepath.Join(root, "internal", "handler")
+	type hzMatch struct {
+		path string
+		sig  *methodSignature
+	}
+	var matches []hzMatch
+	walkErr := filepath.WalkDir(handlerDir, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		if d.IsDir() || !strings.HasSuffix(p, ".go") {
+			return nil
+		}
+		fset := token.NewFileSet()
+		file, ferr := parser.ParseFile(fset, p, nil, 0)
+		if ferr != nil {
+			return nil // skip unparsable files rather than fail the whole walk
+		}
+		for _, decl := range file.Decls {
+			gd, ok := decl.(*ast.GenDecl)
+			if !ok || gd.Tok != token.TYPE {
+				continue
+			}
+			for _, spec := range gd.Specs {
+				ts, ok := spec.(*ast.TypeSpec)
+				if !ok || ts.Name.Name != "useCase" {
+					continue
+				}
+				it, ok := ts.Type.(*ast.InterfaceType)
+				if !ok {
+					continue
+				}
+				for _, meth := range it.Methods.List {
+					ft, ok := meth.Type.(*ast.FuncType)
+					if !ok || len(meth.Names) == 0 || meth.Names[0].Name != rpcName {
+						continue
+					}
+					built, berr := buildSignature(fset, file, p, ft.Params, ft.Results)
+					if berr != nil {
+						return berr
+					}
+					matches = append(matches, hzMatch{path: p, sig: built})
+				}
+			}
+		}
+		return nil
+	})
+	if walkErr != nil {
+		return nil, walkErr
+	}
+	switch len(matches) {
+	case 0:
+		return nil, fmt.Errorf("method: rpc %q not found in any generated handler under %s; run `hz update` after adding it to the IDL", rpcName, handlerDir)
+	case 1:
+		return matches[0].sig, nil
+	default:
+		var paths []string
+		for _, mm := range matches {
+			paths = append(paths, mm.path)
+		}
+		return nil, fmt.Errorf("method: rpc %q is ambiguous: found in multiple generated handlers (%s); not guessing which one is intended", rpcName, strings.Join(paths, ", "))
+	}
+}
+
+func buildSignature(fset *token.FileSet, file *ast.File, handlerPath string, params, results *ast.FieldList) (*methodSignature, error) {
+	paramsSrc, err := renderParams(fset, params)
+	if err != nil {
+		return nil, fmt.Errorf("method: render params: %w", err)
+	}
+	respSrc, err := responseType(fset, results)
+	if err != nil {
+		return nil, fmt.Errorf("method: render response type: %w", err)
+	}
+	used := collectPackageIdents(params, results)
+	var imports []importSpec
+	for _, imp := range file.Imports {
+		name := importLocalName(imp)
+		if !used[name] {
+			continue
+		}
+		delete(used, name)
+		alias := ""
+		if imp.Name != nil {
+			alias = imp.Name.Name
+		}
+		imports = append(imports, importSpec{Alias: alias, Path: strings.Trim(imp.Path.Value, `"`)})
+	}
+	if len(used) > 0 {
+		unresolved := make([]string, 0, len(used))
+		for name := range used {
+			unresolved = append(unresolved, name)
+		}
+		sort.Strings(unresolved)
+		return nil, fmt.Errorf("method: unresolved import identifier(s) %s referenced by %s; add/fix the corresponding import in the handler file and rerun", strings.Join(unresolved, ", "), handlerPath)
+	}
+	return &methodSignature{ParamsSrc: paramsSrc, RespSrc: respSrc, Imports: imports}, nil
+}
+
+func printExpr(fset *token.FileSet, n ast.Expr) (string, error) {
+	var buf bytes.Buffer
+	if err := printer.Fprint(&buf, fset, n); err != nil {
+		return "", err
+	}
+	return buf.String(), nil
+}
+
+func renderParams(fset *token.FileSet, fl *ast.FieldList) (string, error) {
+	if fl == nil {
+		return "", nil
+	}
+	var parts []string
+	for _, f := range fl.List {
+		typ, err := printExpr(fset, f.Type)
+		if err != nil {
+			return "", err
+		}
+		if len(f.Names) == 0 {
+			parts = append(parts, typ)
+			continue
+		}
+		for _, n := range f.Names {
+			parts = append(parts, n.Name+" "+typ)
+		}
+	}
+	return strings.Join(parts, ", "), nil
+}
+
+// responseType returns the source text of the response type, requiring the
+// method to return exactly (response, error) — the shape both kitex's and
+// hz's generated handlers always use.
+func responseType(fset *token.FileSet, fl *ast.FieldList) (string, error) {
+	if fl == nil {
+		return "", errors.New("no results")
+	}
+	count := 0
+	for _, f := range fl.List {
+		if len(f.Names) == 0 {
+			count++
+		} else {
+			count += len(f.Names)
+		}
+	}
+	if count != 2 {
+		return "", fmt.Errorf("expected exactly 2 results (response, error), found %d", count)
+	}
+	return printExpr(fset, fl.List[0].Type)
+}
+
+func collectPackageIdents(nodes ...ast.Node) map[string]bool {
+	idents := map[string]bool{}
+	for _, n := range nodes {
+		if n == nil {
+			continue
+		}
+		ast.Inspect(n, func(x ast.Node) bool {
+			if sel, ok := x.(*ast.SelectorExpr); ok {
+				if id, ok := sel.X.(*ast.Ident); ok {
+					idents[id.Name] = true
+				}
+			}
+			return true
+		})
+	}
+	return idents
+}
+
+func importLocalName(spec *ast.ImportSpec) string {
+	if spec.Name != nil {
+		return spec.Name.Name
+	}
+	p := strings.Trim(spec.Path.Value, `"`)
+	if i := strings.LastIndex(p, "/"); i >= 0 {
+		return p[i+1:]
+	}
+	return p
+}
+
+func appendUsecaseMethod(path, service, methodName string, sig methodSignature) error {
+	body, err := os.ReadFile(path)
+	if err != nil {
+		return fmt.Errorf("method: read %s: %w", path, err)
+	}
+	src := string(body)
+	if strings.Contains(src, "UseCase) "+methodName+"(") {
+		return fmt.Errorf("method: %s already exists in %s", methodName, path)
+	}
+	required := append([]importSpec{{Alias: "goerror", Path: "github.com/byx-darwin/go-tools/go-common/error"}}, sig.Imports...)
+	updated := mergeImports(src, required)
+	updated = strings.TrimRight(updated, "\n") + "\n" + renderRPCMethod(service, methodName, sig)
+	formatted, err := format.Source([]byte(updated))
+	if err != nil {
+		return fmt.Errorf("method: format %s: %w", path, err)
+	}
+	return os.WriteFile(path, formatted, 0o644)
+}
+
+func renderRPCMethod(service, methodName string, sig methodSignature) string {
+	return fmt.Sprintf(`
+// %s implements the %s business rule.
+func (uc *UseCase) %s(%s) (resp %s, err error) {
+	return nil, goerror.
+		In(%q).
+		Code(10010).
+		Public("not_implemented").
+		Errorf("%s: not implemented")
+}
+`, methodName, methodName, methodName, sig.ParamsSrc, sig.RespSrc, strings.ToLower(service)+".usecase", methodName)
+}
+
+// mergeImports inserts any required import not already present in src. It
+// uses parser.ImportsOnly for cheap existing-import detection, then a plain
+// text insertion (final go/format.Source pass fixes styling) — no
+// golang.org/x/tools/go/ast/astutil dependency needed for this one-shot,
+// append-only edit.
+func mergeImports(src string, required []importSpec) string {
+	existing := existingImportPaths(src)
+	var toAdd []importSpec
+	for _, imp := range required {
+		if !existing[imp.Path] {
+			toAdd = append(toAdd, imp)
+			existing[imp.Path] = true
+		}
+	}
+	if len(toAdd) == 0 {
+		return src
+	}
+	var lines []string
+	for _, imp := range toAdd {
+		if imp.Alias != "" {
+			lines = append(lines, fmt.Sprintf("\t%s %q", imp.Alias, imp.Path))
+		} else {
+			lines = append(lines, fmt.Sprintf("\t%q", imp.Path))
+		}
+	}
+	block := strings.Join(lines, "\n")
+	if idx := strings.Index(src, "import (\n"); idx >= 0 {
+		insertAt := idx + len("import (\n")
+		return src[:insertAt] + block + "\n" + src[insertAt:]
+	}
+	// No existing import block: insert one right after the package clause.
+	// The package clause is not necessarily on line 1 — a real
+	// kitex-generated usecase.go starts with a "// Code generated by ..."
+	// comment before "package X" — so locate the end of the package clause
+	// with go/parser rather than assuming the first line.
+	fset := token.NewFileSet()
+	file, err := parser.ParseFile(fset, "", src, parser.PackageClauseOnly)
+	if err != nil {
+		// Leave src unchanged; the later format.Source call will surface a
+		// clear error instead of us silently producing invalid output.
+		return src
+	}
+	pkgEnd := fset.Position(file.Name.End()).Offset
+	nlIdx := strings.Index(src[pkgEnd:], "\n")
+	if nlIdx < 0 {
+		return src
+	}
+	insertAt := pkgEnd + nlIdx + 1
+	return src[:insertAt] + "\nimport (\n" + block + "\n)\n" + src[insertAt:]
+}
+
+func existingImportPaths(src string) map[string]bool {
+	fset := token.NewFileSet()
+	existing := map[string]bool{}
+	file, err := parser.ParseFile(fset, "", src, parser.ImportsOnly)
+	if err != nil {
+		return existing
+	}
+	for _, imp := range file.Imports {
+		existing[strings.Trim(imp.Path.Value, `"`)] = true
+	}
+	return existing
+}

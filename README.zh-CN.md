@@ -147,6 +147,7 @@ make dev
 | `ncgo import` | 为已有的 Hertz/Kitex 项目反向生成 `.ncgo/manifest.yaml` |
 | `ncgo add domain` | 生成 usecase / repository / DI register 文件 |
 | `ncgo add method` | 在 ncgo anchor 标记中插入方法桩 |
+| `ncgo add rpc-method` | 为已有的顶层 usecase.go 追加一个方法桩（签名从已生成的 handler 中提取） |
 | `ncgo add infra` | 添加 Redis / logging / canary / polaris_adapter 等可选基础设施 helper |
 | `ncgo add rpc` / `ncgo add bff` | 在 micro 工作区中新增服务（`--template` / `--template-dir` 消费模版包；`add bff` 还支持 `--preset`） |
 | `ncgo add kitex-client` | 在 `pkg/client/<name>/` 下生成 Kitex 客户端包装器，供 BFF 服务调用 RPC 服务 |
@@ -436,6 +437,28 @@ ncgo add method device.ListThemes --root . --in usecase --output json
   ]
 }
 ```
+
+### 从已生成的 handler 追加 RPC 方法桩
+
+```bash
+ncgo add rpc-method --service demo --rpc Ping --root .
+```
+
+`ncgo add rpc-method` 操作的是**顶层** `internal/usecase/<service>/usecase.go`
+（kitex/hz 自己的 `usecase.yaml`/`usecase_go.yaml` 模板标记为
+`update_behavior: skip`，一旦文件存在就再也不会被生成器碰）。它不解析 IDL：
+签名是直接从已经生成好的 handler 文件里提取的，因此**必须先跑 `make update`
+（kitex）或 `hz update`（hz）**——如果目标方法还没出现在生成的 handler 里，
+命令会报错并提示先执行生成命令。
+
+`--output json` 会返回 `path`、`service`、`method` 和 `nextSteps`：
+
+```bash
+ncgo add rpc-method --service demo --rpc Ping --root . --output json
+```
+
+该命令不影响 `ncgo add method`（领域层命令），也不处理项目自有的聚合文件
+（例如手写的 `composite.go`）——这些仍需人工处理。
 
 ### Optional infra
 

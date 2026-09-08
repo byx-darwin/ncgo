@@ -88,6 +88,31 @@ func RunAddMethod(opts AddMethodOptions) (*AddMethodResult, error) {
 	return &AddMethodResult{Raw: res}, nil
 }
 
+// AddRPCMethodOptions mirrors method.RPCOptions for orchestrator callers.
+type AddRPCMethodOptions struct {
+	Root    string
+	Service string
+	RPC     string
+}
+
+// AddRPCMethodResult wraps method.AddRPC() output.
+type AddRPCMethodResult struct {
+	Raw *method.RPCResult `json:"-"`
+}
+
+// RunAddRPCMethod wraps method.AddRPC.
+func RunAddRPCMethod(opts AddRPCMethodOptions) (*AddRPCMethodResult, error) {
+	res, err := method.AddRPC(method.RPCOptions{
+		Root:    opts.Root,
+		Service: opts.Service,
+		RPC:     opts.RPC,
+	})
+	if err != nil {
+		return nil, err
+	}
+	return &AddRPCMethodResult{Raw: res}, nil
+}
+
 // AddRuleCenterOptions mirrors rulecenter.Options for orchestrator callers.
 type AddRuleCenterOptions struct {
 	Root   string
