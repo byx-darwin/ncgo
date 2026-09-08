@@ -159,7 +159,7 @@ func TestLoadHertzGoldenProtoFromProjectRoot(t *testing.T) {
 	}
 }
 
-// TestImportRoots locks the three branches of importRoots: root is always
+// TestImportRoots locks the three branches of ImportRoots: root is always
 // first, and <root>/idl is appended only when idl/ exists as a directory.
 func TestImportRoots(t *testing.T) {
 	tests := []struct {
@@ -199,8 +199,8 @@ func TestImportRoots(t *testing.T) {
 				want = append(want, filepath.Join(root, "idl"))
 			}
 
-			if got := importRoots(root); !reflect.DeepEqual(got, want) {
-				t.Fatalf("importRoots(%q) = %v, want %v", root, got, want)
+			if got := ImportRoots(root); !reflect.DeepEqual(got, want) {
+				t.Fatalf("ImportRoots(%q) = %v, want %v", root, got, want)
 			}
 		})
 	}

@@ -138,6 +138,167 @@ func TestAddGeneratesCompleteClient(t *testing.T) {
 	}
 }
 
+// seedWorkspaceWithSiblingImport creates a temp directory with go.mod and two
+// proto files under idl/: a shared api.proto and a service proto that imports
+// it via a bare relative path ("api.proto"), matching the ncgo-templates
+// convention (idl/rbac.proto importing idl/api.proto as siblings).
+func seedWorkspaceWithSiblingImport(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/demo\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	idlDir := filepath.Join(root, "idl")
+	if err := os.MkdirAll(idlDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	api := `syntax = "proto3";
+package api;
+
+import "google/protobuf/descriptor.proto";
+extend google.protobuf.MethodOptions {
+  string get = 50001;
+}
+`
+	if err := os.WriteFile(filepath.Join(idlDir, "api.proto"), []byte(api), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	proto := `syntax = "proto3";
+package rbac;
+
+import "api.proto";
+
+option go_package = "example.com/demo/kitex_gen/rbac;rbac";
+
+service RbacService {
+  rpc CheckPermission(CheckPermissionReq) returns (CheckPermissionResp) {}
+}
+message CheckPermissionReq { string user_id = 1; }
+message CheckPermissionResp { bool allowed = 1; }
+`
+	if err := os.WriteFile(filepath.Join(idlDir, "rbac.proto"), []byte(proto), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// TestAddPassesIncludePathsForSiblingImports guards against a regression where
+// generateKitexTypes invoked the kitex CLI with no -I search paths, so a proto
+// importing a sibling file in the same idl/ directory (the ncgo-templates
+// convention: idl/rbac.proto imports idl/api.proto) failed with "proto file
+// ... not found in includes []" even though the sibling file exists on disk.
+func TestAddPassesIncludePathsForSiblingImports(t *testing.T) {
+	root := seedWorkspaceWithSiblingImport(t)
+	r := &fakeRunner{}
+
+	_, err := Add(context.Background(), Options{
+		Root:    root,
+		Name:    "rbac",
+		Service: "RbacService",
+		IDL:     "idl/rbac.proto",
+		Module:  "example.com/demo",
+		Runner:  r,
+	})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	var kitexArgs []string
+	for _, c := range r.calls {
+		if c.Name == "kitex" {
+			kitexArgs = c.Args
+			break
+		}
+	}
+	if kitexArgs == nil {
+		t.Fatalf("kitex not called; calls = %+v", r.calls)
+	}
+
+	// The idl/ directory (where api.proto lives) must be passed as an -I
+	// search path so kitex can resolve the sibling import.
+	idlDir := filepath.Join(root, "idl")
+	found := false
+	for i, a := range kitexArgs {
+		if a == "-I" && i+1 < len(kitexArgs) && kitexArgs[i+1] == idlDir {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("kitex args missing '-I %s'; args = %v", idlDir, kitexArgs)
+	}
+}
+
+// seedWorkspaceWithNestedGoPackage creates a temp directory with a proto whose
+// go_package nests multiple segments under kitex_gen/ (e.g.
+// "kitex_gen/api/rbac/v1"), matching the ncgo-templates convention where
+// protos live at idl/<domain>.proto with package api.<domain>.v1 and
+// go_package ".../kitex_gen/api/<domain>/v1;<alias>". kitex mirrors the full
+// go_package path under kitex_gen/, not just its last segment.
+func seedWorkspaceWithNestedGoPackage(t *testing.T) string {
+	t.Helper()
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "go.mod"), []byte("module example.com/demo\n\ngo 1.25\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	idlDir := filepath.Join(root, "idl")
+	if err := os.MkdirAll(idlDir, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	proto := `syntax = "proto3";
+package api.rbac.v1;
+option go_package = "example.com/demo/kitex_gen/api/rbac/v1;rbacv1";
+
+service RBACService {
+  rpc CheckPermission(CheckPermissionReq) returns (CheckPermissionResp) {}
+}
+message CheckPermissionReq { string user_id = 1; }
+message CheckPermissionResp { bool allowed = 1; }
+`
+	if err := os.WriteFile(filepath.Join(idlDir, "rbac.proto"), []byte(proto), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return root
+}
+
+// TestAddNestedGoPackageImportPath guards against a regression where
+// parseGoPackage took only the LAST path segment of a multi-segment
+// go_package (e.g. "v1" from ".../kitex_gen/api/rbac/v1") as the kitex_gen
+// subdirectory, when kitex actually mirrors the full path under kitex_gen/
+// (kitex_gen/api/rbac/v1) — producing a client wrapper that imports a
+// package path ("kitex_gen/v1") that doesn't exist on disk.
+func TestAddNestedGoPackageImportPath(t *testing.T) {
+	root := seedWorkspaceWithNestedGoPackage(t)
+	r := &fakeRunner{}
+
+	_, err := Add(context.Background(), Options{
+		Root:    root,
+		Name:    "authority",
+		Service: "RBACService",
+		IDL:     "idl/rbac.proto",
+		Module:  "example.com/demo",
+		Runner:  r,
+	})
+	if err != nil {
+		t.Fatalf("Add: %v", err)
+	}
+
+	content, err := os.ReadFile(filepath.Join(root, "pkg", "client", "authority", "client.go"))
+	if err != nil {
+		t.Fatalf("read client.go: %v", err)
+	}
+	s := string(content)
+
+	wantTypesImport := `"example.com/demo/kitex_gen/api/rbac/v1"`
+	if !strings.Contains(s, wantTypesImport) {
+		t.Fatalf("client.go missing types import %s (full nested path, not just the last segment):\n%s", wantTypesImport, s)
+	}
+	wantServiceImport := `"example.com/demo/kitex_gen/api/rbac/v1/rbacservice"`
+	if !strings.Contains(s, wantServiceImport) {
+		t.Fatalf("client.go missing service import %s:\n%s", wantServiceImport, s)
+	}
+}
+
 func TestAddAutoDetectsModuleFromGoMod(t *testing.T) {
 	root := seedWorkspace(t)
 	r := &fakeRunner{}
@@ -248,7 +409,11 @@ func TestAddKitexCommandArgs(t *testing.T) {
 	// Verify kitex was called with correct args.
 	for _, c := range r.calls {
 		if c.Name == "kitex" {
-			wantArgs := []string{"-module", "example.com/demo", "-type", "protobuf", "idl/rbac.proto"}
+			wantArgs := []string{
+				"-module", "example.com/demo", "-type", "protobuf",
+				"-I", root, "-I", filepath.Join(root, "idl"),
+				"idl/rbac.proto",
+			}
 			if len(c.Args) != len(wantArgs) {
 				t.Fatalf("kitex args = %v, want %v", c.Args, wantArgs)
 			}

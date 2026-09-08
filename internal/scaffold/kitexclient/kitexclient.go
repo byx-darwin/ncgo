@@ -178,12 +178,23 @@ func generateKitexTypes(ctx context.Context, opts Options, result *Result) error
 		result.WrittenPaths = append(result.WrittenPaths, "kitex_gen/")
 		return nil
 	}
+	root, err := filepath.Abs(opts.Root)
+	if err != nil {
+		return fmt.Errorf("kitex-client: resolve root: %w", err)
+	}
 	r := opts.runner()
 	args := []string{
 		"-module", opts.Module,
 		"-type", "protobuf",
-		opts.IDL,
 	}
+	// Pass the same import roots protolint.Load already resolves the proto
+	// through (project root + idl/ when present), so a proto importing a
+	// sibling file in idl/ (e.g. idl/rbac.proto importing idl/api.proto)
+	// compiles instead of failing with "not found in includes []".
+	for _, ir := range protolint.ImportRoots(root) {
+		args = append(args, "-I", ir)
+	}
+	args = append(args, opts.IDL)
 	if _, err := exec.Kitex(ctx, r, opts.Root, args...); err != nil {
 		return fmt.Errorf("kitex generation failed: %w", err)
 	}
@@ -248,8 +259,14 @@ func parseProtoServices(ctx context.Context, opts Options) ([]protoServiceInfo, 
 // parseGoPackage splits a go_package option value into its path and name
 // components. The format is "path;pkg" or just "path". When the ;pkg suffix
 // is present it is used as the package name; otherwise the last path segment
-// is used. The returned pkgDir is the last path segment (the kitex_gen
-// subdirectory), which is where kitex actually writes generated files.
+// is used. The returned pkgDir is the kitex_gen subdirectory where kitex
+// actually writes generated files: kitex mirrors the go_package path verbatim
+// under kitex_gen/, so when the path contains a literal "kitex_gen/" segment
+// (the convention this repo's proto templates follow — e.g.
+// ".../kitex_gen/api/rbac/v1"), pkgDir is everything after it, which may be
+// multiple segments, not just the last one. When no such segment is present
+// (a bare go_package with no kitex_gen/ marker), pkgDir falls back to the
+// last path segment, kitex's behavior for that case.
 func parseGoPackage(goPkg string) (pkgDir, pkgName string) {
 	if goPkg == "" {
 		return "", ""
@@ -259,17 +276,24 @@ func parseGoPackage(goPkg string) (pkgDir, pkgName string) {
 		path = goPkg[:idx]
 		pkgName = goPkg[idx+1:]
 	}
-	// The kitex_gen subdirectory is the last segment of the path.
 	if path != "" {
-		if idx := strings.LastIndex(path, "/"); idx >= 0 {
+		const marker = "kitex_gen/"
+		if idx := strings.Index(path, marker); idx >= 0 {
+			pkgDir = path[idx+len(marker):]
+		} else if idx := strings.LastIndex(path, "/"); idx >= 0 {
 			pkgDir = path[idx+1:]
 		} else {
 			pkgDir = path
 		}
 	}
-	// Fall back to the path segment when no ;name suffix was given.
+	// Fall back to the last path segment when no ;name suffix was given —
+	// pkgDir itself may be multi-segment and isn't a valid Go identifier.
 	if pkgName == "" {
-		pkgName = pkgDir
+		if idx := strings.LastIndex(pkgDir, "/"); idx >= 0 {
+			pkgName = pkgDir[idx+1:]
+		} else {
+			pkgName = pkgDir
+		}
 	}
 	return pkgDir, pkgName
 }
