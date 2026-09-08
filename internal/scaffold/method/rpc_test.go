@@ -171,7 +171,7 @@ func TestAddRPCKitexAppendsSignatureToFreshlyScaffoldedFile(t *testing.T) {
 	if pkgIdx < 0 || importIdx < 0 || methodIdx < 0 {
 		t.Fatalf("usecase.go missing expected sections:\n---\n%s", s)
 	}
-	if !(pkgIdx < importIdx && importIdx < methodIdx) {
+	if pkgIdx >= importIdx || importIdx >= methodIdx {
 		t.Fatalf("usecase.go sections out of order (package=%d import=%d method=%d):\n---\n%s", pkgIdx, importIdx, methodIdx, s)
 	}
 	for _, want := range []string{

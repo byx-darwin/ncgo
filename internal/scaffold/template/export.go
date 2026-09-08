@@ -354,18 +354,15 @@ func replaceServiceName(body, serviceName string) string {
 
 	// Replace lowercase service name occurrences that appear as bounded
 	// tokens: path segments, package declarations, package qualifiers,
-	// and quoted import paths. Non-boundary occurrences (userrpc2,
-	// myuserrpc) are left untouched.
+	// quoted import paths, and any other position bordered by a non-word
+	// character (parens, braces, colons, etc.). Non-boundary occurrences
+	// (userrpc2, myuserrpc) are left untouched. \b is zero-width so it
+	// doesn't consume the boundary character, avoiding the double-run
+	// workaround previously needed for adjacent tokens.
 	lower := serviceNameLower(serviceName)
 	if lower != "" {
-		// Boundary chars include common delimiters in proto/Go files: whitespace,
-		// slash, dot, quotes, semicolon (proto statement terminator), comma.
-		// We run the replacement twice to handle adjacent tokens like ";lower;lower"
-		// where the shared boundary would otherwise be consumed by the first match.
-		segRE := regexp.MustCompile(`(^|[\s/."';,])` + regexp.QuoteMeta(lower) + `($|[\s/."';,])`)
-		for i := 0; i < 2; i++ {
-			body = segRE.ReplaceAllString(body, "${1}{{ToLower .ServiceName}}${2}")
-		}
+		segRE := regexp.MustCompile(`\b` + regexp.QuoteMeta(lower) + `\b`)
+		body = segRE.ReplaceAllString(body, "{{ToLower .ServiceName}}")
 	}
 
 	return body
