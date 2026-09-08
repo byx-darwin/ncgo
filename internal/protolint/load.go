@@ -43,11 +43,13 @@ const (
 	validateRulesOption    protoreflect.FullName = "validate.rules"
 )
 
-// importRoots returns the proto import roots: the project root plus the
+// ImportRoots returns the proto import roots: the project root plus the
 // scaffold's idl directory when present. Generated protos import support
 // files relative to idl/ (hz convention: compile with -I idl) — e.g.
 // idl/app/demo.proto imports "api.proto" which lives at idl/api.proto.
-func importRoots(root string) []string {
+// Exported so other proto-invoking tools (e.g. kitexclient's `kitex -I`
+// invocation) resolve the same sibling-import convention as protolint.Load.
+func ImportRoots(root string) []string {
 	roots := []string{root}
 	if fi, err := os.Stat(filepath.Join(root, "idl")); err == nil && fi.IsDir() {
 		roots = append(roots, filepath.Join(root, "idl"))
@@ -70,7 +72,7 @@ func Load(ctx context.Context, opts LoadOptions) (*Model, error) {
 
 	compiler := protocompile.Compiler{
 		Resolver: protocompile.WithStandardImports(&protocompile.SourceResolver{
-			ImportPaths: importRoots(root),
+			ImportPaths: ImportRoots(root),
 		}),
 		SourceInfoMode: protocompile.SourceInfoStandard,
 	}
