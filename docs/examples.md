@@ -914,7 +914,10 @@ Excluded paths: `internal/pb/` (hz-generated protobuf code) and `kitex_gen/`
 The export also writes the project's service IDL into `template/idl/` with the
 service name parameterized (for example
 `template/idl/app/{{ToLower .ServiceName}}.proto`), so consumers can render it
-onto their own default IDL path.
+onto their own default IDL path. Fixed external contract IDLs (for example the
+rule-center preset's `idl/rule-center.proto`) are exported verbatim instead —
+their filename and internal service-name identifiers (e.g. `service RuleService`)
+are left unchanged regardless of the exporting project's own service name.
 
 ### DDD domain/application layers
 

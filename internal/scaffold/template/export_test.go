@@ -401,6 +401,40 @@ func TestExport_IDL_FixedContractNotRenamed(t *testing.T) {
 	}
 }
 
+func TestExport_Makefile_FixedContractIDLPathNotRenamed(t *testing.T) {
+	dir := t.TempDir()
+	writeFileExport(t, dir, "main.go", "package main\n")
+	writeFileExport(t, dir, "Makefile", `MODULE := github.com/acme/test
+IDL_FILE = idl/rule-center.proto
+
+.PHONY: update
+update: ; @echo "Generating Kitex RPC code from IDL..."; kitex -module $(MODULE) -template-dir template/kitex-template -type protobuf $(IDL_FILE); echo "Kitex code generation complete"
+`)
+
+	result, err := Export(ExportOptions{Root: dir, Kind: "kitex",
+		Module: "github.com/acme/test", ServiceName: "Rule"})
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+	found := false
+	for _, tp := range result.Templates {
+		if tp == "Makefile" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected Makefile in exported templates, got %v", result.Templates)
+	}
+
+	tpl := loadExportedTemplateByPath(t, dir, "kitex", "Makefile")
+	if !strings.Contains(tpl.Body, "idl/rule-center.proto") {
+		t.Errorf("fixed contract IDL path must survive export unchanged in Makefile:\n%s", tpl.Body)
+	}
+	if strings.Contains(tpl.Body, "{{ToLower .ServiceName}}-center.proto") {
+		t.Errorf("fixed contract IDL path must not be parameterized in Makefile:\n%s", tpl.Body)
+	}
+}
+
 func TestExport_MinimalHertz(t *testing.T) {
 	dir := t.TempDir()
 

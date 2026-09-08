@@ -822,7 +822,9 @@ ncgo export templates --kind kitex
 
 导出还会把项目的服务 IDL 写入 `template/idl/`，文件名中的服务名会被参数化
 （例如 `template/idl/app/{{ToLower .ServiceName}}.proto`），这样使用者可以把它
-渲染到自己的默认 IDL 路径上。
+渲染到自己的默认 IDL 路径上。固定的外部契约 IDL（例如 rule-center 预设的
+`idl/rule-center.proto`）则会原样导出——无论导出项目自身的服务名是什么，其文件名
+及内部服务名标识符（如 `service RuleService`）都保持不变。
 
 ### DDD 领域层/应用层
 
