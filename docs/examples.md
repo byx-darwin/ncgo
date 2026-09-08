@@ -555,6 +555,30 @@ Replace the generated stub body with the feature's business logic. Run
 `CLAUDE.md`, the ncgo-dev skill, project context, and Cursor rules — reflects
 the new domain and methods.
 
+### RPC method stubs from an already-generated handler
+
+```bash
+ncgo add rpc-method --service demo --rpc Ping --root .
+```
+
+`ncgo add rpc-method` targets the **top-level** `internal/usecase/<service>/usecase.go`
+(the file kitex/hz's own `usecase.yaml`/`usecase_go.yaml` templates mark
+`update_behavior: skip`, so it is never touched again once it exists). It does
+not parse the IDL: it extracts the method's already-correct Go signature from
+the already-generated handler file, so **run `make update` (kitex) or
+`hz update` (hz) first** — if the method isn't in the generated handler yet,
+the command errors and tells you to run that first.
+
+`--output json` returns `path`, `service`, `method`, and `nextSteps`:
+
+```bash
+ncgo add rpc-method --service demo --rpc Ping --root . --output json
+```
+
+This command does not touch `ncgo add method` (the domain-layer command) or
+any project-owned aggregation files (e.g. a hand-written `composite.go`) —
+those remain manual.
+
 ### Validating an agent's changes
 
 After implementing a feature with `ncgo add domain` / `ncgo add method`, run:

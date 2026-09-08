@@ -26,25 +26,33 @@ contract, so an AI agent can drive it directly.
    IDL. Skip this step and the one above it when the feature only changes
    usecase logic and does not touch the IDL.
 
-5. **Implement the handler** — wire the generated handler to the usecase
+5. **Append the RPC stub to usecase.go** — `ncgo add rpc-method --service <name> --rpc <Method> --root .`
+   Appends a method stub to the top-level `internal/usecase/<service>/usecase.go`,
+   copying its signature from the handler file regenerated in the previous
+   step. Required because that file's `update_behavior: skip` means the
+   generator never appends new methods to it automatically. Does not touch
+   project-owned aggregation files (e.g. a hand-written `composite.go`) — those
+   remain manual.
+
+6. **Implement the handler** — wire the generated handler to the usecase
    method added in step 2, following the `handler/* → usecase/*` layer rule
    (no repo/data import from handler).
 
-6. **Regenerate database code** — `make sqlc`
+7. **Regenerate database code** — `make sqlc`
    Required when the service uses a database (`cfg.Database.Enabled`). Kitex
    services always need this before `go mod tidy`; Hertz services need it
    only when the database scaffold is enabled.
 
-7. **Verify** — `go build ./... && go vet ./... && go test ./... -count=1`
+8. **Verify** — `go build ./... && go vet ./... && go test ./... -count=1`
    The scaffold must stay buildable after each method insertion.
 
-8. **Validate with ncgo check** — `ncgo check --root .`
+9. **Validate with ncgo check** — `ncgo check --root .`
    Verifies the change is internally consistent: every usecase has paired
    `// ncgo:methods:start|end` anchors, `manifest.Domains` matches
    `internal/usecase/*/`, and rendered AI context is not stale. Exits `0` on
    pass, `1` on a failed check, `2` on a command error.
 
-9. **Refresh AI context** — `ncgo ai sync --root .`
+10. **Refresh AI context** — `ncgo ai sync --root .`
    Re-renders this project's AI artifacts (see below) so agent context
    reflects the new domain and methods. Re-run `ncgo check` after sync to
    confirm the stale-context check passes.

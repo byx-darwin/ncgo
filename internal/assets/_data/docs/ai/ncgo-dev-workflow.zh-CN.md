@@ -24,22 +24,28 @@
    重新生成 handler 桩代码和生成类型（`internal/pb` 或 `kitex_gen`）。
    若功能只改动用例逻辑、不涉及 IDL，可跳过此步及上一步。
 
-5. **实现 handler** — 将生成的 handler 接入第 2 步添加的用例方法，
+5. **把 RPC 桩追加到 usecase.go** — `ncgo add rpc-method --service <name> --rpc <Method> --root .`
+   将方法桩追加到顶层 `internal/usecase/<service>/usecase.go`，签名从上一步
+   重新生成的 handler 文件中提取。之所以需要这一步，是因为该文件的
+   `update_behavior: skip` 意味着生成器永远不会自动往里面追加新方法。不会处理
+   项目自有的聚合文件（例如手写的 `composite.go`）——这些仍需人工处理。
+
+6. **实现 handler** — 将生成的 handler 接入第 2 步添加的用例方法，
    遵循 `handler/* → usecase/*` 分层规则（handler 不导入 repo/data）。
 
-6. **重新生成数据库代码** — `make sqlc`
+7. **重新生成数据库代码** — `make sqlc`
    当服务使用数据库时需要（`cfg.Database.Enabled`）。Kitex 服务在
    `go mod tidy` 之前始终需要此步骤；Hertz 服务仅在启用数据库脚手架时才需要。
 
-7. **验证** — `go build ./... && go vet ./... && go test ./... -count=1`
+8. **验证** — `go build ./... && go vet ./... && go test ./... -count=1`
    每次方法插入后，脚手架必须保持可构建状态。
 
-8. **用 ncgo check 校验** — `ncgo check --root .`
+9. **用 ncgo check 校验** — `ncgo check --root .`
    验证改动内部一致：每个用例都有配对的 `// ncgo:methods:start|end`
    锚点、`manifest.Domains` 与 `internal/usecase/*/` 一致、渲染的 AI 上下文
    声明的 domains 与 manifest 一致。通过退出 `0`，校验失败退出 `1`，命令错误退出 `2`。
 
-9. **刷新 AI 上下文** — `ncgo ai sync --root .`
+10. **刷新 AI 上下文** — `ncgo ai sync --root .`
    重新渲染本项目的 AI 工件（见下文），使代理上下文反映新增的领域和方法。
    sync 后重跑 `ncgo check` 确认过期检查通过。
 

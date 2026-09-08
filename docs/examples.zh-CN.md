@@ -497,6 +497,28 @@ Agent 可以直接据此驱动后续步骤：
 `AGENTS.md`、`CLAUDE.md`、ncgo-dev skill、project context 与 Cursor 规则——
 都反映新增的领域与方法。
 
+### 从已生成的 handler 追加 RPC 方法桩
+
+```bash
+ncgo add rpc-method --service demo --rpc Ping --root .
+```
+
+`ncgo add rpc-method` 操作的是**顶层** `internal/usecase/<service>/usecase.go`
+（kitex/hz 自己的 `usecase.yaml`/`usecase_go.yaml` 模板标记为
+`update_behavior: skip`，一旦文件存在就再也不会被生成器碰）。它不解析 IDL：
+签名是直接从已经生成好的 handler 文件里提取的，因此**必须先跑 `make update`
+（kitex）或 `hz update`（hz）**——如果目标方法还没出现在生成的 handler 里，
+命令会报错并提示先执行生成命令。
+
+`--output json` 会返回 `path`、`service`、`method` 和 `nextSteps`：
+
+```bash
+ncgo add rpc-method --service demo --rpc Ping --root . --output json
+```
+
+该命令不影响 `ncgo add method`（领域层命令），也不处理项目自有的聚合文件
+（例如手写的 `composite.go`）——这些仍需人工处理。
+
 ### 校验 Agent 的改动
 
 在用 `ncgo add domain` / `ncgo add method` 实现功能之后，运行：
