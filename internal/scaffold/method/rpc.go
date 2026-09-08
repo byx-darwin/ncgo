@@ -12,6 +12,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"sort"
 	"strings"
 
 	"github.com/byx-darwin/ncgo/internal/manifest"
@@ -74,7 +75,7 @@ func AddRPC(opts RPCOptions) (*RPCResult, error) {
 	var sig *methodSignature
 	switch m.Service.Kind {
 	case manifest.KindKitex:
-		sig, err = findKitexHandlerSignature(root, m, opts.RPC)
+		sig, err = findKitexHandlerSignature(root, opts.RPC)
 	case manifest.KindHertz:
 		sig, err = findHzHandlerSignature(root, opts.RPC)
 	default:
@@ -84,7 +85,10 @@ func AddRPC(opts RPCOptions) (*RPCResult, error) {
 		return nil, err
 	}
 
-	usecasePath := filepath.Join(root, "internal", "usecase", strings.ToLower(m.Service.Name), "usecase.go")
+	usecasePath, err := findUsecaseFile(root)
+	if err != nil {
+		return nil, err
+	}
 	if err := appendUsecaseMethod(usecasePath, m.Service.Name, opts.RPC, *sig); err != nil {
 		return nil, err
 	}
@@ -101,24 +105,98 @@ func AddRPC(opts RPCOptions) (*RPCResult, error) {
 	}, nil
 }
 
-func findKitexHandlerSignature(root string, m *manifest.Manifest, rpcName string) (*methodSignature, error) {
-	handlerPath := filepath.Join(root, "internal", "handler", strings.ToLower(m.Service.Name), "handler.go")
-	fset := token.NewFileSet()
-	file, err := parser.ParseFile(fset, handlerPath, nil, 0)
+// findUsecaseFile locates the top-level RPC usecase.go by scanning
+// internal/usecase/ one level deep for the single subdirectory containing a
+// file literally named usecase.go. The real generators (kitex's
+// ToLower(.ServiceInfo.ServiceName) and hz's toSnakeCase(opts.ServiceName))
+// derive that subdirectory's name differently from the manifest's stored
+// service name, so the name cannot be reconstructed here — it must be
+// discovered. Domain-layer usecase files (from `ncgo add domain`) are always
+// named <domain>.go, never literally usecase.go, so this scan is unambiguous
+// for a well-formed project.
+func findUsecaseFile(root string) (string, error) {
+	usecaseDir := filepath.Join(root, "internal", "usecase")
+	entries, err := os.ReadDir(usecaseDir)
 	if err != nil {
-		return nil, fmt.Errorf("method: read kitex handler %s (run `make update` first?): %w", handlerPath, err)
+		return "", fmt.Errorf("method: read %s (run `make update`/`hz update` first?): %w", usecaseDir, err)
 	}
-	for _, decl := range file.Decls {
-		fn, ok := decl.(*ast.FuncDecl)
-		if !ok || fn.Recv == nil || fn.Name.Name != rpcName {
+	var candidates []string
+	for _, e := range entries {
+		if !e.IsDir() {
 			continue
 		}
-		if !strings.HasSuffix(receiverTypeName(fn.Recv), "Impl") {
+		p := filepath.Join(usecaseDir, e.Name(), "usecase.go")
+		if _, statErr := os.Stat(p); statErr == nil {
+			candidates = append(candidates, p)
+		}
+	}
+	switch len(candidates) {
+	case 0:
+		return "", fmt.Errorf("method: no top-level usecase.go found under %s; run `make update`/`hz update` first", usecaseDir)
+	case 1:
+		return candidates[0], nil
+	default:
+		return "", fmt.Errorf("method: multiple usecase.go files found under %s (%s); ambiguous, please report this as unexpected", usecaseDir, strings.Join(candidates, ", "))
+	}
+}
+
+func findKitexHandlerSignature(root string, rpcName string) (*methodSignature, error) {
+	handlerDir := filepath.Join(root, "internal", "handler")
+	entries, err := os.ReadDir(handlerDir)
+	if err != nil {
+		return nil, fmt.Errorf("method: read %s (run `make update` first?): %w", handlerDir, err)
+	}
+	type kitexMatch struct {
+		path string
+		sig  *methodSignature
+	}
+	var candidates []string
+	var matches []kitexMatch
+	for _, e := range entries {
+		if !e.IsDir() {
 			continue
 		}
-		return buildSignature(fset, file, fn.Type.Params, fn.Type.Results)
+		p := filepath.Join(handlerDir, e.Name(), "handler.go")
+		if _, statErr := os.Stat(p); statErr != nil {
+			continue
+		}
+		candidates = append(candidates, p)
+		fset := token.NewFileSet()
+		file, ferr := parser.ParseFile(fset, p, nil, 0)
+		if ferr != nil {
+			return nil, fmt.Errorf("method: read kitex handler %s (run `make update` first?): %w", p, ferr)
+		}
+		for _, decl := range file.Decls {
+			fn, ok := decl.(*ast.FuncDecl)
+			if !ok || fn.Recv == nil || fn.Name.Name != rpcName {
+				continue
+			}
+			if !strings.HasSuffix(receiverTypeName(fn.Recv), "Impl") {
+				continue
+			}
+			sig, berr := buildSignature(fset, file, p, fn.Type.Params, fn.Type.Results)
+			if berr != nil {
+				return nil, berr
+			}
+			matches = append(matches, kitexMatch{path: p, sig: sig})
+			break
+		}
 	}
-	return nil, fmt.Errorf("method: rpc %q not found in %s; run `make update` after adding it to the IDL", rpcName, handlerPath)
+	switch len(matches) {
+	case 0:
+		if len(candidates) == 0 {
+			return nil, fmt.Errorf("method: no handler.go found under %s; run `make update` after adding it to the IDL", handlerDir)
+		}
+		return nil, fmt.Errorf("method: rpc %q not found in %s; run `make update` after adding it to the IDL", rpcName, strings.Join(candidates, ", "))
+	case 1:
+		return matches[0].sig, nil
+	default:
+		var paths []string
+		for _, mm := range matches {
+			paths = append(paths, mm.path)
+		}
+		return nil, fmt.Errorf("method: rpc %q found in multiple generated handlers (%s); ambiguous, please report this as unexpected", rpcName, strings.Join(paths, ", "))
+	}
 }
 
 // receiverTypeName extracts the receiver's type name from a method's
@@ -140,7 +218,11 @@ func receiverTypeName(recv *ast.FieldList) string {
 
 func findHzHandlerSignature(root string, rpcName string) (*methodSignature, error) {
 	handlerDir := filepath.Join(root, "internal", "handler")
-	var sig *methodSignature
+	type hzMatch struct {
+		path string
+		sig  *methodSignature
+	}
+	var matches []hzMatch
 	walkErr := filepath.WalkDir(handlerDir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err
@@ -172,12 +254,11 @@ func findHzHandlerSignature(root string, rpcName string) (*methodSignature, erro
 					if !ok || len(meth.Names) == 0 || meth.Names[0].Name != rpcName {
 						continue
 					}
-					built, berr := buildSignature(fset, file, ft.Params, ft.Results)
+					built, berr := buildSignature(fset, file, p, ft.Params, ft.Results)
 					if berr != nil {
 						return berr
 					}
-					sig = built
-					return filepath.SkipAll
+					matches = append(matches, hzMatch{path: p, sig: built})
 				}
 			}
 		}
@@ -186,13 +267,21 @@ func findHzHandlerSignature(root string, rpcName string) (*methodSignature, erro
 	if walkErr != nil {
 		return nil, walkErr
 	}
-	if sig == nil {
+	switch len(matches) {
+	case 0:
 		return nil, fmt.Errorf("method: rpc %q not found in any generated handler under %s; run `hz update` after adding it to the IDL", rpcName, handlerDir)
+	case 1:
+		return matches[0].sig, nil
+	default:
+		var paths []string
+		for _, mm := range matches {
+			paths = append(paths, mm.path)
+		}
+		return nil, fmt.Errorf("method: rpc %q is ambiguous: found in multiple generated handlers (%s); not guessing which one is intended", rpcName, strings.Join(paths, ", "))
 	}
-	return sig, nil
 }
 
-func buildSignature(fset *token.FileSet, file *ast.File, params, results *ast.FieldList) (*methodSignature, error) {
+func buildSignature(fset *token.FileSet, file *ast.File, handlerPath string, params, results *ast.FieldList) (*methodSignature, error) {
 	paramsSrc, err := renderParams(fset, params)
 	if err != nil {
 		return nil, fmt.Errorf("method: render params: %w", err)
@@ -208,11 +297,20 @@ func buildSignature(fset *token.FileSet, file *ast.File, params, results *ast.Fi
 		if !used[name] {
 			continue
 		}
+		delete(used, name)
 		alias := ""
 		if imp.Name != nil {
 			alias = imp.Name.Name
 		}
 		imports = append(imports, importSpec{Alias: alias, Path: strings.Trim(imp.Path.Value, `"`)})
+	}
+	if len(used) > 0 {
+		unresolved := make([]string, 0, len(used))
+		for name := range used {
+			unresolved = append(unresolved, name)
+		}
+		sort.Strings(unresolved)
+		return nil, fmt.Errorf("method: unresolved import identifier(s) %s referenced by %s; add/fix the corresponding import in the handler file and rerun", strings.Join(unresolved, ", "), handlerPath)
 	}
 	return &methodSignature{ParamsSrc: paramsSrc, RespSrc: respSrc, Imports: imports}, nil
 }

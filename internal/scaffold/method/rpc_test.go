@@ -66,7 +66,20 @@ func NewPbHandler(uc useCase) *Handler {
 var _ = app.RequestContext{}
 `
 
-func seedRPCProject(t *testing.T, kind, handlerRelPath, handlerSrc, usecaseSrc string) string {
+// writeFile writes content to path, creating parent directories as needed.
+func writeFile(t *testing.T, path, content string) {
+	t.Helper()
+	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
+		t.Fatalf("mkdir %s: %v", filepath.Dir(path), err)
+	}
+	if err := os.WriteFile(path, []byte(content), 0o644); err != nil {
+		t.Fatalf("write %s: %v", path, err)
+	}
+}
+
+// seedManifest writes just the manifest, for tests that want to hand-craft
+// their own internal/handler and internal/usecase layouts.
+func seedManifest(t *testing.T, kind, serviceName string) string {
 	t.Helper()
 	root := t.TempDir()
 	if err := manifest.Save(root, &manifest.Manifest{
@@ -74,26 +87,20 @@ func seedRPCProject(t *testing.T, kind, handlerRelPath, handlerSrc, usecaseSrc s
 		Mode:   manifest.ModeMono,
 		Module: "example.com/demo",
 		Service: manifest.Service{
-			Name: "demo", Kind: kind, IDL: "idl/app/demo.proto",
+			Name: serviceName, Kind: kind, IDL: "idl/app/demo.proto",
 		},
 		GeneratedAt: time.Date(2026, 4, 29, 8, 0, 0, 0, time.UTC),
 	}); err != nil {
 		t.Fatalf("seed manifest: %v", err)
 	}
-	handlerPath := filepath.Join(root, handlerRelPath)
-	if err := os.MkdirAll(filepath.Dir(handlerPath), 0o755); err != nil {
-		t.Fatalf("mkdir handler dir: %v", err)
-	}
-	if err := os.WriteFile(handlerPath, []byte(handlerSrc), 0o644); err != nil {
-		t.Fatalf("write handler fixture: %v", err)
-	}
-	usecasePath := filepath.Join(root, "internal", "usecase", "demo", "usecase.go")
-	if err := os.MkdirAll(filepath.Dir(usecasePath), 0o755); err != nil {
-		t.Fatalf("mkdir usecase dir: %v", err)
-	}
-	if err := os.WriteFile(usecasePath, []byte(usecaseSrc), 0o644); err != nil {
-		t.Fatalf("write usecase fixture: %v", err)
-	}
+	return root
+}
+
+func seedRPCProject(t *testing.T, kind, handlerRelPath, handlerSrc, usecaseSrc string) string {
+	t.Helper()
+	root := seedManifest(t, kind, "demo")
+	writeFile(t, filepath.Join(root, handlerRelPath), handlerSrc)
+	writeFile(t, filepath.Join(root, "internal", "usecase", "demo", "usecase.go"), usecaseSrc)
 	return root
 }
 
@@ -228,5 +235,175 @@ func TestAddRPCRejectsDuplicateMethod(t *testing.T) {
 	_, err := AddRPC(RPCOptions{Root: root, Service: "demo", RPC: "Ping"})
 	if err == nil || !strings.Contains(err.Error(), "already exists") {
 		t.Fatalf("err = %v, want already-exists error", err)
+	}
+}
+
+// --- Finding 1: usecase.go / handler.go directory-name resolution must not
+// assume strings.ToLower(manifest service name) matches the real generator
+// output directory. ---
+
+func TestAddRPCResolvesUsecaseDirByScanForHyphenatedServiceName(t *testing.T) {
+	root := seedManifest(t, manifest.KindKitex, "user-api")
+	// The real kitex generator names the directory after the proto service
+	// name (e.g. proto service "UserApi" -> dir "userapi"), never
+	// strings.ToLower(manifest service name) ("user-api"). Simulate that
+	// mismatch: neither the handler nor usecase directory is named
+	// "user-api".
+	writeFile(t, filepath.Join(root, "internal", "handler", "userapi", "handler.go"), kitexHandlerFixture)
+	writeFile(t, filepath.Join(root, "internal", "usecase", "userapi", "usecase.go"), minimalUsecaseGo)
+
+	res, err := AddRPC(RPCOptions{Root: root, Service: "user-api", RPC: "Ping"})
+	if err != nil {
+		t.Fatalf("AddRPC: %v", err)
+	}
+	wantPath := filepath.Join(root, "internal", "usecase", "userapi", "usecase.go")
+	if res.Path != wantPath {
+		t.Fatalf("res.Path = %s, want %s", res.Path, wantPath)
+	}
+	body, err := os.ReadFile(res.Path)
+	if err != nil {
+		t.Fatalf("read usecase: %v", err)
+	}
+	if !strings.Contains(string(body), "func (uc *UseCase) Ping(") {
+		t.Errorf("usecase.go missing Ping method:\n%s", body)
+	}
+}
+
+func TestAddRPCErrorsWhenNoUsecaseFileFound(t *testing.T) {
+	root := seedManifest(t, manifest.KindKitex, "demo")
+	writeFile(t, filepath.Join(root, "internal", "handler", "demo", "handler.go"), kitexHandlerFixture)
+	// internal/usecase exists but no subdirectory contains a usecase.go.
+	if err := os.MkdirAll(filepath.Join(root, "internal", "usecase", "demo"), 0o755); err != nil {
+		t.Fatalf("mkdir usecase dir: %v", err)
+	}
+
+	_, err := AddRPC(RPCOptions{Root: root, Service: "demo", RPC: "Ping"})
+	if err == nil || !strings.Contains(err.Error(), "no top-level usecase.go found") {
+		t.Fatalf("err = %v, want no-usecase-found error", err)
+	}
+}
+
+func TestAddRPCErrorsWhenMultipleUsecaseFilesFound(t *testing.T) {
+	root := seedRPCProject(t, manifest.KindKitex,
+		"internal/handler/demo/handler.go", kitexHandlerFixture, minimalUsecaseGo)
+	// seedRPCProject already wrote internal/usecase/demo/usecase.go; add a
+	// second candidate so resolution becomes ambiguous.
+	writeFile(t, filepath.Join(root, "internal", "usecase", "other", "usecase.go"), minimalUsecaseGo)
+
+	_, err := AddRPC(RPCOptions{Root: root, Service: "demo", RPC: "Ping"})
+	if err == nil || !strings.Contains(err.Error(), "multiple usecase.go files found") {
+		t.Fatalf("err = %v, want ambiguous usecase.go error", err)
+	}
+}
+
+// --- Finding 2: buildSignature must fail loudly on an unresolved package
+// selector instead of silently omitting the import. ---
+
+const kitexHandlerFixtureUnresolvedImport = `// Code generated by kitex generator.
+
+package demohandler
+
+import (
+	"context"
+
+	pb "example.com/demo/kitex_gen/demo"
+)
+
+type DemoServiceImpl struct{}
+
+func (s *DemoServiceImpl) Ping(ctx context.Context, req *foo.Bar) (resp *pb.PingResp, err error) {
+	return nil, nil
+}
+`
+
+func TestAddRPCErrorsOnUnresolvedImportIdentifier(t *testing.T) {
+	root := seedRPCProject(t, manifest.KindKitex,
+		"internal/handler/demo/handler.go", kitexHandlerFixtureUnresolvedImport, minimalUsecaseGo)
+	usecasePath := filepath.Join(root, "internal", "usecase", "demo", "usecase.go")
+	before, err := os.ReadFile(usecasePath)
+	if err != nil {
+		t.Fatalf("read usecase before: %v", err)
+	}
+
+	_, err = AddRPC(RPCOptions{Root: root, Service: "demo", RPC: "Ping"})
+	if err == nil || !strings.Contains(err.Error(), "unresolved import") || !strings.Contains(err.Error(), "foo") {
+		t.Fatalf("err = %v, want unresolved import error naming foo", err)
+	}
+	if !strings.Contains(err.Error(), "handler.go") {
+		t.Fatalf("err = %v, want error to name the handler file", err)
+	}
+
+	after, err := os.ReadFile(usecasePath)
+	if err != nil {
+		t.Fatalf("read usecase after: %v", err)
+	}
+	if string(before) != string(after) {
+		t.Fatalf("usecase.go was modified despite error:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+}
+
+// --- Finding 3: findHzHandlerSignature must not silently pick the first
+// match when the method name is ambiguous across multiple generated
+// handlers. ---
+
+const hzHandlerFixtureA = `// Code generated by hertz generator.
+
+package pb
+
+import (
+	"context"
+
+	pbA "example.com/demo/internal/pb"
+)
+
+type Handler struct {
+	uc useCase
+}
+
+type useCase interface {
+	Ping(ctx context.Context, req *pbA.PingReq) (*pbA.PingResp, error)
+}
+
+func NewPbHandler(uc useCase) *Handler {
+	return &Handler{uc: uc}
+}
+`
+
+const hzHandlerFixtureB = `// Code generated by hertz generator.
+
+package pb2
+
+import (
+	"context"
+
+	pbB "example.com/demo/internal/pb2"
+)
+
+type Handler struct {
+	uc useCase
+}
+
+type useCase interface {
+	Ping(ctx context.Context, req *pbB.PingReq) (*pbB.PingResp, error)
+}
+
+func NewPb2Handler(uc useCase) *Handler {
+	return &Handler{uc: uc}
+}
+`
+
+func TestAddRPCHzErrorsOnAmbiguousMethodAcrossHandlers(t *testing.T) {
+	root := seedRPCProject(t, manifest.KindHertz,
+		"internal/handler/pb/handler.go", hzHandlerFixtureA, minimalUsecaseGo)
+	writeFile(t, filepath.Join(root, "internal", "handler", "pb2", "handler.go"), hzHandlerFixtureB)
+
+	_, err := AddRPC(RPCOptions{Root: root, Service: "demo", RPC: "Ping"})
+	if err == nil || !strings.Contains(err.Error(), "ambiguous") {
+		t.Fatalf("err = %v, want ambiguous error", err)
+	}
+	wantA := filepath.Join(root, "internal", "handler", "pb", "handler.go")
+	wantB := filepath.Join(root, "internal", "handler", "pb2", "handler.go")
+	if !strings.Contains(err.Error(), wantA) || !strings.Contains(err.Error(), wantB) {
+		t.Fatalf("err = %v, want both handler paths listed", err)
 	}
 }
