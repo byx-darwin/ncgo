@@ -125,3 +125,65 @@ func formatMCPAddMethodOutput(res *method.Result, output string) (string, error)
 		},
 	})
 }
+
+var addRPCMethodMCPTool = structuredMCPTool[*method.RPCResult]{
+	name:      "add rpc-method",
+	supported: []string{mcpOutputText, mcpOutputJSON},
+	format:    formatMCPAddRPCMethodOutput,
+	fields: func(res *method.RPCResult) map[string]any {
+		return map[string]any{
+			"path":      res.Path,
+			"service":   res.Service,
+			"method":    res.Method,
+			"nextSteps": res.NextSteps,
+		}
+	},
+	isError: func(*method.RPCResult) bool {
+		return false
+	},
+}
+
+func callAddRPCMethod(raw json.RawMessage) (map[string]any, error) {
+	var args struct {
+		Root    string `json:"root"`
+		Service string `json:"service"`
+		RPC     string `json:"rpc"`
+		Output  string `json:"output"`
+	}
+	if err := json.Unmarshal(raw, &args); err != nil {
+		return nil, err
+	}
+	if _, err := sandboxRoot(args.Root); err != nil {
+		return textResult(err.Error(), true), nil
+	}
+	output, err := addRPCMethodMCPTool.resolveOutput(args.Output)
+	if err != nil {
+		return textResult(err.Error(), true), nil
+	}
+	res, err := method.AddRPC(method.RPCOptions{Root: args.Root, Service: args.Service, RPC: args.RPC})
+	if err != nil {
+		return textResult(err.Error(), true), nil
+	}
+	out, err := addRPCMethodMCPTool.buildResult(res, output)
+	if err != nil {
+		return textResult(err.Error(), true), nil
+	}
+	return out, nil
+}
+
+func formatMCPAddRPCMethodOutput(res *method.RPCResult, output string) (string, error) {
+	return formatMCPOutput(output, map[string]outputWriter{
+		mcpOutputText: func(w io.Writer) error {
+			_, err := io.WriteString(w, fmt.Sprintf("inserted %s.%s into %s", res.Service, res.Method, res.Path))
+			return err
+		},
+		mcpOutputJSON: func(w io.Writer) error {
+			return json.NewEncoder(w).Encode(struct {
+				Path      string   `json:"path"`
+				Service   string   `json:"service"`
+				Method    string   `json:"method"`
+				NextSteps []string `json:"nextSteps"`
+			}{Path: res.Path, Service: res.Service, Method: res.Method, NextSteps: res.NextSteps})
+		},
+	})
+}
