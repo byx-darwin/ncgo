@@ -201,6 +201,21 @@ func TestReplaceServiceName_LowercaseNoFalsePositive(t *testing.T) {
 	}
 }
 
+func TestReplaceServiceName_LowercaseDelimiterAdjacent(t *testing.T) {
+	body := "cfg := &conf.RateLimitConfig{\n" +
+		"\tStrategy:      rule.GetStrategy(),\n" +
+		"\tWindowSeconds: config.Duration{Duration: time.Duration(rule.GetWindowSeconds()) * time.Second},\n" +
+		"\tMaxRequests:   int(rule.GetMaxRequests()),\n" +
+		"}\n"
+	got := replaceServiceName(body, "Rule")
+	if strings.Contains(got, "rule.") {
+		t.Errorf("lowercase service name immediately followed by '(' must be replaced, got:\n%s", got)
+	}
+	if strings.Count(got, "{{ToLower .ServiceName}}") != 3 {
+		t.Errorf("expected 3 lowercase substitutions (Strategy/WindowSeconds/MaxRequests lines), got:\n%s", got)
+	}
+}
+
 func writeFileExport(t *testing.T, root, rel, content string) {
 	t.Helper()
 	abs := filepath.Join(root, filepath.FromSlash(rel))
