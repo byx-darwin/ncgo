@@ -64,6 +64,15 @@ var ExcludedPaths = []string{
 	"kitex_gen/",   // kitex-generated RPC stubs
 }
 
+// fixedContractIDLs lists idl/ files (relative to the idl/ root) whose
+// service names are fixed external contracts and must not be rewritten by
+// replaceServiceName, regardless of the exporting project's service name.
+// Unlike ExcludedPaths/Hertz's api.proto skip, these files ARE exported —
+// only the service-name substitution is skipped for them.
+var fixedContractIDLs = []string{
+	"rule-center.proto", // rule-center preset's fixed `service RuleService`
+}
+
 // ExportOptions describes an export operation.
 type ExportOptions struct {
 	Root        string // project root
@@ -148,7 +157,9 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 
 // exportIDLs variabilizes the project's service IDL into template/idl/.
 // hz standard support files (openapi/, validate/) stay embedded and are
-// excluded. A missing idl/ dir is not an error.
+// excluded. Files listed in fixedContractIDLs are exported but keep their
+// service name identifiers literal (see fixedContractIDLs doc). A missing
+// idl/ dir is not an error.
 func exportIDLs(root string, opts ExportOptions) ([]string, error) {
 	idlRoot := filepath.Join(root, "idl")
 	if fi, err := os.Stat(idlRoot); err != nil || !fi.IsDir() {
@@ -177,8 +188,14 @@ func exportIDLs(root string, opts ExportOptions) ([]string, error) {
 			return fmt.Errorf("read %s: %w", rel, err)
 		}
 		body := regexp.MustCompile(regexp.QuoteMeta(opts.Module)).ReplaceAllString(string(content), "{{.Module}}")
-		body = replaceServiceName(body, opts.ServiceName)
-		tplRel := idlTemplatePath(rel, opts)
+		fixed := isFixedContractIDL(rel)
+		if !fixed {
+			body = replaceServiceName(body, opts.ServiceName)
+		}
+		tplRel := rel
+		if !fixed {
+			tplRel = idlTemplatePath(rel, opts)
+		}
 		out := filepath.Join(root, "template", "idl", filepath.FromSlash(tplRel))
 		if err := os.MkdirAll(filepath.Dir(out), 0o755); err != nil {
 			return err
@@ -190,6 +207,17 @@ func exportIDLs(root string, opts ExportOptions) ([]string, error) {
 		return nil
 	})
 	return exported, err
+}
+
+// isFixedContractIDL reports whether rel (idl/-relative path) is a fixed
+// external contract file whose service names must not be parameterized.
+func isFixedContractIDL(rel string) bool {
+	for _, p := range fixedContractIDLs {
+		if rel == p {
+			return true
+		}
+	}
+	return false
 }
 
 // idlTemplatePath parameterizes the service name inside IDL file names so
