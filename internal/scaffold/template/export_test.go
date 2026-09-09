@@ -401,6 +401,129 @@ func TestExport_IDL_FixedContractNotRenamed(t *testing.T) {
 	}
 }
 
+func TestExport_GoFile_FixedContractNotRenamed(t *testing.T) {
+	dir := t.TempDir()
+	writeFileExport(t, dir, "main.go", "package main\n")
+	writeFileExport(t, dir, "internal/pkg/middleware/rule_center_client.go", `// Optional rule-center client for Kitex services.
+//
+// NewRuleCenterClient creates a Kitex client connected to the rule-center
+// service at the given address (e.g. "rule-center.internal:8888").
+package middleware
+
+import (
+	"fmt"
+
+	"github.com/acme/test/internal/base/conf"
+)
+
+// RuleCenterConfig mirrors the timeout pattern of Kitex's generated client.
+type RuleCenterConfig struct {
+	Address string
+}
+
+// RuleCenterClient implements the rate-limit resolver.
+type RuleCenterClient struct {
+	cfg RuleCenterConfig
+}
+
+// NewRuleCenterClient creates a client for the given address.
+func NewRuleCenterClient(address string) (*RuleCenterClient, error) {
+	if address == "" {
+		return nil, fmt.Errorf("rule_center: address is required")
+	}
+	_ = conf.RateLimitRuleConfig{}
+	return &RuleCenterClient{cfg: RuleCenterConfig{Address: address}}, nil
+}
+`)
+
+	result, err := Export(ExportOptions{Root: dir, Kind: "kitex",
+		Module: "github.com/acme/test", ServiceName: "Rule"})
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	found := false
+	for _, tp := range result.Templates {
+		if tp == "internal/pkg/middleware/rule_center_client.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected rule_center_client.go in exported templates, got %v", result.Templates)
+	}
+
+	tpl := loadExportedTemplateByPath(t, dir, "kitex", "internal/pkg/middleware/rule_center_client.go")
+	s := tpl.Body
+
+	if !strings.Contains(s, "type RuleCenterClient struct") {
+		t.Errorf("fixed identifier RuleCenterClient must survive export unchanged:\n%s", s)
+	}
+	if !strings.Contains(s, "type RuleCenterConfig struct") {
+		t.Errorf("fixed identifier RuleCenterConfig must survive export unchanged:\n%s", s)
+	}
+	if !strings.Contains(s, "func NewRuleCenterClient(address string)") {
+		t.Errorf("fixed identifier NewRuleCenterClient must survive export unchanged:\n%s", s)
+	}
+	if !strings.Contains(s, `"rule-center.internal:8888"`) {
+		t.Errorf("fixed comment literal rule-center.internal:8888 must survive export unchanged:\n%s", s)
+	}
+	if strings.Contains(s, "{{.ServiceName}}") {
+		t.Errorf("fixed contract Go file must not be parameterized by project service name:\n%s", s)
+	}
+	if !strings.Contains(s, "{{.Module}}/internal/base/conf") {
+		t.Errorf("module path must still be variabilized:\n%s", s)
+	}
+}
+
+func TestExport_GoFile_NonFixedStillRenamed(t *testing.T) {
+	dir := t.TempDir()
+	writeFileExport(t, dir, "main.go", "package main\n")
+	writeFileExport(t, dir, "internal/pkg/other/rule_helper.go", `package other
+
+// RuleHelper is a normal, non-fixed-contract type.
+type RuleHelper struct{}
+`)
+
+	result, err := Export(ExportOptions{Root: dir, Kind: "kitex",
+		Module: "github.com/acme/test", ServiceName: "Rule"})
+	if err != nil {
+		t.Fatalf("export: %v", err)
+	}
+
+	found := false
+	for _, tp := range result.Templates {
+		if tp == "internal/pkg/other/rule_helper.go" {
+			found = true
+		}
+	}
+	if !found {
+		t.Fatalf("expected rule_helper.go in exported templates, got %v", result.Templates)
+	}
+
+	tpl := loadExportedTemplateByPath(t, dir, "kitex", "internal/pkg/other/rule_helper.go")
+	s := tpl.Body
+	if !strings.Contains(s, "type {{.ServiceName}}Helper struct") {
+		t.Errorf("non-fixed Go file must still have ServiceName parameterized:\n%s", s)
+	}
+}
+
+func TestIsFixedContractGoFile(t *testing.T) {
+	tests := []struct {
+		path string
+		want bool
+	}{
+		{"internal/pkg/middleware/rule_center_client.go", true},
+		{"internal/pkg/middleware/other_client.go", false},
+		{"internal/pkg/other/rule_helper.go", false},
+		{"rule_center_client.go", false},
+	}
+	for _, tt := range tests {
+		if got := isFixedContractGoFile(tt.path); got != tt.want {
+			t.Errorf("isFixedContractGoFile(%q) = %v, want %v", tt.path, got, tt.want)
+		}
+	}
+}
+
 func TestExport_Makefile_FixedContractIDLPathNotRenamed(t *testing.T) {
 	dir := t.TempDir()
 	writeFileExport(t, dir, "main.go", "package main\n")

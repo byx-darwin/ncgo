@@ -77,6 +77,16 @@ var fixedContractIDLs = []string{
 	"rule-center.proto", // rule-center preset's fixed `service RuleService`
 }
 
+// fixedContractGoFiles lists Go source files (relative to the project
+// root) whose identifiers/strings are fixed external contracts and must
+// not be rewritten by replaceServiceName during export, regardless of
+// the exporting project's service name. Unlike fixedContractIDLs, these
+// files' exported paths are already stable (the file rules matching them
+// don't set LoopService), so only their body content needs protecting.
+var fixedContractGoFiles = []string{
+	"internal/pkg/middleware/rule_center_client.go", // rule-center preset's fixed RuleCenterClient/NewRuleCenterClient identifiers and address example
+}
+
 // ExportOptions describes an export operation.
 type ExportOptions struct {
 	Root        string // project root
@@ -222,6 +232,18 @@ func isFixedContractIDL(rel string) bool {
 	return false
 }
 
+// isFixedContractGoFile reports whether rel (project-root-relative path)
+// is a fixed external contract Go file whose identifiers/strings must not
+// be parameterized by replaceServiceName.
+func isFixedContractGoFile(rel string) bool {
+	for _, p := range fixedContractGoFiles {
+		if rel == p {
+			return true
+		}
+	}
+	return false
+}
+
 // idlTemplatePath parameterizes the service name inside IDL file names so
 // consumers render them onto their own default IDL paths (hertz
 // idl/app/<name>.proto, kitex idl/<name>.proto). Substitution is scoped to the
@@ -298,8 +320,12 @@ func fileToTemplate(_ string, absPath, relPath string, opts ExportOptions, rule 
 	re := regexp.MustCompile(regexp.QuoteMeta(opts.Module))
 	body = re.ReplaceAllString(body, "{{.Module}}")
 
-	// Replace service name identifiers
-	body = replaceServiceName(body, opts.ServiceName)
+	// Replace service name identifiers, unless this file is a fixed
+	// external contract whose identifiers/strings must survive export
+	// unchanged (see fixedContractGoFiles).
+	if !isFixedContractGoFile(relPath) {
+		body = replaceServiceName(body, opts.ServiceName)
+	}
 
 	// Escape {{ and }} that are not ncgo template variables.
 	// These come from Go composite literals like {{MatchKind: "exact"}}.
