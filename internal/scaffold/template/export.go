@@ -224,19 +224,20 @@ func exportIDLs(root string, opts ExportOptions) ([]string, error) {
 // external contract file whose service name identifiers and exported
 // filename/path must not be parameterized.
 func isFixedContractIDL(rel string) bool {
-	for _, p := range fixedContractIDLs {
-		if rel == p {
-			return true
-		}
-	}
-	return false
+	return containsPath(fixedContractIDLs, rel)
 }
 
 // isFixedContractGoFile reports whether rel (project-root-relative path)
 // is a fixed external contract Go file whose identifiers/strings must not
 // be parameterized by replaceServiceName.
 func isFixedContractGoFile(rel string) bool {
-	for _, p := range fixedContractGoFiles {
+	return containsPath(fixedContractGoFiles, rel)
+}
+
+// containsPath reports whether rel appears exactly in list. Shared by
+// isFixedContractIDL and isFixedContractGoFile.
+func containsPath(list []string, rel string) bool {
+	for _, p := range list {
 		if rel == p {
 			return true
 		}
