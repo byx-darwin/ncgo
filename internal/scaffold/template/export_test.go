@@ -201,6 +201,22 @@ func TestReplaceServiceName_LowercaseNoFalsePositive(t *testing.T) {
 	}
 }
 
+func TestReplaceServiceName_LowercaseConcatenatedSuffix(t *testing.T) {
+	body := "package proj1handler\n" +
+		"package proj1client\n" +
+		"package proj1repo\n"
+	got := replaceServiceName(body, "Proj1")
+	if strings.Contains(got, "proj1handler") || strings.Contains(got, "proj1client") || strings.Contains(got, "proj1repo") {
+		t.Errorf("service name directly concatenated with a known package-name suffix (handler/client/repo) must still be parameterized, got:\n%s", got)
+	}
+	want := "package {{ToLower .ServiceName}}handler\n" +
+		"package {{ToLower .ServiceName}}client\n" +
+		"package {{ToLower .ServiceName}}repo\n"
+	if got != want {
+		t.Errorf("got:\n%s\nwant:\n%s", got, want)
+	}
+}
+
 func TestReplaceServiceName_LowercaseDelimiterAdjacent(t *testing.T) {
 	body := "cfg := &conf.RateLimitConfig{\n" +
 		"\tStrategy:      rule.GetStrategy(),\n" +

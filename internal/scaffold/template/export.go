@@ -416,10 +416,18 @@ func replaceServiceName(body, serviceName string) string {
 	// (userrpc2, myuserrpc) are left untouched. \b is zero-width so it
 	// doesn't consume the boundary character, avoiding the double-run
 	// workaround previously needed for adjacent tokens.
+	//
+	// ncgo's own hz/kitex generators also concatenate the lowercased
+	// service name directly with a fixed set of package-name suffixes
+	// with no separator (e.g. "userrpchandler", "userrpcclient",
+	// "userrpcrepo" for package/dir names). \b sees no boundary between
+	// two letters, so plain \b...\b never matches those; special-case the
+	// known suffixes so they're preserved after the substitution instead
+	// of being exported as a literal, unparameterized identifier.
 	lower := serviceNameLower(serviceName)
 	if lower != "" {
-		segRE := regexp.MustCompile(`\b` + regexp.QuoteMeta(lower) + `\b`)
-		body = segRE.ReplaceAllString(body, "{{ToLower .ServiceName}}")
+		segRE := regexp.MustCompile(`\b` + regexp.QuoteMeta(lower) + `(handler|client|repo)?\b`)
+		body = segRE.ReplaceAllString(body, "{{ToLower .ServiceName}}$1")
 	}
 
 	return body
