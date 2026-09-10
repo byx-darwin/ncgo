@@ -990,12 +990,19 @@ func reapplyTemplateFiles(dir string, opts Options) error {
 				}
 			}
 
-			// Standard cleanup: check if the correctly-named file exists
+			// Standard cleanup: check if the correctly-named file exists.
+			// When opts.Name has no hyphen, correctBase equals base and
+			// correctName equals f — the "hyphenated" and "correct" paths
+			// are the same file. Without this guard, os.Stat(correctName)
+			// trivially succeeds (it's checking f against itself) and the
+			// file that was just correctly rendered gets deleted.
 			correctName := filepath.Join(fileDir, correctBase)
-			if _, err := os.Stat(correctName); err == nil {
-				// Both files exist, delete the hyphenated one
-				if err := os.Remove(f); err != nil {
-					fmt.Fprintf(os.Stderr, "warning: failed to remove hyphenated file %s: %v\n", f, err)
+			if correctName != f {
+				if _, err := os.Stat(correctName); err == nil {
+					// Both files exist, delete the hyphenated one
+					if err := os.Remove(f); err != nil {
+						fmt.Fprintf(os.Stderr, "warning: failed to remove hyphenated file %s: %v\n", f, err)
+					}
 				}
 			}
 		}

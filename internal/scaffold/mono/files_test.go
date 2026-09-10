@@ -43,6 +43,58 @@ func TestExpandIncludesMissingFragment(t *testing.T) {
 	}
 }
 
+// TestReapplyTemplateFiles_NoHyphenServiceName reproduces a regression where
+// reapplyTemplateFiles deleted the very file it had just correctly rendered.
+// Its trailing "clean up hyphenated files hz created" pass compares a
+// hardcoded path (opts.Name + suffix) against the same path with hyphens
+// replaced by underscores. When opts.Name has no hyphen (e.g. "scratch"),
+// both paths are identical, so the "both files exist" check trivially
+// matches itself and the file gets removed. See base-hertz/ratelimit-hertz
+// in byx-darwin/ncgo-templates, which both use plain (non-hyphenated)
+// service names and hit this exact case.
+func TestReapplyTemplateFiles_NoHyphenServiceName(t *testing.T) {
+	dir := t.TempDir()
+	tplDir := filepath.Join(dir, "template", "hertz-template")
+	if err := os.MkdirAll(tplDir, 0o755); err != nil {
+		t.Fatalf("mkdir tplDir: %v", err)
+	}
+
+	handlerYAML := "path: internal/handler/pb/{{ToLower .ServiceName}}_service.go\n" +
+		"update_behavior:\n  type: skip\n" +
+		"loop_service: true\n" +
+		"body: |-\n  package pb\n"
+	if err := os.WriteFile(filepath.Join(tplDir, "handler_pb.yaml"), []byte(handlerYAML), 0o644); err != nil {
+		t.Fatalf("write handler_pb.yaml: %v", err)
+	}
+
+	routerYAML := "path: internal/router/pb/{{ToLower .ServiceName}}.go\n" +
+		"update_behavior:\n  type: cover\n" +
+		"loop_service: true\n" +
+		"body: |-\n  package pb\n"
+	if err := os.WriteFile(filepath.Join(tplDir, "router_pb.yaml"), []byte(routerYAML), 0o644); err != nil {
+		t.Fatalf("write router_pb.yaml: %v", err)
+	}
+
+	opts := Options{
+		Kind:   manifest.KindHertz,
+		Module: "github.com/acme/scratch",
+		Name:   "scratch", // no hyphen: correctName == f for the cleanup pass
+	}
+	if err := reapplyTemplateFiles(dir, opts); err != nil {
+		t.Fatalf("reapplyTemplateFiles: %v", err)
+	}
+
+	for _, rel := range []string{
+		filepath.Join("internal", "handler", "pb", "scratch_service.go"),
+		filepath.Join("internal", "router", "pb", "scratch.go"),
+	} {
+		full := filepath.Join(dir, rel)
+		if _, err := os.Stat(full); err != nil {
+			t.Errorf("expected %s to survive reapplyTemplateFiles, got: %v", rel, err)
+		}
+	}
+}
+
 func TestWriteKitexTemplate_SkipDefaultTemplates(t *testing.T) {
 	dir := t.TempDir()
 	opts := Options{
