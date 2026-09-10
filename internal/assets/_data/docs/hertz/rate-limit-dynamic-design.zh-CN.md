@@ -1528,7 +1528,9 @@ resolver := ratelimit.NewResolver(cfg.RateLimit, rlOpts)
 
 建议保持以下原则:
 
-- `resolver` 在服务启动时创建一次,作为进程级单例复用。
+- `resolver` 在服务启动时创建一次,作为进程级单例复用。Hertz 单体模板将其存放在
+  `internal/base/server` 包级变量 `RateLimitResolver` 中,供路由/中间件接入时使用:
+  `middleware.RateLimit(phase, cfg.RateLimit, phaseCfg, server.RateLimitResolver)`。
 - 当 `source.type=config` 时,`Options` 可为空。
 - 开启数据库能力的模板会默认生成可编译的 sqlc/schema/migration/repository 骨架。
 - 若项目未启用数据库模板,或虽然带数据库模板但 `cfg.Database.Enabled=false`,

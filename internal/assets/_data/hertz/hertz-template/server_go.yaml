@@ -23,11 +23,18 @@ body: |-
       "{{.Module}}/internal/base/conf"
   {{if .WithDatabase}}
       "{{.Module}}/internal/base/data"
+      "{{.Module}}/internal/pkg/ratelimit"
       "{{.Module}}/internal/repository"
   {{end}}
       "{{.Module}}/internal/pkg/middleware"
       "{{.Module}}/internal/pkg/response"
   )
+
+  {{if .WithDatabase}}
+  // RateLimitResolver is the process-level dynamic rate-limit rule resolver,
+  // assembled once at startup and reused across requests.
+  var RateLimitResolver *ratelimit.Resolver
+  {{end}}
 
   func Run() {
       cfg := conf.Get()
@@ -81,6 +88,7 @@ body: |-
 
       // ncgo:wire:ddd — Wire DDD layers (data -> repository -> usecase)
       {{if .WithDatabase}}
+      var rateLimitOpts ratelimit.Options
       if cfg.Database.Enabled {
           injector := do.New()
 
@@ -108,8 +116,17 @@ body: |-
           do.ProvideValue(injector, dbData)
 
           dbData = do.MustInvoke[*data.Data](injector)
-          repository.NewRateLimitRuleRepository(dbData)
+          if cfg.RateLimit.Source.Type == "database" {
+              rateLimitOpts.Database = repository.NewRateLimitRuleHook(repository.NewRateLimitRuleRepository(dbData))
+          }
       }
+
+      // RateLimitResolver assembles the dynamic rate-limit rule source (database
+      // hook when cfg.RateLimit.Source.Type == "database") with local config
+      // fallback. Wire it into routes with:
+      //   middleware.RateLimit(phase, cfg.RateLimit, phaseCfg, RateLimitResolver)
+      // ncgo:wire:rate-limit:resolver
+      RateLimitResolver = ratelimit.NewResolver(cfg.RateLimit, rateLimitOpts)
       {{end}}
 
       // Register routes

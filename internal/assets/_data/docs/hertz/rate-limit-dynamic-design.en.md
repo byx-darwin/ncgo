@@ -1671,7 +1671,9 @@ resolver := ratelimit.NewResolver(cfg.RateLimit, rlOpts)
 Recommended principles:
 
 - Create the `resolver` once at startup and reuse it as a process-level
-  singleton.
+  singleton. The Hertz mono template stores it in the package-level
+  `internal/base/server.RateLimitResolver` variable, ready for route/middleware
+  wiring: `middleware.RateLimit(phase, cfg.RateLimit, phaseCfg, server.RateLimitResolver)`.
 - When `source.type=config`, `Options` may remain empty.
 - In the DB-enabled scaffold, the template already wires a compilable
   sqlc/schema/migration/repository skeleton.
