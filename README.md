@@ -371,7 +371,11 @@ contributors can enable `pre-commit` / `pre-push` checks across one or more Go
 modules.
 
 These files make future IDL updates reproducible (`make update` in generated
-Kitex projects, equivalent generator command for Hertz).
+Kitex projects, equivalent generator command for Hertz). Before each
+`make update` overwrites a `cover`-type template file, the generated
+Makefile backs it up to `.ncgo-backup/<timestamp>/` so a hand-edit is never
+lost without a recovery path — files whose `update_behavior` is `skip`
+(e.g. `internal/pkg/rpcerror/rpcerror.go`) are never touched at all.
 
 ### Auto Post-Generation Steps
 

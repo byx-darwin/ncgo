@@ -381,6 +381,11 @@ make dev
 starter already wires `internal/base/data` / repository placeholders that import
 `internal/db/gen`.
 
+Re-running `kitex -module ... -template-dir template/kitex-template ...`
+(via `make update`) backs up every `update_behavior: cover` file to
+`.ncgo-backup/<timestamp>/` first, so a hand-edit to a `cover`-type file is
+never lost without a recovery path.
+
 The generated Kitex project also builds on go-tools v0.3.0: `go.mod` declares
 `go 1.26.5` and requires `go-common v0.3.0` + `go-framework v0.3.0`. RPC errors
 flow through `internal/pkg/rpcerror`, which maps `goerror` errors to Kitex

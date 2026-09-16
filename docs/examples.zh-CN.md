@@ -341,6 +341,10 @@ make dev
 starter 已经接入了 `internal/base/data` / repository 占位代码，它们会 import
 `internal/db/gen`。
 
+重新运行 `kitex -module ... -template-dir template/kitex-template ...`
+（即 `make update`）之前，会先把所有 `update_behavior: cover` 的文件备份到
+`.ncgo-backup/<timestamp>/`，避免手工修改被无法恢复地丢弃。
+
 生成的 Kitex 项目同样构建在 go-tools v0.3.0 之上：`go.mod` 声明 `go 1.26.5`，并 require `go-common v0.3.0` + `go-framework v0.3.0`。RPC 错误经 `internal/pkg/rpcerror`，通过 `go-framework/kitex/rpcerror` 把 `goerror` 错误映射为 Kitex `BizStatusError`；框架码来自 `go-framework/error`（`CodeInternalError=CodeSystem=10000`、`CodeConfigInvalid=10004`、`CodeRPCTimeout=10011`、`CodePermissionDenied=CodeAuthFailed=10002`）。业务码须 `>= 40100`。conf 中的 duration 类字段统一使用 `config.Duration`，在 `conf/dev/conf.yaml` 中以 duration 字符串（`"3s"`、`"30s"` 等）填写。
 
 适合：以 RPC 为主，并希望把 Kitex 模板树纳入版本控制的服务。

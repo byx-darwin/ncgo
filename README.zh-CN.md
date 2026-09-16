@@ -314,6 +314,10 @@ ncgo new user-api --module github.com/acme/user-api --kind kitex --no-generate
 以及 `scripts/run-go-module-checks.sh`，方便协作者启用 `pre-commit` /
 `pre-push` 对一个或多个 Go module 执行统一检查。
 
+每次 `make update` 覆盖某个 `cover` 类型模板文件之前，生成的 Makefile 会先将其备份到
+`.ncgo-backup/<timestamp>/`，避免手工修改被无法恢复地丢弃；`update_behavior` 为
+`skip` 的文件（例如 `internal/pkg/rpcerror/rpcerror.go`）则完全不会被覆盖。
+
 ### 自动后处理步骤
 
 `ncgo new` 成功生成项目后，会自动执行：
