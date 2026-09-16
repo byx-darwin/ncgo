@@ -80,11 +80,15 @@ func TestRPCErrorTemplateUsesSkipUpdateBehavior(t *testing.T) {
 // overwrite any update_behavior:cover file, the Makefile's update target
 // must back it up to .ncgo-backup/<timestamp>/ so a hand-edit is never
 // lost without a recovery path. This also covers cover-type fragments
-// whose path contains kitex's {{ToLower .ServiceInfo.ServiceName}}
-// placeholder (e.g. client.yaml, handler.yaml) — the recipe must resolve
-// it via the Makefile's own $(SERVICE_NAME) variable before checking
-// whether the file exists, or the backup is silently skipped for exactly
-// the hand-edit-prone files (client wiring, handlers) this fix targets.
+// whose path contains a kitex Go-template placeholder like
+// {{ToLower .ServiceInfo.ServiceName}} (e.g. client.yaml, handler.yaml) —
+// the recipe must resolve any {{...}} block in the extracted path via the
+// Makefile's own $(SERVICE_NAME) variable before checking whether the
+// file exists, or the backup is silently skipped for exactly the
+// hand-edit-prone files (client wiring, handlers) this fix targets. The
+// pattern must match generically (any {{...}} block, not one hardcoded
+// spelling) since `ncgo export templates` re-parameterizes paths using a
+// different spelling than kitex's own placeholders.
 func TestMakeUpdateBackupsCoverFilesBeforeOverwrite(t *testing.T) {
 	srcFS := assets.FS()
 	b, err := fs.ReadFile(srcFS, "kitex/kitex-template/makefile.yaml")
@@ -111,15 +115,12 @@ func TestMakeUpdateBackupsCoverFilesBeforeOverwrite(t *testing.T) {
 	// The recipe (extracted above, still raw source) is itself a Go
 	// template fragment: the real kitex binary renders makefile.yaml's
 	// whole body once into the project's actual root Makefile. It must be
-	// rendered here too — not used as raw source — or the recipe's
-	// {{"{{"}}...{{"}}"}} brace-escape (needed so the *rendered* recipe
-	// contains the literal text "{{ToLower .ServiceInfo.ServiceName}}" for
-	// sed to match against, without kitex's own template parser trying to
-	// parse that text as an action) would never be exercised. The full
-	// makefile.yaml body isn't rendered here because it also references
-	// kitex's own `.IDLName` field, which ncgo's scaffoldtemplate.RenderData
-	// has no equivalent for (kitex's template context differs from ncgo's);
-	// the extracted recipe substring needs no such fields.
+	// rendered here too, not used as raw source, so any real template
+	// action in it is exercised the same way. The full makefile.yaml body
+	// isn't rendered here because it also references kitex's own
+	// `.IDLName` field, which ncgo's scaffoldtemplate.RenderData has no
+	// equivalent for (kitex's template context differs from ncgo's); the
+	// extracted recipe substring needs no such fields.
 	recipe, err := scaffoldtemplate.Render(rawRecipe, scaffoldtemplate.RenderData{})
 	if err != nil {
 		t.Fatalf("render update recipe: %v", err)
