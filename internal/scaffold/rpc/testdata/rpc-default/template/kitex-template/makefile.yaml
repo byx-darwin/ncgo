@@ -8,6 +8,7 @@ update_behavior:
   type: cover
 body: |
   APP_NAME = {{.ServiceInfo.ServiceName | ToLower}}-rpc
+  SERVICE_NAME = {{ToLower .ServiceInfo.ServiceName}}
   MODULE   = {{.Module}}
   # {{.IDLName}} is the basename of the IDL file kitex is processing, so the
   # update target always re-runs against the same proto (e.g. the rule-center
@@ -30,7 +31,7 @@ body: |
   # Re-run after modifying the IDL file.
   # --template-dir suppresses default mainPkg generation (handler.go, build.sh,
   # script/, kitex_info.yaml) — only custom template files are produced.
-  update: ; @echo "Generating Kitex RPC code from IDL..."; kitex -module $(MODULE) -template-dir template/kitex-template -type protobuf $(IDL_FILE); echo "Kitex code generation complete"
+  update: ; @echo "Generating Kitex RPC code from IDL..."; ts=$$(date +%Y%m%d%H%M%S); n=0; for y in template/kitex-template/*.yaml; do [ -f "$$y" ] || continue; if awk '/^update_behavior:/{f=1;next} f && /type:[[:space:]]*cover/{print "COVER"; exit} /^body:/{exit}' "$$y" | grep -q COVER; then p=$$(awk -F': ' '/^path:/{print $$2; exit}' "$$y"); p=$$(printf '%s' "$$p" | sed 's/{{"{{"}}ToLower .ServiceInfo.ServiceName{{"}}"}}/$(SERVICE_NAME)/'); if [ -n "$$p" ] && [ -f "$$p" ]; then mkdir -p ".ncgo-backup/$$ts/$$(dirname "$$p")"; cp "$$p" ".ncgo-backup/$$ts/$$p"; n=$$((n+1)); fi; fi; done; if [ "$$n" -gt 0 ]; then echo "Backed up $$n cover-managed file(s) to .ncgo-backup/$$ts/ before regeneration — diff them if you made manual edits."; fi; kitex -module $(MODULE) -template-dir template/kitex-template -type protobuf $(IDL_FILE); echo "Kitex code generation complete"
 
   # Generate type-safe DB query code from SQL files in internal/db/.
   sqlc: ; @echo "Generating sqlc DB code..."; sqlc generate -f internal/db/sqlc.yaml; echo "sqlc generation complete"

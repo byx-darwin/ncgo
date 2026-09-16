@@ -79,7 +79,12 @@ func TestRPCErrorTemplateUsesSkipUpdateBehavior(t *testing.T) {
 // general safety net: before `make update` lets the vendored kitex binary
 // overwrite any update_behavior:cover file, the Makefile's update target
 // must back it up to .ncgo-backup/<timestamp>/ so a hand-edit is never
-// lost without a recovery path.
+// lost without a recovery path. This also covers cover-type fragments
+// whose path contains kitex's {{ToLower .ServiceInfo.ServiceName}}
+// placeholder (e.g. client.yaml, handler.yaml) — the recipe must resolve
+// it via the Makefile's own $(SERVICE_NAME) variable before checking
+// whether the file exists, or the backup is silently skipped for exactly
+// the hand-edit-prone files (client wiring, handlers) this fix targets.
 func TestMakeUpdateBackupsCoverFilesBeforeOverwrite(t *testing.T) {
 	srcFS := assets.FS()
 	b, err := fs.ReadFile(srcFS, "kitex/kitex-template/makefile.yaml")
@@ -101,7 +106,24 @@ func TestMakeUpdateBackupsCoverFilesBeforeOverwrite(t *testing.T) {
 	if recipeEnd < 0 {
 		recipeEnd = len(tpl.Body) - recipeStart
 	}
-	recipe := tpl.Body[recipeStart : recipeStart+recipeEnd]
+	rawRecipe := tpl.Body[recipeStart : recipeStart+recipeEnd]
+
+	// The recipe (extracted above, still raw source) is itself a Go
+	// template fragment: the real kitex binary renders makefile.yaml's
+	// whole body once into the project's actual root Makefile. It must be
+	// rendered here too — not used as raw source — or the recipe's
+	// {{"{{"}}...{{"}}"}} brace-escape (needed so the *rendered* recipe
+	// contains the literal text "{{ToLower .ServiceInfo.ServiceName}}" for
+	// sed to match against, without kitex's own template parser trying to
+	// parse that text as an action) would never be exercised. The full
+	// makefile.yaml body isn't rendered here because it also references
+	// kitex's own `.IDLName` field, which ncgo's scaffoldtemplate.RenderData
+	// has no equivalent for (kitex's template context differs from ncgo's);
+	// the extracted recipe substring needs no such fields.
+	recipe, err := scaffoldtemplate.Render(rawRecipe, scaffoldtemplate.RenderData{})
+	if err != nil {
+		t.Fatalf("render update recipe: %v", err)
+	}
 
 	kitexIdx := strings.Index(recipe, "kitex -module")
 	if kitexIdx < 0 {
@@ -111,6 +133,13 @@ func TestMakeUpdateBackupsCoverFilesBeforeOverwrite(t *testing.T) {
 	if !strings.Contains(backupSnippet, ".ncgo-backup") {
 		t.Fatal("update recipe's pre-kitex portion has no .ncgo-backup logic — backup step missing or moved after the kitex call")
 	}
+	// $(SERVICE_NAME) is a genuine Make variable (single $, unlike the
+	// doubled $$ used everywhere else for the shell). Make would substitute
+	// it with the rendered service name before the shell ever runs; since
+	// this test executes the extracted recipe directly via sh, bypassing
+	// Make, it must perform that substitution itself.
+	const fakeServiceName = "demo"
+	backupSnippet = strings.ReplaceAll(backupSnippet, "$(SERVICE_NAME)", fakeServiceName)
 	backupSnippet = strings.ReplaceAll(backupSnippet, "$$", "$")
 	backupSnippet = strings.TrimPrefix(strings.TrimSpace(backupSnippet), "@")
 
@@ -128,6 +157,7 @@ func TestMakeUpdateBackupsCoverFilesBeforeOverwrite(t *testing.T) {
 	}
 	writeFragment("cover_one.yaml", "internal/pkg/rpcerror/rpcerror.go", "cover")
 	writeFragment("cover_two.yaml", "main.go", "cover")
+	writeFragment("cover_templated.yaml", "pkg/client/{{ToLower .ServiceInfo.ServiceName}}/client.go", "cover")
 	writeFragment("skip_one.yaml", "internal/handler/handler.go", "skip")
 
 	writeTarget := func(relPath, content string) {
@@ -141,6 +171,7 @@ func TestMakeUpdateBackupsCoverFilesBeforeOverwrite(t *testing.T) {
 	}
 	writeTarget("internal/pkg/rpcerror/rpcerror.go", "package rpcerror // hand-edited\n")
 	writeTarget("main.go", "package main // hand-edited\n")
+	writeTarget("pkg/client/"+fakeServiceName+"/client.go", "package client // hand-edited\n")
 	writeTarget("internal/handler/handler.go", "package handler // hand-edited\n")
 
 	cmd := exec.Command("sh", "-c", backupSnippet)
@@ -160,7 +191,7 @@ func TestMakeUpdateBackupsCoverFilesBeforeOverwrite(t *testing.T) {
 	}
 	tsDir := filepath.Join(backupRoot, entries[0].Name())
 
-	for _, want := range []string{"internal/pkg/rpcerror/rpcerror.go", "main.go"} {
+	for _, want := range []string{"internal/pkg/rpcerror/rpcerror.go", "main.go", "pkg/client/" + fakeServiceName + "/client.go"} {
 		gotPath := filepath.Join(tsDir, want)
 		got, err := os.ReadFile(gotPath)
 		if err != nil {
