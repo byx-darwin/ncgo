@@ -13,7 +13,7 @@
 
 English documentation: [README.md](README.md)。产品需求文档见 [specs/prd.md](specs/prd.md) 和 [specs/prd.zh-CN.md](specs/prd.zh-CN.md)。Agent 上下文交接见 [specs/005-context-handoff.zh-CN.md](specs/005-context-handoff.zh-CN.md)。i18n 系统设计见 [specs/004-i18n-system.zh-CN.md](specs/004-i18n-system.zh-CN.md)。i18n 详细协议/Schema/Payload 见 [specs/archive/](specs/archive/)。
 
-**快速导航：** [安装](#安装) · [30 秒上手](#30-秒上手) · [典型使用路径](#典型使用路径) · [i18n 系统](specs/004-i18n-system.zh-CN.md) · [示例文档](docs/examples.zh-CN.md) · [贡献指南](CONTRIBUTING.zh-CN.md) · [FAQ](#faq)
+**快速导航：** [安装](#安装) · [30 秒上手](#30-秒上手) · [典型使用路径](#典型使用路径) · [Agent 快速开始](docs/agent-quickstart.zh-CN.md) · [i18n 系统](specs/004-i18n-system.zh-CN.md) · [示例文档](docs/examples.zh-CN.md) · [贡献指南](CONTRIBUTING.zh-CN.md) · [FAQ](#faq)
 
 ## 为什么用 ncgo
 

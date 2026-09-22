@@ -18,7 +18,7 @@ and agent-friendly project context from a single CLI.
 [specs/prd.md](specs/prd.md) and [specs/prd.zh-CN.md](specs/prd.zh-CN.md). For
 agent handoff, see [specs/005-context-handoff.zh-CN.md](specs/005-context-handoff.zh-CN.md).
 
-**Quick links:** [Install](#install) · [30-Second Tour](#30-second-tour) · [Typical Workflows](#typical-workflows) · [Examples](docs/examples.md) · [Contributing](CONTRIBUTING.md) · [FAQ](#faq)
+**Quick links:** [Install](#install) · [30-Second Tour](#30-second-tour) · [Typical Workflows](#typical-workflows) · [Agent Quickstart](docs/agent-quickstart.md) · [Examples](docs/examples.md) · [Contributing](CONTRIBUTING.md) · [FAQ](#faq)
 
 ## Why ncgo
 
