@@ -93,6 +93,32 @@ func TestEditBoundariesUnionsDomainStillOnDiskButNotInManifest(t *testing.T) {
 	if !strings.Contains(found.Reason, "not in manifest") {
 		t.Errorf("expected Reason to flag the row as not in manifest, got %q", found.Reason)
 	}
+	for _, entry := range mayEdit {
+		if entry.Path == "internal/usecase/role/" {
+			t.Fatal("rendered nonexistent usecase/role directory")
+		}
+	}
+}
+
+func TestEditBoundariesCustomBusinessLogicAndAdditionalPaths(t *testing.T) {
+	source := syncSource{
+		Scope: syncScopeService,
+		Service: &manifest.Manifest{
+			Domains:               []string{"auth"},
+			AIBusinessLogicPaths:  map[string]string{"auth": "internal/application/auth/"},
+			AIAdditionalEditPaths: []string{"internal/application/menu/"},
+		},
+	}
+	mayEdit, doNotEdit := EditBoundaries(source, "")
+	joined := boundariesToStr(mayEdit)
+	for _, want := range []string{"internal/application/auth/", "internal/application/menu/", "internal/repository/auth/"} {
+		if !strings.Contains(joined, want) {
+			t.Errorf("missing %s from %s", want, joined)
+		}
+	}
+	if strings.Contains(joined, "internal/usecase/auth/") || strings.Contains(boundariesToStr(doNotEdit), "internal/usecase/auth/") {
+		t.Errorf("rendered overridden usecase/auth path: may=%s doNot=%s", joined, boundariesToStr(doNotEdit))
+	}
 }
 
 func TestEditBoundariesDoesNotDuplicateManifestDomains(t *testing.T) {

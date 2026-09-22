@@ -51,6 +51,7 @@ func KitexRules() []FileRule {
 		{Pattern: "internal/domain/**/*.go", UpdateBehavior: "skip"},
 		{Pattern: "internal/application/**/*.go", UpdateBehavior: "skip"},
 		{Pattern: "pkg/client/**/*.go", UpdateBehavior: "cover", LoopService: true},
+		{Pattern: "internal/pkg/rpcerror/rpcerror.go", UpdateBehavior: "skip"},
 		{Pattern: "internal/pkg/**/*.go", UpdateBehavior: "cover"},
 		{Pattern: "internal/base/middleware/*.go", UpdateBehavior: "cover"},
 		{Pattern: "internal/base/release/*.go", UpdateBehavior: "cover"},
@@ -120,10 +121,20 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 	if err := os.MkdirAll(outDir, 0755); err != nil {
 		return nil, fmt.Errorf("mkdir %s: %w", outDir, err)
 	}
+	if opts.Kind == "kitex" {
+		if err := removeLegacyRPCErrorFragment(outDir); err != nil {
+			return nil, err
+		}
+	}
+	existingNames, err := existingTemplateNames(outDir)
+	if err != nil {
+		return nil, err
+	}
 
 	svcNameLower := serviceNameLower(opts.ServiceName)
 
 	var templates []string
+	exported := make(map[string]bool)
 
 	for _, rule := range rules {
 		files, err := matchFiles(absRoot, rule.Pattern)
@@ -132,7 +143,7 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 		}
 		for _, f := range files {
 			rel := relPath(absRoot, f)
-			if isExcluded(rel) {
+			if isExcluded(rel) || exported[rel] {
 				continue
 			}
 			tpl, err := fileToTemplate("", f, rel, opts, rule, svcNameLower)
@@ -142,16 +153,26 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 			if tpl == nil {
 				continue
 			}
-			if err := writeTemplateYAML(outDir, tpl); err != nil {
+			exported[rel] = true
+			name := existingNames[tpl.Path]
+			if name == "" {
+				name = yamlFileName(tpl.Path)
+			}
+			if err := writeTemplateYAMLAt(outDir, name, tpl); err != nil {
 				return nil, fmt.Errorf("write template %s: %w", tpl.Path, err)
 			}
+			existingNames[tpl.Path] = name
 			templates = append(templates, tpl.Path)
 		}
 	}
 
 	// Export Makefile if it exists
 	if mk, err := makefileTemplate(absRoot, opts); err == nil && mk != nil {
-		if err := writeTemplateYAML(outDir, mk); err != nil {
+		name := existingNames[mk.Path]
+		if name == "" {
+			name = yamlFileName(mk.Path)
+		}
+		if err := writeTemplateYAMLAt(outDir, name, mk); err != nil {
 			return nil, fmt.Errorf("write makefile template: %w", err)
 		}
 		templates = append(templates, mk.Path)
@@ -167,6 +188,58 @@ func Export(opts ExportOptions) (*ExportResult, error) {
 		Templates: templates,
 		IDLs:      idls,
 	}, nil
+}
+
+// existingTemplateNames maps each target path to its existing fragment name.
+// Export reuses that file so an exported body cannot shadow the shipped one.
+func existingTemplateNames(outDir string) (map[string]string, error) {
+	names := make(map[string]string)
+	entries, err := os.ReadDir(outDir)
+	if err != nil {
+		return nil, err
+	}
+	for _, entry := range entries {
+		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".yaml") {
+			continue
+		}
+		data, err := os.ReadFile(filepath.Join(outDir, entry.Name()))
+		if err != nil {
+			return nil, err
+		}
+		var tpl TemplateFile
+		if err := yaml.Unmarshal(data, &tpl); err != nil {
+			return nil, fmt.Errorf("parse template %s: %w", entry.Name(), err)
+		}
+		if tpl.Path == "" {
+			continue
+		}
+		if prior := names[tpl.Path]; prior != "" {
+			return nil, fmt.Errorf("duplicate template target %q in %s and %s", tpl.Path, prior, entry.Name())
+		}
+		names[tpl.Path] = entry.Name()
+	}
+	return names, nil
+}
+
+// removeLegacyRPCErrorFragment removes the duplicate cover fragment written by
+// older exports, but only after confirming that it targets rpcerror.go.
+func removeLegacyRPCErrorFragment(outDir string) error {
+	legacy := filepath.Join(outDir, "internal_pkg_rpcerror_rpcerror_go.yaml")
+	data, err := os.ReadFile(legacy)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var tpl TemplateFile
+	if err := yaml.Unmarshal(data, &tpl); err != nil {
+		return fmt.Errorf("parse legacy rpcerror fragment: %w", err)
+	}
+	if tpl.Path != "internal/pkg/rpcerror/rpcerror.go" {
+		return fmt.Errorf("legacy rpcerror fragment has unexpected path %q", tpl.Path)
+	}
+	return os.Remove(legacy)
 }
 
 // exportIDLs variabilizes the project's service IDL into template/idl/.
@@ -502,7 +575,10 @@ func makefileTemplate(root string, opts ExportOptions) (*TemplateFile, error) {
 }
 
 func writeTemplateYAML(outDir string, tpl *TemplateFile) error {
-	yamlName := yamlFileName(tpl.Path)
+	return writeTemplateYAMLAt(outDir, yamlFileName(tpl.Path), tpl)
+}
+
+func writeTemplateYAMLAt(outDir, yamlName string, tpl *TemplateFile) error {
 	data, err := yaml.Marshal(tpl)
 	if err != nil {
 		return fmt.Errorf("marshal yaml: %w", err)
@@ -515,6 +591,11 @@ func writeTemplateYAML(outDir string, tpl *TemplateFile) error {
 }
 
 func yamlFileName(path string) string {
+	// Reuse the shipped fragment's name when exporting this hand-extension
+	// point, so a round trip cannot leave a second fragment for the same file.
+	if path == "internal/pkg/rpcerror/rpcerror.go" {
+		return "rpcerror.yaml"
+	}
 	name := strings.ReplaceAll(path, "/", "_")
 	name = strings.ReplaceAll(name, ".", "_")
 	name = strings.ReplaceAll(name, " ", "")

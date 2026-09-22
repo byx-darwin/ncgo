@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"gopkg.in/yaml.v3"
@@ -30,13 +31,18 @@ const (
 
 // Manifest mirrors the schema documented in docs/prd.md §5.
 type Manifest struct {
-	Ncgo        Meta      `yaml:"ncgo"`
-	Mode        string    `yaml:"mode"`
-	Module      string    `yaml:"module"`
-	Service     Service   `yaml:"service"`
-	Infra       []string  `yaml:"infra,omitempty"`
-	Domains     []string  `yaml:"domains,omitempty"`
-	GeneratedAt time.Time `yaml:"generated_at"`
+	Ncgo    Meta     `yaml:"ncgo"`
+	Mode    string   `yaml:"mode"`
+	Module  string   `yaml:"module"`
+	Service Service  `yaml:"service"`
+	Infra   []string `yaml:"infra,omitempty"`
+	Domains []string `yaml:"domains,omitempty"`
+	// AIBusinessLogicPaths overrides the default internal/usecase/<domain>/
+	// boundary for domains whose active logic lives elsewhere.
+	AIBusinessLogicPaths map[string]string `yaml:"ai_business_logic_paths,omitempty"`
+	// AIAdditionalEditPaths adds hand-maintained directories to the AI boundary table.
+	AIAdditionalEditPaths []string  `yaml:"ai_additional_edit_paths,omitempty"`
+	GeneratedAt           time.Time `yaml:"generated_at"`
 }
 
 // Meta describes the ncgo build that produced the manifest.
@@ -121,6 +127,16 @@ func Save(root string, m *Manifest) error {
 
 // Validate enforces required fields and enum values.
 func (m *Manifest) Validate() error {
+	for domain, path := range m.AIBusinessLogicPaths {
+		if domain == "" || !validAIEditPath(path) {
+			return fmt.Errorf("ai_business_logic_paths[%q] must be a project-relative internal/ directory", domain)
+		}
+	}
+	for _, path := range m.AIAdditionalEditPaths {
+		if !validAIEditPath(path) {
+			return fmt.Errorf("ai_additional_edit_paths entry %q must be a project-relative internal/ directory", path)
+		}
+	}
 	switch m.Mode {
 	case ModeMono, ModeMicro:
 	case "":
@@ -145,4 +161,11 @@ func (m *Manifest) Validate() error {
 		return errors.New("ncgo.version is required")
 	}
 	return nil
+}
+
+func validAIEditPath(path string) bool {
+	clean := filepath.ToSlash(filepath.Clean(path))
+	return strings.HasPrefix(path, "internal/") && strings.HasSuffix(path, "/") &&
+		clean == strings.TrimSuffix(path, "/") &&
+		!strings.ContainsAny(path, "`|\n\r")
 }

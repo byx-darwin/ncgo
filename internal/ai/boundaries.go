@@ -51,21 +51,52 @@ func EditBoundaries(source syncSource, root string) (mayEdit, doNotEdit []bounda
 		}
 	}
 	for _, d := range domains {
+		logicPath := "internal/usecase/" + d + "/"
+		if source.Scope == syncScopeService {
+			if custom := source.Service.AIBusinessLogicPaths[d]; custom != "" {
+				logicPath = custom
+			}
+		}
 		mayEdit = append(mayEdit,
-			boundaryEntry{Path: "internal/usecase/" + d + "/", Reason: "Business logic"},
+			boundaryEntry{Path: logicPath, Reason: "Business logic"},
 			boundaryEntry{Path: "internal/repository/" + d + "/", Reason: "Data access implementation"},
 		)
-		doNotEdit = append(doNotEdit,
-			boundaryEntry{Path: "internal/usecase/" + d + "/" + d + ".go between anchors", Reason: "Generated method stubs"},
-		)
+		if logicPath == "internal/usecase/"+d+"/" {
+			doNotEdit = append(doNotEdit,
+				boundaryEntry{Path: logicPath + d + ".go between anchors", Reason: "Generated method stubs"},
+			)
+		}
 	}
 	for _, d := range extra {
-		mayEdit = append(mayEdit,
-			boundaryEntry{Path: "internal/usecase/" + d + "/", Reason: "Business logic (not in manifest; verify manual usage)"},
-			boundaryEntry{Path: "internal/repository/" + d + "/", Reason: "Data access implementation (not in manifest; verify manual usage)"},
-		)
+		for _, entry := range []boundaryEntry{
+			{Path: "internal/usecase/" + d + "/", Reason: "Business logic (not in manifest; verify manual usage)"},
+			{Path: "internal/repository/" + d + "/", Reason: "Data access implementation (not in manifest; verify manual usage)"},
+		} {
+			if dirExists(root, entry.Path) {
+				mayEdit = append(mayEdit, entry)
+			}
+		}
+	}
+	if source.Scope == syncScopeService {
+		for _, path := range source.Service.AIAdditionalEditPaths {
+			found := false
+			for _, entry := range mayEdit {
+				if entry.Path == path {
+					found = true
+					break
+				}
+			}
+			if !found {
+				mayEdit = append(mayEdit, boundaryEntry{Path: path, Reason: "Project-specific editable code"})
+			}
+		}
 	}
 	return mayEdit, doNotEdit
+}
+
+func dirExists(root, rel string) bool {
+	info, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
+	return err == nil && info.IsDir()
 }
 
 // domainsOnDiskNotInManifest returns domain names, sorted, that have an

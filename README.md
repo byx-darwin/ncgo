@@ -340,6 +340,11 @@ my-micro/
 
 `--preset`, `--template`, and `--template-dir` are mutually exclusive.
 
+The embedded Hertz layout uses the JWT `uid` claim (`Claims.Uid`) throughout
+its middleware. This matches current Hertz template packages, including
+`base-hertz`; their JWT template can overlay the default without leaving
+middleware that references a removed `Claims.UUID` field.
+
 ## Prepare vs Generate
 
 By default, `ncgo new` has two phases:
@@ -450,6 +455,22 @@ Select a different group with `--target`:
 ```bash
 ncgo ai sync --root user-api --target all
 ```
+
+For service projects with business logic outside `internal/usecase/<domain>/`,
+declare the active paths in `.ncgo/manifest.yaml` before syncing:
+
+```yaml
+domains: [auth]
+ai_business_logic_paths:
+  auth: internal/application/auth/
+ai_additional_edit_paths:
+  - internal/application/menu/
+```
+
+`ai_business_logic_paths` replaces the default usecase row for a manifest
+domain. `ai_additional_edit_paths` adds project-specific rows. Paths must be
+project-relative directories under `internal/` and end in `/`. Directories
+found on disk outside `domains` are listed only for the sides that exist.
 
 > **Migration note:** earlier versions of `ncgo ai sync` wrote every context
 > file by default. The default is now `claude`; pass `--target all` to keep

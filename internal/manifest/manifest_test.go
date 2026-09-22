@@ -22,6 +22,8 @@ func sample() *Manifest {
 func TestSaveLoadRoundTrip(t *testing.T) {
 	root := t.TempDir()
 	in := sample()
+	in.AIBusinessLogicPaths = map[string]string{"device": "internal/application/device/"}
+	in.AIAdditionalEditPaths = []string{"internal/application/menu/"}
 	if err := Save(root, in); err != nil {
 		t.Fatalf("Save: %v", err)
 	}
@@ -40,6 +42,9 @@ func TestSaveLoadRoundTrip(t *testing.T) {
 	}
 	if len(out.Infra) != 1 || out.Infra[0] != "redis" {
 		t.Errorf("infra not preserved: %v", out.Infra)
+	}
+	if out.AIBusinessLogicPaths["device"] != "internal/application/device/" || len(out.AIAdditionalEditPaths) != 1 || out.AIAdditionalEditPaths[0] != "internal/application/menu/" {
+		t.Errorf("AI edit paths not preserved: overrides=%v additional=%v", out.AIBusinessLogicPaths, out.AIAdditionalEditPaths)
 	}
 }
 
@@ -87,6 +92,7 @@ func TestValidateRejectsBadInputs(t *testing.T) {
 		{"missing service kind", func(m *Manifest) { m.Service.Kind = "" }, "service.kind is required"},
 		{"bad service kind", func(m *Manifest) { m.Service.Kind = "grpc" }, "service.kind \"grpc\""},
 		{"missing ncgo version", func(m *Manifest) { m.Ncgo.Version = "" }, "ncgo.version"},
+		{"unsafe AI path", func(m *Manifest) { m.AIAdditionalEditPaths = []string{"../outside/"} }, "ai_additional_edit_paths"},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

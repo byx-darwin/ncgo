@@ -2174,8 +2174,7 @@ layouts:
       const ContextKeyTokenClaims = "tokenClaims"
 
       type Claims struct {
-          UserID string `json:"user_id"`
-          UUID   string `json:"uuid"`
+          Uid    string `json:"uid"`
           AK     string `json:"ak"`
           jwt.RegisteredClaims
       }
@@ -3983,7 +3982,7 @@ layouts:
       func rateLimitUserUUID(c *app.RequestContext) string {
           claims, hasClaims := GetClaims(c)
           if hasClaims {
-              return strings.TrimSpace(claims.UUID)
+              return strings.TrimSpace(claims.Uid)
           }
           return ""
       }
@@ -4113,14 +4112,14 @@ layouts:
           mw := RateLimit("post_auth", cfg, post, nil)
 
           first := newRateLimitContext("/orders")
-          first.Set(ContextKeyTokenClaims, &Claims{UUID: "user-1"})
+          first.Set(ContextKeyTokenClaims, &Claims{Uid: "user-1"})
           mw(context.Background(), first)
           if first.Response.StatusCode() == consts.StatusTooManyRequests {
               t.Fatalf("first post_auth request was rate limited")
           }
 
           second := newRateLimitContext("/orders")
-          second.Set(ContextKeyTokenClaims, &Claims{UUID: "user-1"})
+          second.Set(ContextKeyTokenClaims, &Claims{Uid: "user-1"})
           mw(context.Background(), second)
           if second.Response.StatusCode() != consts.StatusTooManyRequests {
               t.Fatalf("status = %d, want %d; expected post_auth phase rule to apply", second.Response.StatusCode(), consts.StatusTooManyRequests)
@@ -4918,10 +4917,10 @@ layouts:
           scope := "ip:" + requestIP(c)
           if claims, ok := GetClaims(c); ok {
               switch {
-              case claims.AK != "" && claims.UUID != "":
-                  scope = "ak_user_uuid:" + claims.AK + ":" + claims.UUID
-              case claims.UUID != "":
-                  scope = "user_uuid:" + claims.UUID
+              case claims.AK != "" && claims.Uid != "":
+                  scope = "ak_user_uuid:" + claims.AK + ":" + claims.Uid
+              case claims.Uid != "":
+                  scope = "user_uuid:" + claims.Uid
               case claims.AK != "":
                   scope = "ak:" + claims.AK
               }
@@ -5067,7 +5066,7 @@ layouts:
       func TestIdempotencyKeyUsesVerifiedClaims(t *testing.T) {
           c := newIdempotencyContext("POST", "/orders")
           c.Request.Header.Set("X-App-Key", "raw-ak")
-          c.Set(ContextKeyTokenClaims, &Claims{AK: "verified-ak", UUID: "user-1"})
+          c.Set(ContextKeyTokenClaims, &Claims{AK: "verified-ak", Uid: "user-1"})
           cfg := conf.IdempotencyConfig{KeyPrefix: "test", AppKeyHeader: "X-App-Key"}
           if got, want := idempotencyKey(c, cfg, "idem-1"), "test:ak_user_uuid_verified-ak_user-1:POST:/orders:idem-1"; got != want {
               t.Fatalf("key = %q, want %q", got, want)

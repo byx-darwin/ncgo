@@ -5,7 +5,117 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	"gopkg.in/yaml.v3"
 )
+
+func TestExportKitexRPCErrorKeepsSingleSkipFragment(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "internal/pkg/rpcerror/rpcerror.go")
+	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("package rpcerror\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(root, "template/kitex-template")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "rpcerror.yaml"), []byte("path: internal/pkg/rpcerror/rpcerror.go\nupdate_behavior:\n  type: skip\nbody: old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "internal_pkg_rpcerror_rpcerror_go.yaml"), []byte("path: internal/pkg/rpcerror/rpcerror.go\nupdate_behavior:\n  type: cover\nbody: old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Export(ExportOptions{Root: root, Kind: "kitex", Module: "example.com/demo", ServiceName: "demo"}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	count := 0
+	for _, entry := range entries {
+		data, err := os.ReadFile(filepath.Join(out, entry.Name()))
+		if err != nil {
+			t.Fatal(err)
+		}
+		var tpl TemplateFile
+		if err := yaml.Unmarshal(data, &tpl); err != nil {
+			t.Fatal(err)
+		}
+		if tpl.Path == "internal/pkg/rpcerror/rpcerror.go" {
+			count++
+			if entry.Name() != "rpcerror.yaml" || tpl.UpdateBehavior.Type != "skip" {
+				t.Errorf("rpcerror fragment %s has update behavior %q", entry.Name(), tpl.UpdateBehavior.Type)
+			}
+		}
+	}
+	if count != 1 {
+		t.Fatalf("rpcerror fragment count = %d, want 1", count)
+	}
+}
+
+func TestExportReusesExistingFragmentForSameTarget(t *testing.T) {
+	root := t.TempDir()
+	source := filepath.Join(root, "internal/usecase/pb/scratch_usecase.go")
+	if err := os.MkdirAll(filepath.Dir(source), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(source, []byte("package pb\n// exported change\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(root, "template/hertz-template")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	const target = "internal/usecase/pb/{{ToLower .ServiceName}}_usecase.go"
+	if err := os.WriteFile(filepath.Join(out, "usecase_go.yaml"), []byte("path: "+target+"\nupdate_behavior:\n  type: skip\nbody: old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Export(ExportOptions{Root: root, Kind: "hertz", Module: "example.com/demo", ServiceName: "scratch"}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "usecase_go.yaml" {
+		t.Fatalf("exported fragments = %v, want only usecase_go.yaml", entries)
+	}
+	data, err := os.ReadFile(filepath.Join(out, "usecase_go.yaml"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(string(data), "exported change") {
+		t.Fatalf("existing fragment body was not refreshed: %s", data)
+	}
+}
+
+func TestExportReusesExistingMakefileFragment(t *testing.T) {
+	root := t.TempDir()
+	if err := os.WriteFile(filepath.Join(root, "Makefile"), []byte("build:\n\tgo build ./...\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	out := filepath.Join(root, "template/hertz-template")
+	if err := os.MkdirAll(out, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(out, "makefile_yaml.yaml"), []byte("path: Makefile\nupdate_behavior:\n  type: cover\nbody: old\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := Export(ExportOptions{Root: root, Kind: "hertz", Module: "example.com/demo", ServiceName: "demo"}); err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "makefile_yaml.yaml" {
+		t.Fatalf("exported fragments = %v, want only makefile_yaml.yaml", entries)
+	}
+}
 
 func TestHertzRules_Count(t *testing.T) {
 	rules := HertzRules()

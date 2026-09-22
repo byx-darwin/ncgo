@@ -390,6 +390,22 @@ ncgo ai sync --root commerce --lang zh-CN
 ncgo ai sync --root user-api --target all
 ```
 
+如果服务的业务逻辑位于 `internal/usecase/<domain>/` 之外，可在同步前于
+`.ncgo/manifest.yaml` 声明实际路径：
+
+```yaml
+domains: [auth]
+ai_business_logic_paths:
+  auth: internal/application/auth/
+ai_additional_edit_paths:
+  - internal/application/menu/
+```
+
+`ai_business_logic_paths` 会替换对应 domain 的默认 usecase 行，
+`ai_additional_edit_paths` 会追加项目专属的可编辑目录。路径必须位于项目的
+`internal/` 目录下，并以 `/` 结尾。扫描 manifest 之外的目录时，仅列出磁盘上
+实际存在的 usecase 或 repository 目录。
+
 > **迁移说明：** 早期版本的 `ncgo ai sync` 默认写入全部上下文文件。现在默认是
 > `claude`；如需保持旧的全量行为，请显式传入 `--target all`。
 
