@@ -18,15 +18,17 @@ import (
 	"fmt"
 	osexec "os/exec"
 	"strings"
+
+	"github.com/byx-darwin/ncgo/internal/compat"
 )
 
 // Minimum versions of upstream code generators ncgo expects on PATH. They
 // are the source of truth for `ncgo doctor` reports and for the install hints
 // printed when `ncgo new` cannot find a binary.
 const (
-	MinHzVersion    = "v0.9.7"
-	MinKitexVersion = "v0.16.1"
-	MinGoVersion    = "v1.25.0"
+	MinHzVersion    = compat.MinHzVersion
+	MinKitexVersion = compat.MinKitexVersion
+	MinGoVersion    = compat.MinGoVersion
 )
 
 // InstallHint returns a human/agent-readable suggestion for installing the

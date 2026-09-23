@@ -1,14 +1,81 @@
 package mono
 
 import (
+	"io/fs"
 	"os"
 	"path/filepath"
+	"regexp"
 	"strings"
 	"testing"
 	"testing/fstest"
 
+	"github.com/byx-darwin/ncgo/internal/assets"
+	"github.com/byx-darwin/ncgo/internal/compat"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 )
+
+var goToolsImportPattern = regexp.MustCompile("github\\.com/byx-darwin/go-tools/(go-[a-z-]+)(?:/[^\\s\\\"`]+)?")
+
+func TestBaseTemplateGoToolsImportsHavePinnedOwningModules(t *testing.T) {
+	owners := map[string]bool{}
+	for _, root := range []string{"hertz/layout.yaml", "hertz/package.yaml", "hertz/hertz-template", "kitex/kitex-template", "ratelimit"} {
+		err := fs.WalkDir(assets.FS(), root, func(path string, entry fs.DirEntry, err error) error {
+			if err != nil || entry.IsDir() {
+				return err
+			}
+			body, err := fs.ReadFile(assets.FS(), path)
+			if err != nil {
+				return err
+			}
+			for _, match := range goToolsImportPattern.FindAllStringSubmatch(string(body), -1) {
+				owners["github.com/byx-darwin/go-tools/"+match[1]] = true
+			}
+			return nil
+		})
+		if err != nil {
+			t.Fatalf("scan %s: %v", root, err)
+		}
+	}
+
+	pinned := map[string]compat.ModuleVersion{}
+	for _, dependency := range compat.GoToolsModules {
+		pinned[dependency.Path] = dependency
+	}
+	if len(owners) == 0 {
+		t.Fatal("contract scan found no go-tools imports")
+	}
+	for owner := range owners {
+		if dependency, ok := pinned[owner]; !ok || dependency.Version == "" {
+			t.Errorf("unconditional generated import owner %s has no compatibility pin", owner)
+		}
+	}
+
+	layout, err := fs.ReadFile(assets.FS(), "hertz/layout.yaml")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dependency := range compat.GoToolsModules {
+		want := dependency.Path + " {{." + dependency.Field + "}}"
+		if !strings.Contains(string(layout), want) {
+			t.Errorf("Hertz go.mod layout missing compatibility pin %q", want)
+		}
+	}
+
+	dir := t.TempDir()
+	if err := writeKitexGoMod(dir, "example.com/demo"); err != nil {
+		t.Fatal(err)
+	}
+	goMod, err := os.ReadFile(filepath.Join(dir, "go.mod"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, dependency := range compat.GoToolsModules {
+		want := dependency.Path + " " + dependency.Version
+		if !strings.Contains(string(goMod), want) {
+			t.Errorf("Kitex go.mod missing compatibility pin %q", want)
+		}
+	}
+}
 
 func TestExpandIncludes(t *testing.T) {
 	fragment := "# shared\npath: internal/pkg/ratelimit/resolver.go\nupdate_behavior:\n  type: cover\nbody: |-\n  package ratelimit\n\n  // module {{.Module}}/internal/base/conf\n"

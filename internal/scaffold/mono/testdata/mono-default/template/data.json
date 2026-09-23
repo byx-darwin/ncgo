@@ -1,6 +1,10 @@
 {
   "*": {
     "GoModule": "github.com/x/demo",
+    "GoToolsCommonVersion": "v0.3.0",
+    "GoToolsFrameworkVersion": "v0.3.0",
+    "GoToolsMiddlewareVersion": "v0.1.0",
+    "GoVersion": "1.26.5",
     "RuleCenterAddr": "",
     "ServiceName": "demo",
     "WithDatabase": false

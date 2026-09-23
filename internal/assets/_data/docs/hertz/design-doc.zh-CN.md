@@ -22,8 +22,9 @@ Hertz 模板族支撑 `ncgo new --mode mono`(HTTP 服务),由
 ncgo 二进制编译的 Go 源码。
 
 生成的项目构建在 **go-tools v0.3.0** 之上(是其上的薄业务层):`go.mod` 声明
-`go 1.26.5`,并 require `go-common v0.3.0` + `go-framework v0.3.0`
-(`go-middleware v0.1.0` 在 `WithDatabase=true` 时由 `go mod tidy` 补齐)。
+`go 1.26.5`，并固定 `go-common v0.3.0`、`go-framework v0.3.0` 与
+`go-middleware v0.1.0`。即使未启用数据库也必须固定 middleware，因为生成的 Redis
+配置会无条件 import 它。
 响应使用 `go-framework/hertz.Responder`,配置使用 `go-framework/config`,
 日志使用 `go-common/log`,错误码 re-export `go-framework/error` 的框架码。
 

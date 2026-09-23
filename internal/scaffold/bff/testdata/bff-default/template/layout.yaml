@@ -84,11 +84,12 @@ layouts:
     body: |-
       module {{.GoModule}}
 
-      go 1.26.5
+      go {{.GoVersion}}
 
       require (
-          github.com/byx-darwin/go-tools/go-common v0.3.0
-          github.com/byx-darwin/go-tools/go-framework v0.3.0
+          github.com/byx-darwin/go-tools/go-common {{.GoToolsCommonVersion}}
+          github.com/byx-darwin/go-tools/go-framework {{.GoToolsFrameworkVersion}}
+          github.com/byx-darwin/go-tools/go-middleware {{.GoToolsMiddlewareVersion}}
       )
 
   # ── main.go ──────────────────────────────────────────────────────────────

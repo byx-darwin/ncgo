@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/byx-darwin/ncgo/internal/compat"
 	"github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/postgenerate"
@@ -398,7 +399,7 @@ func TestPostGenerateResultNextStepsSafePrefixExecutes(t *testing.T) {
 			executeSafeNextSteps(t, res.Dir, res.NextSteps)
 
 			// After the real kitex tool + `go mod tidy`, the go.mod must still
-			// pin go 1.26.5 + the go-tools v0.3.0 requires (the
+			// pin the generated-project compatibility set (the
 			// template-locked versions written before generation).
 			if tc.kind == manifest.KindKitex {
 				assertGoModPinsGoTools(t, res.Dir)
@@ -937,6 +938,16 @@ func TestGenerateRendersDataJSON(t *testing.T) {
 	if star["WithDatabase"] != true {
 		t.Errorf("WithDatabase = %v, want true", star["WithDatabase"])
 	}
+	for field, want := range map[string]string{
+		"GoVersion":                compat.GeneratedGoVersion,
+		"GoToolsCommonVersion":     compat.GoToolsCommonVersion,
+		"GoToolsFrameworkVersion":  compat.GoToolsFrameworkVersion,
+		"GoToolsMiddlewareVersion": compat.GoToolsMiddlewareVersion,
+	} {
+		if star[field] != want {
+			t.Errorf("%s = %v, want %s", field, star[field], want)
+		}
+	}
 }
 
 func TestGenerateWritesManifest(t *testing.T) {
@@ -1194,6 +1205,7 @@ func TestGenerateHertzCompiles(t *testing.T) {
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go mod tidy in %s: %v\n%s", res.Dir, err, out)
 	}
+	assertGoModPinsGoTools(t, res.Dir)
 
 	// Build the service binary to ensure all packages compile.
 	cmd = osexec.CommandContext(context.Background(), "go", "build", ".")
@@ -1242,6 +1254,7 @@ func TestGenerateHertzWithDatabaseCompiles(t *testing.T) {
 
 	runInDir(t, res.Dir, "make", "sqlc")
 	runInDir(t, res.Dir, "go", "mod", "tidy")
+	assertGoModPinsGoTools(t, res.Dir)
 	runInDir(t, res.Dir, "make", "i18n")
 	runInDir(t, res.Dir, "go", "build", ".")
 	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/base/conf/...", "./internal/base/data/...", "./internal/repository/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
@@ -1447,8 +1460,32 @@ func TestGenerateKitexCompiles(t *testing.T) {
 
 	runInDir(t, res.Dir, "make", "sqlc")
 	runInDir(t, res.Dir, "go", "mod", "tidy")
+	assertGoModPinsGoTools(t, res.Dir)
 	runInDir(t, res.Dir, "go", "build", ".")
 	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/pkg/interceptor/...", "./internal/pkg/rpcerror/...", "./pkg/client/...")
+}
+
+func TestGenerateKitexWithDatabaseCompiles(t *testing.T) {
+	requireTools(t, "kitex", "make", "sqlc", "protoc")
+
+	opts := baseOpts(t)
+	opts.Kind = manifest.KindKitex
+	opts.WithDatabase = true
+	opts.NoGenerate = false
+
+	res, err := Generate(context.Background(), opts)
+	if err != nil {
+		t.Fatalf("Generate: %v", err)
+	}
+	if !res.RanGenerate {
+		t.Fatal("expected RanGenerate = true")
+	}
+
+	runInDir(t, res.Dir, "make", "sqlc")
+	runInDir(t, res.Dir, "go", "mod", "tidy")
+	assertGoModPinsGoTools(t, res.Dir)
+	runInDir(t, res.Dir, "go", "build", ".")
+	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/base/conf/...", "./internal/base/data/...", "./internal/repository/...", "./internal/pkg/interceptor/...", "./internal/pkg/rpcerror/...", "./pkg/client/...")
 }
 
 func TestGenerateKitexNormalizesHyphenatedServiceName(t *testing.T) {
@@ -1752,7 +1789,7 @@ func readHertzAllTemplateContent(t *testing.T, templateDir string) string {
 	return buf.String()
 }
 
-// assertGoModPinsGoTools verifies the generated kitex go.mod locks the Go
+// assertGoModPinsGoTools verifies the generated service go.mod locks the Go
 // toolchain version and the go-tools dependencies to the template-pinned
 // versions. It matches substrings rather than exact lines because `go mod
 // tidy` may fold the requires into a require (...) block alongside the kitex
@@ -1765,9 +1802,10 @@ func assertGoModPinsGoTools(t *testing.T, dir string) {
 	}
 	body := string(b)
 	for _, want := range []string{
-		"go 1.26.5",
-		"github.com/byx-darwin/go-tools/go-common v0.3.0",
-		"github.com/byx-darwin/go-tools/go-framework v0.3.0",
+		"go " + compat.GeneratedGoVersion,
+		"github.com/byx-darwin/go-tools/go-common " + compat.GoToolsCommonVersion,
+		"github.com/byx-darwin/go-tools/go-framework " + compat.GoToolsFrameworkVersion,
+		"github.com/byx-darwin/go-tools/go-middleware " + compat.GoToolsMiddlewareVersion,
 	} {
 		if !strings.Contains(body, want) {
 			t.Fatalf("generated go.mod missing %q (version not template-pinned):\n%s", want, body)

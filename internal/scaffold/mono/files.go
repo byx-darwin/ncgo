@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/byx-darwin/ncgo/internal/assets"
+	"github.com/byx-darwin/ncgo/internal/compat"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scaffold/framework"
 	"github.com/byx-darwin/ncgo/internal/scaffold/shared"
@@ -264,18 +265,23 @@ func renderSharedFragment(srcFS fs.FS, name string) ([]string, error) {
 }
 
 // writeKitexGoMod pre-writes the project go.mod for a kitex scaffold so the
-// generated module pins `go 1.26.5` and requires the go-tools modules at
-// v0.3.0. The kitex tool only runs `go mod init` when go.mod is absent (which
+// generated module pins the compatibility-set Go and go-tools versions. The
+// kitex tool only runs `go mod init` when go.mod is absent (which
 // leaves the go-tools versions unpinned until `go mod tidy` resolves them);
 // when go.mod already exists with a matching module path, kitex reuses it
 // as-is and skips its own init. This mirrors the Hertz layout.yaml go.mod
 // entry so the version is template-locked and reproducible. `go mod tidy`
 // (run later) preserves these directives and only appends the kitex-runtime
-// requires; go-middleware is added by tidy when WithDatabase imports it.
+// requires.
 func writeKitexGoMod(dir, module string) error {
-	body := fmt.Sprintf("module %s\n\ngo 1.26.5\n\nrequire (\n\tgithub.com/byx-darwin/go-tools/go-common v0.3.0\n\tgithub.com/byx-darwin/go-tools/go-framework v0.3.0\n)\n", module)
+	var body strings.Builder
+	fmt.Fprintf(&body, "module %s\n\ngo %s\n\nrequire (\n", module, compat.GeneratedGoVersion)
+	for _, dependency := range compat.GoToolsModules {
+		fmt.Fprintf(&body, "\t%s %s\n", dependency.Path, dependency.Version)
+	}
+	body.WriteString(")\n")
 	full := filepath.Join(dir, "go.mod")
-	if err := os.WriteFile(full, []byte(body), 0o644); err != nil {
+	if err := os.WriteFile(full, []byte(body.String()), 0o644); err != nil {
 		return fmt.Errorf("scaffold: write %s: %w", full, err)
 	}
 	return nil

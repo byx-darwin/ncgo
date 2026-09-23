@@ -81,8 +81,17 @@ Deferred optionals remain documented but intentionally not implemented yet:
 Generated Hertz/Kitex projects are a thin business layer on top of
 [go-tools](https://github.com/byx-darwin/go-tools) v0.3.0. The generated
 `go.mod` declares `go 1.26.5` and requires `go-common v0.3.0` +
-`go-framework v0.3.0` (`go-middleware v0.1.0` is added by `go mod tidy` when
-`WithDatabase=true`).
+`go-framework v0.3.0` + `go-middleware v0.1.0`. Middleware is pinned even in
+the default non-database scaffold because generated Redis configuration imports
+`go-middleware/redis` unconditionally; `go mod tidy` must not choose its version.
+
+| Compatibility surface | Expected version/relationship |
+| --- | --- |
+| ncgo + embedded assets | The generated manifest records both exact versions; use the same pair when reproducing a scaffold |
+| Generated Go toolchain | `go 1.26.5` |
+| go-tools modules | `go-common v0.3.0`, `go-framework v0.3.0`, `go-middleware v0.1.0` |
+| Hertz generator | `hz >= v0.9.7` |
+| Kitex generator | `kitex >= v0.16.1` |
 
 | Concern | go-tools module |
 | --- | --- |

@@ -336,8 +336,9 @@ The Swagger spec is embedded with `go:embed`, so rerun `go run .` / `make dev` o
 rebuild and restart the service after `make swagger`.
 
 Generated projects build on go-tools v0.3.0: the `go.mod` declares `go 1.26.5`
-and requires `go-common v0.3.0` + `go-framework v0.3.0` (`go-middleware v0.1.0`
-is added by `go mod tidy` when the project uses a database). The response layer
+and pins `go-common v0.3.0` + `go-framework v0.3.0` +
+`go-middleware v0.1.0`. Middleware is pinned even without a database because
+the generated Redis configuration imports it unconditionally. The response layer
 uses `go-framework/hertz` `Responder`, config uses `go-framework/config`, and
 error codes re-export the framework codes from `go-framework/error`
 (`CodeSystem=10000` … `CodeRPCTimeout=10011`). Business-defined error codes must
@@ -387,7 +388,8 @@ Re-running `kitex -module ... -template-dir template/kitex-template ...`
 never lost without a recovery path.
 
 The generated Kitex project also builds on go-tools v0.3.0: `go.mod` declares
-`go 1.26.5` and requires `go-common v0.3.0` + `go-framework v0.3.0`. RPC errors
+`go 1.26.5` and pins `go-common v0.3.0` + `go-framework v0.3.0` +
+`go-middleware v0.1.0`. RPC errors
 flow through `internal/pkg/rpcerror`, which maps `goerror` errors to Kitex
 `BizStatusError` via `go-framework/kitex/rpcerror`; framework codes come from
 `go-framework/error` (`CodeInternalError=CodeSystem=10000`,

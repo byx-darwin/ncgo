@@ -30,6 +30,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/byx-darwin/ncgo/internal/compat"
 	"github.com/byx-darwin/ncgo/internal/exec"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scaffold/framework"
@@ -182,7 +183,7 @@ func Generate(ctx context.Context, opts Options) (*Result, error) {
 	if r == nil {
 		r = exec.NewDefault()
 	}
-	// Pre-write the kitex go.mod (go 1.26.5 + pinned go-tools v0.3.0) before
+	// Pre-write the kitex go.mod with the pinned compatibility set before
 	// the generator runs so the version is template-locked; the kitex tool
 	// reuses the existing go.mod and skips its own `go mod init`. Hertz
 	// handles this via its layout.yaml go.mod entry instead. Not done in the
@@ -338,10 +339,14 @@ type dataPayload map[string]map[string]any
 
 func renderDataJSON(opts Options) ([]byte, error) {
 	p := dataPayload{"*": {
-		"GoModule":       opts.Module,
-		"ServiceName":    opts.Name,
-		"WithDatabase":   opts.WithDatabase,
-		"RuleCenterAddr": opts.RuleCenterAddr,
+		"GoModule":                 opts.Module,
+		"ServiceName":              opts.Name,
+		"WithDatabase":             opts.WithDatabase,
+		"RuleCenterAddr":           opts.RuleCenterAddr,
+		"GoVersion":                compat.GeneratedGoVersion,
+		"GoToolsCommonVersion":     compat.GoToolsCommonVersion,
+		"GoToolsFrameworkVersion":  compat.GoToolsFrameworkVersion,
+		"GoToolsMiddlewareVersion": compat.GoToolsMiddlewareVersion,
 	}}
 	return json.MarshalIndent(p, "", "  ")
 }

@@ -72,7 +72,15 @@ v0.5 MVP 已完成：
 
 ### 生成项目构建在 go-tools v0.3.0 之上
 
-生成的 Hertz / Kitex 项目是 [go-tools](https://github.com/byx-darwin/go-tools) v0.3.0 之上的薄业务层。生成的 `go.mod` 声明 `go 1.26.5`，并 require `go-common v0.3.0` + `go-framework v0.3.0`（`go-middleware v0.1.0` 在 `WithDatabase=true` 时由 `go mod tidy` 补齐）。
+生成的 Hertz / Kitex 项目是 [go-tools](https://github.com/byx-darwin/go-tools) v0.3.0 之上的薄业务层。生成的 `go.mod` 声明 `go 1.26.5`，并 require `go-common v0.3.0` + `go-framework v0.3.0` + `go-middleware v0.1.0`。即使默认脚手架未启用数据库，也会固定 middleware 版本，因为生成的 Redis 配置会无条件 import `go-middleware/redis`；不能让 `go mod tidy` 临时选择版本。
+
+| 兼容面 | 版本/关系要求 |
+| --- | --- |
+| ncgo + 内嵌 assets | 生成 manifest 同时记录两个精确版本；复现脚手架时使用相同组合 |
+| 生成项目 Go toolchain | `go 1.26.5` |
+| go-tools 模块 | `go-common v0.3.0`、`go-framework v0.3.0`、`go-middleware v0.1.0` |
+| Hertz 生成器 | `hz >= v0.9.7` |
+| Kitex 生成器 | `kitex >= v0.16.1` |
 
 | 关注点 | go-tools 模块 |
 | --- | --- |
