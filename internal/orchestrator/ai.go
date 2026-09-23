@@ -26,7 +26,7 @@ type AIInitClaudeResult struct {
 type AISyncOptions struct {
 	Root   string
 	Lang   string
-	Target string // target group to render; empty defaults to claude (all = every group)
+	Target string // target group to render; empty defaults to all enabled groups
 	Force  bool
 	DryRun bool
 }

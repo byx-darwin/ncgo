@@ -34,7 +34,7 @@ service inventory, not replace per-service context.
 
 - add services with `ncgo add rpc <name>` or `ncgo add bff <name>`
 - each service keeps its own `.ncgo/manifest.yaml`
-- run `ncgo ai sync --root services/<name>` when you need service-level AI context
+- run `ncgo ai sync --target all --root services/<name>` when you need service-level AI context
 - keep most edits scoped to one service unless the task explicitly crosses service boundaries
 
 ## 4. Validation and Agent Workflow

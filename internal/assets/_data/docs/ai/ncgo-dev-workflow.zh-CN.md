@@ -42,10 +42,11 @@
 
 9. **用 ncgo check 校验** — `ncgo check --root .`
    验证改动内部一致：每个用例都有配对的 `// ncgo:methods:start|end`
-   锚点、`manifest.Domains` 与 `internal/usecase/*/` 一致、渲染的 AI 上下文
-   声明的 domains 与 manifest 一致。通过退出 `0`，校验失败退出 `1`，命令错误退出 `2`。
+   锚点、`manifest.Domains` 与 `internal/usecase/*/` 一致，并逐一审计全部已启用
+   Agent 上下文是否缺失、未托管或过期。通过退出 `0`，校验失败退出 `1`，
+   命令错误退出 `2`。
 
-10. **刷新 AI 上下文** — `ncgo ai sync --root .`
+10. **刷新全部已启用 Agent 上下文** — `ncgo ai sync --target all --root .`
    重新渲染本项目的 AI 工件（见下文），使代理上下文反映新增的领域和方法。
    sync 后重跑 `ncgo check` 确认过期检查通过。
 
@@ -65,7 +66,7 @@
 - [ ] handler 调用了用例方法（handler 不导入 repo/data）
 - [ ] `go build ./...` 通过
 - [ ] `ncgo check --root .` 退出 0
-- [ ] `ncgo ai sync --root .` 完成并报告已写入的托管文件
+- [ ] `ncgo ai sync --target all --root .` 完成并报告全部已启用托管文件
 - [ ] sync 后 `ncgo check --root .` 仍退出 0
 
 ### 失败处理
@@ -82,7 +83,7 @@
   `// ncgo:methods:start|end` 标记；用 `ncgo add domain <name> --force` 修复。
 - `ncgo check` 因 `check.manifest.consistency` 退出 1 — `manifest.Domains`
   与 `internal/usecase/*/` 漂移；运行 `ncgo add domain` 或修正 manifest。
-- `ncgo check` 因 `check.context.stale` 退出 1 — 渲染的 AI 上下文声明的
-  domains 与 manifest 不一致；运行 `ncgo ai sync --root .`。
+- `ncgo check` 因 `check.context.stale` 退出 1 — 某个已启用 Agent 上下文的
+  托管内容与当前项目事实不一致；运行 `ncgo ai sync --target all --root .`。
 - `ncgo ai sync` 拒绝覆盖 — 文件缺少 `<!-- ncgo:managed -->` 标记；
   仅当你拥有该文件时才使用 `--force`。

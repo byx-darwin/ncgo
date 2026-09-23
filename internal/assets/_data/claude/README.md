@@ -50,7 +50,7 @@ They should normally be gitignored.
 1. Run `ncgo ai init claude --root .` once to bootstrap the minimal starter files.
 2. Optionally use `ncgo ai init claude --root . --preset team` for workflow starter docs and subagents such as `planner`, `implementer`, `reviewer`, `debugger`, and `doc-writer`.
 3. Edit `.claude/rules/*` to match your repository policy.
-4. Run `ncgo ai sync --root . --lang en` to refresh generated project facts, especially `.claude/generated/project-context.md`.
+4. Run `ncgo ai sync --target all --root . --lang en` to refresh every enabled Agent context, including `.claude/generated/project-context.md`.
 
 ## Using External Go Skills
 

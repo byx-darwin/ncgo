@@ -103,7 +103,7 @@ func InitClaude(opts InitOptions) (*Result, error) {
 		Notes:   []string{fmt.Sprintf("detected project shape: %s", projectShapeLabel(ctx.Shape))},
 	}
 	if !opts.DryRun {
-		res.NextSteps = []string{fmt.Sprintf("run ncgo ai sync --root %s --lang en", opts.Root)}
+		res.NextSteps = []string{fmt.Sprintf("run ncgo ai sync --target all --root %s --lang en", opts.Root)}
 	}
 	for _, f := range files {
 		if err := writeStarterFile(opts, ctx, f, res); err != nil {
@@ -234,7 +234,7 @@ func unknownGuidance() string {
 - If this is an ncgo mono service, expect ` + "`.ncgo/manifest.yaml`" + `.
 - If this is an ncgo micro workspace, expect ` + "`ncgo.workspace`" + ` at the root and per-service manifests under ` + "`services/*`" + `.
 
-After project metadata exists, run ` + "`ncgo ai sync --root . --lang en`" + ` so agents can rely on ` + "`.claude/generated/project-context.md`" + `.`)
+After project metadata exists, run ` + "`ncgo ai sync --target all --root . --lang en`" + ` so every enabled Agent context is refreshed.`)
 }
 
 func kindHumanLabel(kind string) string {

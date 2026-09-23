@@ -37,7 +37,7 @@ ncgo mcp serve
   - 稳定顶层字段：`written`、`skipped`，以及可选的 `notes`、`nextSteps`
   - `content[0].text` 在 `output=text` 时返回人类可读摘要，在 `output=json` 时返回 JSON
 - `ncgo_ai_sync`
-  - 输入：`root`、`target=all|agents|claude|cursor`（默认 `claude`）、
+  - 输入：`root`、`target=all|agents|claude|cursor`（默认 `all`）、
     `lang=en|zh-CN`、`force`、`dryRun`、`output=text|json`
   - 稳定顶层字段：`target`、`written`、`skipped`，以及可选的 `notes`、`scope`、`sourceRef`、`workspace`
   - `content[0].text` 在 `output=text` 时返回人类可读摘要，在 `output=json` 时返回 JSON
@@ -490,7 +490,7 @@ Agent 可以直接据此驱动后续步骤：
   "nextSteps": [
     "go build ./...",
     "replace the generated stub body with domain logic",
-    "ncgo ai sync --root ."
+    "ncgo ai sync --target all --root ."
   ]
 }
 ```
@@ -532,11 +532,13 @@ ncgo check --root .
 ```
 
 如果某个 usecase 丢失了 `// ncgo:methods` anchor、manifest 与
-`internal/usecase/*/` 目录不一致，或 AI 上下文文件已过期，命令会以退出码 1
-结束并输出结构化报告（`--output json`）。刷新上下文：
+`internal/usecase/*/` 目录不一致，或任一已启用的托管 Agent 上下文已过期，命令会
+以退出码 1 结束并输出结构化报告（`--output json`）。缺失或用户自有的目标路径会
+作为结构化迁移 warning 返回。micro 工作区根目录也会检查 workspace 级上下文。
+刷新全部已启用上下文：
 
 ```bash
-ncgo ai sync --root .
+ncgo ai sync --target all --root .
 ```
 
 ### 独立参考文档

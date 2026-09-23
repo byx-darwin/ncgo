@@ -122,8 +122,8 @@ func TestNewCmdHasAITargetFlag(t *testing.T) {
 	if f == nil {
 		t.Fatal("--ai-target flag not registered on ncgo new")
 	}
-	if f.DefValue != "claude" {
-		t.Errorf("--ai-target default = %q, want claude", f.DefValue)
+	if f.DefValue != "all" {
+		t.Errorf("--ai-target default = %q, want all", f.DefValue)
 	}
 }
 

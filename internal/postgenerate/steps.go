@@ -90,7 +90,7 @@ func aiSync(ctx context.Context, opts Options) StepResult {
 
 	target := opts.AITarget
 	if target == "" {
-		target = ai.TargetClaude
+		target = ai.TargetAll
 	}
 
 	start := time.Now()

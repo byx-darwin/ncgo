@@ -276,11 +276,11 @@ func TestServeToolCallAIInitClaude(t *testing.T) {
 		t.Fatalf("written = %+v, want starter files", result["written"])
 	}
 	nextSteps := result["nextSteps"].([]any)
-	if len(nextSteps) != 1 || nextSteps[0].(string) != "run ncgo ai sync --root "+root+" --lang en" {
+	if len(nextSteps) != 1 || nextSteps[0].(string) != "run ncgo ai sync --target all --root "+root+" --lang en" {
 		t.Fatalf("nextSteps = %+v, want ai sync hint", nextSteps)
 	}
 	text := resultText(result)
-	if !strings.Contains(text, "wrote .claude/README.md") || !strings.Contains(text, "next: run ncgo ai sync --root "+root+" --lang en") {
+	if !strings.Contains(text, "wrote .claude/README.md") || !strings.Contains(text, "next: run ncgo ai sync --target all --root "+root+" --lang en") {
 		t.Fatalf("text = %q", text)
 	}
 }

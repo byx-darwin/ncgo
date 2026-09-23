@@ -182,10 +182,10 @@ below.
 | `ncgo add rpc` / `ncgo add bff` | Add services inside a micro workspace (`--template` / `--template-dir` consume template packages; `add bff` also supports `--preset`) |
 | `ncgo add kitex-client` | Generate a Kitex client wrapper under `pkg/client/<name>/` for BFF services calling RPC services |
 | `ncgo ai init claude` | Bootstrap hand-authored `.claude` starter files (`--preset minimal` or `--preset team`) |
-| `ncgo ai sync` | Render AI context files — `claude` target by default; `--target all\|agents\|claude\|cursor` selects a group |
+| `ncgo ai sync` | Render all enabled Agent context files by default; `--target agents\|claude\|cursor` narrows one invocation |
 | `ncgo protolint` | Lint selected `.proto` files with Proto I/O rules |
 | `ncgo doctor` | Diagnose host tools, project metadata, and default proto contract issues |
-| `ncgo check` | Validate AI context integrity: method anchors, manifest↔usecase consistency, and stale context files. Exits 0 pass / 1 check failed / 2 command error (`--output text\|json`) |
+| `ncgo check` | Validate every enabled Agent context plus service anchors and manifest↔usecase consistency; service and micro workspace roots are supported. Exits 0 pass / 1 check failed / 2 command error (`--output text\|json`) |
 | `ncgo upgrade` | Update ncgo/assets metadata |
 | `ncgo extract domain` | Plan or apply mono-to-micro extraction |
 | `ncgo export templates` | Export code templates from an existing ncgo project |
@@ -384,25 +384,26 @@ lost without a recovery path — files whose `update_behavior` is `skip`
 
 ### Auto Post-Generation Steps
 
-After `ncgo new` successfully generates a project, it automatically runs:
-- `go mod tidy` — resolves Go module dependencies
-- `ncgo ai sync --target claude` — renders AI context files (CLAUDE.md, etc.)
+After `ncgo new` writes project metadata, it automatically runs:
+
+- `go mod tidy` — resolves Go module dependencies when the external generator ran
+- `ncgo ai sync --target all` — renders the universal, Claude, and Cursor context files even for micro workspaces or `--no-generate`
 
 These steps make the generated project immediately usable by AI agents.
 
 **Flags:**
-- `--ai-target <target>` — AI sync target: `claude` (default) | `all` | `agents` | `cursor` | `none`
+- `--ai-target <target>` — AI sync target: `all` (default) | `agents` | `claude` | `cursor` | `none`
 - `--no-auto-steps` — skip automatic post-generation steps
 
 **Examples:**
 ```bash
-# Default: auto-run go mod tidy + ai sync (target=claude)
+# Default: auto-run go mod tidy + ai sync (target=all)
 ncgo new user-api --module github.com/acme/user-api
 
 # Skip auto steps
 ncgo new user-api --module github.com/acme/user-api --no-auto-steps
 
-# Render all AI targets (agents + claude + cursor)
+# This is equivalent to the default; narrow with agents, claude, or cursor only when needed
 ncgo new user-api --module github.com/acme/user-api --ai-target all
 ```
 
@@ -424,7 +425,7 @@ ncgo ai init claude --root user-api --preset team
 
 The command reports whether the target root was detected as a service root, a micro workspace root, or still unknown.
 
-On a successful non-dry-run init, it also suggests the next sync command: `ncgo ai sync --root <root> --lang en`.
+On a successful non-dry-run init, it also suggests the next sync command: `ncgo ai sync --target all --root <root> --lang en`.
 
 After generating a project, sync AI-readable context:
 
@@ -440,17 +441,21 @@ For a micro workspace root, run the same command at the workspace root:
 ncgo ai sync --root commerce --lang en
 ```
 
-By default `ncgo ai sync` renders the `claude` target group, which writes:
+Generated projects enable all three Agent target groups by default. Therefore a
+plain `ncgo ai sync` writes all five managed context files:
 
+- `AGENTS.md`
 - `CLAUDE.md`
 - `.claude/skills/ncgo-dev/SKILL.md`
 - `.claude/generated/project-context.md`
+- `.cursor/rules/ncgo.mdc`
 
-Select a different group with `--target`:
+Use `--target` to narrow a single refresh when diagnosing one consumer:
 
 - `agents` — `AGENTS.md`
+- `claude` — `CLAUDE.md`, the ncgo-dev skill, and generated project context
 - `cursor` — `.cursor/rules/ncgo.mdc`
-- `all` — all five files above
+- `all` — every enabled file above (the default)
 
 ```bash
 ncgo ai sync --root user-api --target all
@@ -472,9 +477,10 @@ domain. `ai_additional_edit_paths` adds project-specific rows. Paths must be
 project-relative directories under `internal/` and end in `/`. Directories
 found on disk outside `domains` are listed only for the sides that exist.
 
-> **Migration note:** earlier versions of `ncgo ai sync` wrote every context
-> file by default. The default is now `claude`; pass `--target all` to keep
-> the previous full behavior.
+Existing projects can adopt the same guarantee by running `ncgo ai sync
+--target all`. If an expected path already contains a user-owned file without
+the managed marker, ncgo preserves it and `ncgo check` reports a structured
+`check.context.unmanaged` warning instead of overwriting it.
 
 Files contain `<!-- ncgo:managed -->`; existing files without the marker are
 skipped unless `--force` is passed. Add project-specific notes in
@@ -501,14 +507,15 @@ either way.
 > no way to retroactively tell which pre-existing content was intentional.
 > Wrap what you want to keep in `ncgo:custom` markers before that first sync.
 
-Rendered files carry a `<!-- ncgo:generated-at: ... -->` marker with the
-manifest timestamp that produced them. `ncgo check` compares the domains
-declared in a rendered context file against the current `manifest.Domains`;
-a mismatch means the context is stale.
+Rendered files carry a `<!-- ncgo:generated-at: ... -->` marker. `ncgo check`
+re-renders the expected content for every enabled target and reports each
+missing, unmanaged, unsafe, or stale path separately. It ignores only the
+generation timestamp and preserves valid `ncgo:custom` anchors while comparing,
+so a current `AGENTS.md` cannot hide a stale Claude or Cursor file.
 
 When `--root` is a micro workspace root, the generated files describe
 workspace-level facts from `ncgo.workspace` and list the registered services.
-For service-level context, run `ncgo ai sync --root services/<name> --lang en`
+For service-level context, run `ncgo ai sync --target all --root services/<name> --lang en`
 inside the generated service directory.
 
 When `--root` is a service directory that is also registered in a parent micro
@@ -533,7 +540,7 @@ ncgo add method device.ListThemes --root . --in usecase
 `ncgo add method` inserts a no-argument `UseCase` method stub between
 `// ncgo:methods:start` and `// ncgo:methods:end` markers. Its text output then
 lists the next steps: `go build ./...`, replace the generated stub body with
-domain logic, and `ncgo ai sync --root .`.
+domain logic, and `ncgo ai sync --target all --root .`.
 
 For machine-readable output, add `--output json`; the result carries `path`,
 `domain`, `method`, and `nextSteps`:
@@ -550,7 +557,7 @@ ncgo add method device.ListThemes --root . --in usecase --output json
   "nextSteps": [
     "go build ./...",
     "replace the generated stub body with domain logic",
-    "ncgo ai sync --root ."
+    "ncgo ai sync --target all --root ."
   ]
 }
 ```
@@ -796,7 +803,7 @@ code and returns structured domains/methods/anchors/consistency for agents.
 `.ncgo/manifest.yaml`, unlike the CLI's `ncgo import`; run `ncgo import`
 locally to actually write the file.
 The `ncgo_ai_sync` tool accepts the same `target` values as the CLI
-(`all|agents|claude|cursor`, default `claude`), and
+(`all|agents|claude|cursor`, default `all`), and
 `ncgo_add_method` supports `output: json`.
 The MCP interface is now documented in a contract-first layout in
 [`docs/examples.md#0-mcp-contract-first-reference`](docs/examples.md#0-mcp-contract-first-reference): see `0. MCP contract-first reference`

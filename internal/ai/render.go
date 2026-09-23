@@ -86,7 +86,7 @@ func buildServiceProjectContextBody(m *manifest.Manifest, membership *serviceWor
 	writeRepositoryRules(&b)
 	if membership != nil {
 		writeGeneratedNotes(&b,
-			fmt.Sprintf("This service is registered in micro workspace `%s`; run `ncgo ai sync --root %s` for workspace-level context.", membership.Name, membership.RootRel),
+			fmt.Sprintf("This service is registered in micro workspace `%s`; run `ncgo ai sync --target all --root %s` for workspace-level context.", membership.Name, membership.RootRel),
 		)
 		return b.String()
 	}
@@ -106,7 +106,7 @@ func buildWorkspaceProjectContextBody(w *manifest.Workspace, services []workspac
 	writeArchitectureSummary(&b, doc)
 	writeRepositoryRules(&b)
 	writeGeneratedNotes(&b,
-		"This root is a micro workspace; run `ncgo ai sync --root services/<name>` when you need service-level context.",
+		"This root is a micro workspace; run `ncgo ai sync --target all --root services/<name>` when you need service-level context.",
 	)
 	return b.String()
 }
@@ -445,7 +445,7 @@ const verifyMarkdown = `## Verify
 go build ./...            # compiles
 go vet ./...              # static analysis
 ncgo check --root .       # ncgo consistency (anchors, manifest, context)
-ncgo ai sync --root .     # re-render after changes
+ncgo ai sync --target all --root . # refresh every enabled Agent context
 ncgo check --root .       # confirm stale-context check passes
 ` + "```" + `
 

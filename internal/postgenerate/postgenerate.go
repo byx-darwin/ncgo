@@ -12,7 +12,7 @@ import (
 // Options configures post-generation auto-step execution.
 type Options struct {
 	Dir          string      // absolute project root
-	AITarget     string      // "claude" (default) | "all" | "agents" | "cursor" | "none"
+	AITarget     string      // "all" (default) | "agents" | "claude" | "cursor" | "none"
 	NoAutoSteps  bool        // skip all auto steps
 	RanGenerate  bool        // whether generator (hz/kitex) ran successfully
 	Runner       exec.Runner // injected exec; nil = exec.NewDefault()
@@ -39,11 +39,13 @@ type StepResult struct {
 func Run(opts Options) *Result {
 	res := &Result{}
 
-	// Skip all steps if NoAutoSteps or !RanGenerate
-	if opts.NoAutoSteps || !opts.RanGenerate {
+	// --no-auto-steps disables the complete workflow. When code generation was
+	// intentionally skipped, dependency steps cannot run, but AI context still
+	// depends only on manifest/workspace metadata and remains safe to render.
+	if opts.NoAutoSteps {
 		res.Steps = []StepResult{
-			{Name: "go mod tidy", Status: "skipped", Detail: "auto steps disabled or generator did not run"},
-			{Name: "ai sync", Status: "skipped", Detail: "auto steps disabled or generator did not run"},
+			{Name: "go mod tidy", Status: "skipped", Detail: "auto steps disabled"},
+			{Name: "ai sync", Status: "skipped", Detail: "auto steps disabled"},
 		}
 		return res
 	}
@@ -54,6 +56,13 @@ func Run(opts Options) *Result {
 	}
 
 	ctx := context.Background()
+	if !opts.RanGenerate {
+		res.Steps = append(res.Steps,
+			StepResult{Name: "go mod tidy", Status: "skipped", Detail: "generator did not run"},
+			aiSync(ctx, opts),
+		)
+		return res
+	}
 
 	// Step 0 (conditional): sqlc - must run before go mod tidy for Kitex or Hertz-with-db
 	if requiresSQLCBeforeTidy(opts) {

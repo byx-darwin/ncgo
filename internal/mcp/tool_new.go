@@ -98,7 +98,7 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 		if err != nil {
 			return textResult(err.Error(), true), nil
 		}
-		res, err = runNewMicro(args.Name, args.Module, dir, ncgoVersion, assetsVersion, templateDir)
+		res, err = runNewMicro(args.Name, args.Module, dir, ncgoVersion, assetsVersion, templateDir, args.AITarget, args.NoAutoSteps)
 	default:
 		return textResult(fmt.Sprintf("mode %q is invalid (mono|micro)", args.Mode), true), nil
 	}
@@ -143,20 +143,20 @@ func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra [
 	// Run auto post-generation steps
 	var autoSteps []postgenerate.StepResult
 	nextSteps := res.NextSteps
-	if res.RanGenerate {
-		pgResult := postgenerate.Run(postgenerate.Options{
-			Dir:          res.Dir,
-			AITarget:     aiTarget,
-			NoAutoSteps:  noAutoSteps,
-			RanGenerate:  res.RanGenerate,
-			Stdout:       io.Discard, // MCP doesn't print progress
-			Kind:         kind,
-			WithDatabase: db == "postgres",
-		})
+	pgResult := postgenerate.Run(postgenerate.Options{
+		Dir:          res.Dir,
+		AITarget:     aiTarget,
+		NoAutoSteps:  noAutoSteps,
+		RanGenerate:  res.RanGenerate,
+		Stdout:       io.Discard, // MCP doesn't print progress
+		Kind:         kind,
+		WithDatabase: db == "postgres",
+	})
+	if !noAutoSteps {
 		autoSteps = pgResult.Steps
-		// Remove auto-executed steps from NextSteps (parity with CLI).
-		nextSteps = pgResult.FilterNextSteps(nextSteps)
 	}
+	// Remove auto-executed steps from NextSteps (parity with CLI).
+	nextSteps = pgResult.FilterNextSteps(nextSteps)
 
 	ran := res.RanGenerate
 	return &newResult{
@@ -168,7 +168,7 @@ func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra [
 	}, nil
 }
 
-func runNewMicro(name, module, dir, ncgoVersion, assetsVersion, templateDir string) (*newResult, error) {
+func runNewMicro(name, module, dir, ncgoVersion, assetsVersion, templateDir, aiTarget string, noAutoSteps bool) (*newResult, error) {
 	res, err := micro.Generate(micro.Options{
 		Name:          name,
 		Module:        module,
@@ -180,10 +180,22 @@ func runNewMicro(name, module, dir, ncgoVersion, assetsVersion, templateDir stri
 	if err != nil {
 		return nil, err
 	}
+	pgResult := postgenerate.Run(postgenerate.Options{
+		Dir:         res.Dir,
+		AITarget:    aiTarget,
+		NoAutoSteps: noAutoSteps,
+		RanGenerate: false,
+		Stdout:      io.Discard,
+	})
+	var autoSteps []postgenerate.StepResult
+	if !noAutoSteps {
+		autoSteps = pgResult.Steps
+	}
 	return &newResult{
 		Dir:       res.Dir,
-		NextSteps: res.NextSteps,
+		NextSteps: pgResult.FilterNextSteps(res.NextSteps),
 		Mode:      manifest.ModeMicro,
+		AutoSteps: autoSteps,
 	}, nil
 }
 

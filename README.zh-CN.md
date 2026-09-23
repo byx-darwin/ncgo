@@ -155,9 +155,9 @@ make dev
 | `ncgo add rpc` / `ncgo add bff` | 在 micro 工作区中新增服务（`--template` / `--template-dir` 消费模版包；`add bff` 还支持 `--preset`） |
 | `ncgo add kitex-client` | 在 `pkg/client/<name>/` 下生成 Kitex 客户端包装器，供 BFF 服务调用 RPC 服务 |
 | `ncgo ai init claude` | 初始化 hand-authored `.claude` starter files（`--preset minimal` 或 `--preset team`） |
-| `ncgo ai sync` | 渲染 AI 上下文文件——默认 `claude` 目标；`--target all\|agents\|claude\|cursor` 选择分组 |
+| `ncgo ai sync` | 默认渲染全部已启用 Agent 上下文；`--target agents\|claude\|cursor` 可缩小单次同步范围 |
 | `ncgo doctor` | 检查宿主机工具、项目元数据与默认 proto 契约问题 |
-| `ncgo check` | 校验 AI 上下文完整性：方法 anchor、manifest↔usecase 一致性以及过期的上下文文件。退出码 0 通过 / 1 检查失败 / 2 命令错误（`--output text\|json`） |
+| `ncgo check` | 逐一校验所有已启用 Agent 上下文，以及服务的方法 anchor 与 manifest↔usecase 一致性；支持服务和 micro 工作区根目录。退出码 0 通过 / 1 检查失败 / 2 命令错误（`--output text\|json`） |
 | `ncgo upgrade` | 更新 ncgo/assets 元数据 |
 | `ncgo extract domain` | 规划或执行 mono-to-micro 迁移 |
 | `ncgo export templates` | 从已有 ncgo 项目导出代码模板 |
@@ -320,25 +320,26 @@ ncgo new user-api --module github.com/acme/user-api --kind kitex --no-generate
 
 ### 自动后处理步骤
 
-`ncgo new` 成功生成项目后，会自动执行：
-- `go mod tidy` — 解析 Go 模块依赖
-- `ncgo ai sync --target claude` — 渲染 AI 上下文文件（CLAUDE.md 等）
+`ncgo new` 写入项目元数据后，会自动执行：
+
+- `go mod tidy` — 仅在外部生成器成功运行后解析 Go 模块依赖
+- `ncgo ai sync --target all` — 即使是 micro 工作区或使用 `--no-generate`，也会渲染通用、Claude 与 Cursor 上下文文件
 
 这些步骤使生成的项目可立即被 AI agent 使用。
 
 **Flags:**
-- `--ai-target <target>` — AI sync 目标：`claude`（默认）| `all` | `agents` | `cursor` | `none`
+- `--ai-target <target>` — AI sync 目标：`all`（默认）| `agents` | `claude` | `cursor` | `none`
 - `--no-auto-steps` — 跳过自动后处理步骤
 
 **示例：**
 ```bash
-# 默认：自动运行 go mod tidy + ai sync（target=claude）
+# 默认：自动运行 go mod tidy + ai sync（target=all）
 ncgo new user-api --module github.com/acme/user-api
 
 # 跳过自动步骤
 ncgo new user-api --module github.com/acme/user-api --no-auto-steps
 
-# 渲染所有 AI 目标（agents + claude + cursor）
+# 与默认行为等价；仅在需要时用 agents、claude 或 cursor 缩小单次同步范围
 ncgo new user-api --module github.com/acme/user-api --ai-target all
 ```
 
@@ -360,7 +361,7 @@ ncgo ai init claude --root user-api --preset team
 
 命令会提示当前 `--root` 被识别为服务根目录、micro 工作区根目录，或暂时还无法识别。
 
-在非 dry-run 且成功初始化后，还会追加下一步建议：`ncgo ai sync --root <root> --lang en`。
+在非 dry-run 且成功初始化后，还会追加下一步建议：`ncgo ai sync --target all --root <root> --lang en`。
 
 ```bash
 ncgo ai sync --root user-api --lang zh-CN
@@ -374,17 +375,21 @@ ncgo ai sync --root user-api --lang zh-CN
 ncgo ai sync --root commerce --lang zh-CN
 ```
 
-`ncgo ai sync` 默认渲染 `claude` 目标分组，写入：
+生成项目默认启用 `agents`、`claude` 与 `cursor` 三个目标分组。因此直接执行
+`ncgo ai sync` 会写入全部五个托管上下文文件：
 
+- `AGENTS.md`
 - `CLAUDE.md`
 - `.claude/skills/ncgo-dev/SKILL.md`
 - `.claude/generated/project-context.md`
+- `.cursor/rules/ncgo.mdc`
 
-用 `--target` 选择其他分组：
+排查单个消费者时，可用 `--target` 缩小本次刷新范围：
 
 - `agents` — `AGENTS.md`
+- `claude` — `CLAUDE.md`、ncgo-dev skill 与生成的 project context
 - `cursor` — `.cursor/rules/ncgo.mdc`
-- `all` — 上面全部五个文件
+- `all` — 上述所有已启用文件（默认值）
 
 ```bash
 ncgo ai sync --root user-api --target all
@@ -406,8 +411,9 @@ ai_additional_edit_paths:
 `internal/` 目录下，并以 `/` 结尾。扫描 manifest 之外的目录时，仅列出磁盘上
 实际存在的 usecase 或 repository 目录。
 
-> **迁移说明：** 早期版本的 `ncgo ai sync` 默认写入全部上下文文件。现在默认是
-> `claude`；如需保持旧的全量行为，请显式传入 `--target all`。
+已有项目可执行 `ncgo ai sync --target all` 获得相同保证。如果预期路径上已经
+存在没有 managed marker 的用户自有文件，ncgo 会保留它，并由 `ncgo check`
+输出结构化的 `check.context.unmanaged` warning，而不会自动覆盖。
 
 这些文件带有 `<!-- ncgo:managed -->` 标记。没有该标记的已有文件默认不会覆盖，除非传 `--force`。项目私有说明放在 `AGENTS.local.md`，会附加到长版上下文文件；`.claude/generated/project-context.md` 保持 deterministic——这里的 "deterministic" 指它不会嵌入随每次运行而变化的扫描派生事实，并不代表它不受下文所述 `ncgo:custom` 锚点机制的影响。
 
@@ -415,11 +421,11 @@ ai_additional_edit_paths:
 
 > **迁移说明：** 在引入该锚点机制**之前**就已经直接写入 managed 文件、且没有用 `ncgo:custom` 包裹的自定义内容，在升级后的**第一次** `ai sync` 仍会被覆盖一次——没有办法回溯识别哪些旧内容是用户手工添加的。升级前，请先把想保留的内容包进 `ncgo:custom` 锚点，再执行 sync。
 
-渲染出的文件会携带 `<!-- ncgo:generated-at: ... -->` 标记，记录生成它们的 manifest 时间戳。`ncgo check` 会比较渲染上下文文件里声明的 domains 与当前 `manifest.Domains`；不一致即表示上下文已过期。
+渲染出的文件会携带 `<!-- ncgo:generated-at: ... -->` 标记。`ncgo check` 会针对每个已启用目标重新渲染期望内容，并逐一检查缺失、未托管与过期状态；比较时忽略生成时间戳并保留格式正确的 `ncgo:custom` 锚点，因此 `AGENTS.md` 最新但 `CLAUDE.md` 或 Cursor 规则过期时也不会漏报。micro 工作区根目录同样支持该检查。
 
 当 `--root` 指向 micro 工作区根目录时，生成文件会基于 `ncgo.workspace`
 描述工作区级事实并列出已登记服务。如需服务级上下文，请进入对应服务目录执行
-`ncgo ai sync --root services/<name> --lang zh-CN`。
+`ncgo ai sync --target all --root services/<name> --lang zh-CN`。
 
 当 `--root` 指向某个服务目录，且该服务同时登记在上层 micro 工作区里时，
 `ncgo ai sync` 仍会基于本地 `.ncgo/manifest.yaml` 生成服务级上下文，但会额外
@@ -439,7 +445,7 @@ ncgo add method device.ListThemes --root . --in usecase
 
 `add method` 会在 `// ncgo:methods:start` 与 `// ncgo:methods:end` 之间插入无参数
 `UseCase` 方法桩。文本输出随后列出下一步：`go build ./...`、用业务逻辑替换生成的
-桩代码，以及 `ncgo ai sync --root .`。
+桩代码，以及 `ncgo ai sync --target all --root .`。
 
 如需机器可读输出，追加 `--output json`；结果包含 `path`、`domain`、`method`
 和 `nextSteps`：
@@ -456,7 +462,7 @@ ncgo add method device.ListThemes --root . --in usecase --output json
   "nextSteps": [
     "go build ./...",
     "replace the generated stub body with domain logic",
-    "ncgo ai sync --root ."
+    "ncgo ai sync --target all --root ."
   ]
 }
 ```
@@ -634,7 +640,7 @@ ncgo version
 
 `ncgo import` 会为已有项目反向生成 `.ncgo/manifest.yaml`。类型自动检测依赖生成器标记文件：`router.go` 含 `// Code generated by hz.`（Hertz）或 `handler.go` 含 `// Code generated by kitex.`（Kitex）。用 `ncgo new --no-generate` 生成的脚手架还没有标记文件，导入时需要显式指定 `--kind`（例如 `ncgo import --root . --kind kitex`）。
 
-`ncgo mcp serve` 会启动 stdio MCP server。当前暴露 `ncgo_version`、`ncgo_doctor`、`ncgo_check`、`ncgo_ai_init_claude`、`ncgo_ai_sync`、`ncgo_i18n_report`、`ncgo_i18n_check`、`ncgo_protolint`、`ncgo_add_infra`、`ncgo_add_method`、`ncgo_import`、`ncgo_ai_context`。其中 `ncgo_ai_context` 会扫描真实代码，为 Agent 返回结构化的 domains/methods/anchors/consistency；`ncgo_ai_sync` 支持与 CLI 相同的 `target` 取值（`all|agents|claude|cursor`，默认 `claude`），`ncgo_add_method` 支持 `output: json`。`ncgo_check` 对应 `ncgo check`（只读的 AI 上下文/manifest 校验）。`ncgo_import` 通过 MCP 调用时始终为预览模式——不会写入 `.ncgo/manifest.yaml`，这与 CLI 的 `ncgo import` 不同；如需真正写入文件，请在本地运行 `ncgo import`。现在这套 MCP 接口已经按 contract-first 方式集中整理到 [docs/examples.zh-CN.md#0-mcp-contract-first-参考](docs/examples.zh-CN.md#0-mcp-contract-first-参考) 的 `0. MCP contract-first 参考` 一节：会先说明每个工具的输入、支持的 `output`，以及稳定的顶层结果字段，再进入具体 workflow 示例。简而言之，结构化 MCP 工具会把 `content[0].text` 作为展示/转存载荷，同时保留同级顶层字段供 Agent 直接消费；`output` 只影响文本载荷格式。
+`ncgo mcp serve` 会启动 stdio MCP server。当前暴露 `ncgo_version`、`ncgo_doctor`、`ncgo_check`、`ncgo_ai_init_claude`、`ncgo_ai_sync`、`ncgo_i18n_report`、`ncgo_i18n_check`、`ncgo_protolint`、`ncgo_add_infra`、`ncgo_add_method`、`ncgo_import`、`ncgo_ai_context`。其中 `ncgo_ai_context` 会扫描真实代码，为 Agent 返回结构化的 domains/methods/anchors/consistency；`ncgo_ai_sync` 支持与 CLI 相同的 `target` 取值（`all|agents|claude|cursor`，默认 `all`），`ncgo_add_method` 支持 `output: json`。`ncgo_check` 对应 `ncgo check`（只读的 AI 上下文/manifest 校验）。`ncgo_import` 通过 MCP 调用时始终为预览模式——不会写入 `.ncgo/manifest.yaml`，这与 CLI 的 `ncgo import` 不同；如需真正写入文件，请在本地运行 `ncgo import`。现在这套 MCP 接口已经按 contract-first 方式集中整理到 [docs/examples.zh-CN.md#0-mcp-contract-first-参考](docs/examples.zh-CN.md#0-mcp-contract-first-参考) 的 `0. MCP contract-first 参考` 一节：会先说明每个工具的输入、支持的 `output`，以及稳定的顶层结果字段，再进入具体 workflow 示例。简而言之，结构化 MCP 工具会把 `content[0].text` 作为展示/转存载荷，同时保留同级顶层字段供 Agent 直接消费；`output` 只影响文本载荷格式。
 
 如果你在生成后的 Hertz 项目里使用内置 i18n 工作流，现在也可以用 `ncgo i18n report` / `ncgo i18n check`，或通过 MCP 的 `ncgo_i18n_report` / `ncgo_i18n_check` 消费结构化结果。可直接参考 [docs/examples.zh-CN.md#5-生成项目中的-i18n-补译工作流](docs/examples.zh-CN.md#5-生成项目中的-i18n-补译工作流) 中的“生成项目中的 i18n 补译工作流”。
 

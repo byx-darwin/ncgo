@@ -20,8 +20,11 @@ ncgo ai init claude --preset minimal
 ncgo ai sync
 ```
 
-Renders `AGENTS.md`, `CLAUDE.md`, `.claude/generated/project-context.md`, and
-Cursor rules.
+All three consumer groups are enabled for generated projects. The default
+renders `AGENTS.md`, `CLAUDE.md`, the Claude skill and generated project
+context, and Cursor rules. Use `--target agents|claude|cursor` only to narrow a
+single refresh. `ncgo check --root .` audits every enabled file; missing or
+user-owned paths are structured warnings and stale managed files fail the check.
 
 ## Expose operations over MCP
 
@@ -52,6 +55,7 @@ Starts an MCP stdio server exposing tools such as `ncgo_version`,
 | `--lang string` | Design-doc language: `en` \| `zh-CN` (default `"en"`) |
 | `--output string` | Output format: `text` or `json` (default `"text"`) |
 | `--root string` | Service root with `.ncgo/manifest.yaml` or micro workspace root with `ncgo.workspace` (default `"."`) |
+| `--target string` | Target group: `all` \| `agents` \| `claude` \| `cursor` (default `all`) |
 | `-h, --help` | help for `sync` |
 
 ## `ncgo mcp serve` flags

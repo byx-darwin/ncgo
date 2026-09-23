@@ -29,7 +29,7 @@ micro 工作区 profile 对应 `ncgo new --mode micro` 创建的仓库根目录�
 
 - 使用 `ncgo add rpc <name>` 或 `ncgo add bff <name>` 增加服务
 - 每个服务保留自己的 `.ncgo/manifest.yaml`
-- 需要服务级 AI 上下文时，请执行 `ncgo ai sync --root services/<name>`
+- 需要服务级 AI 上下文时，请执行 `ncgo ai sync --target all --root services/<name>`
 - 除非任务明确跨服务，否则大多数改动都应尽量限定在单个服务内
 
 ## 4. 校验与 Agent 工作流

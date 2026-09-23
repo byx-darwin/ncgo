@@ -487,7 +487,7 @@ func buildPlan(filePlans []PlanItem, manifestUpdated bool, wire bool, wiredPaths
 func nextSteps(kind, serviceKind, serviceName string) []string {
 	p, ok := pluginByKind(kind)
 	if !ok {
-		return []string{"go mod tidy"}
+		return []string{"go mod tidy", "ncgo ai sync --target all --root ."}
 	}
 	if steps := p.SetupSteps(); steps != nil {
 		out := append([]string(nil), steps...)
@@ -498,7 +498,7 @@ func nextSteps(kind, serviceKind, serviceName string) []string {
 				}
 			}
 		}
-		return out
+		return append(out, "ncgo ai sync --target all --root .")
 	}
 	steps := make([]string, 0, len(p.GoGetDeps())+1)
 	for _, dep := range p.GoGetDeps() {
@@ -508,7 +508,7 @@ func nextSteps(kind, serviceKind, serviceName string) []string {
 		steps = append(steps, "review "+filepath.FromSlash(hertzConfigRelPath)+" and complete the `"+p.HertzConfigKey()+"` section for local config or your config-center payload")
 	}
 	steps = append(steps, "go mod tidy")
-	return steps
+	return append(steps, "ncgo ai sync --target all --root .")
 }
 
 // rateLimitAssetFiles returns the add-on files for the rate_limit kind (kitex

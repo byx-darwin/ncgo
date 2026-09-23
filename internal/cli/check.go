@@ -32,16 +32,16 @@ func newCheckCmd() *cobra.Command {
 		Use:   "check",
 		Short: "Validate AI context integrity and manifest consistency",
 		Long: "Verify that every usecase has paired // ncgo:methods anchors, that " +
-			"manifest domains match internal/usecase/*/ directories, and that rendered " +
-			"AI context files' declared domains match the manifest. Exits 0 on pass, 1 on " +
-			"check failure, 2 on command error (e.g. root is not an ncgo service).",
+			"manifest domains match internal/usecase/*/ directories, and that every enabled " +
+			"Agent context is present and current. Micro workspace roots audit workspace-level " +
+			"contexts. Exits 0 on pass, 1 on check failure, 2 on command error.",
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			return runCheck(cmd, opts)
 		},
 	}
 	f := cmd.Flags()
-	f.StringVar(&opts.root, "root", ".", "Service root containing .ncgo/manifest.yaml")
+	f.StringVar(&opts.root, "root", ".", "Service root with .ncgo/manifest.yaml or micro workspace root with ncgo.workspace")
 	f.StringVar(&opts.output, "output", "text", "Output format: text or json")
 	return cmd
 }

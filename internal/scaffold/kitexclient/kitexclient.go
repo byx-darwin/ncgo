@@ -127,6 +127,7 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 
 	result.NextSteps = []string{
 		fmt.Sprintf("Import the client: %q", fmt.Sprintf("%s/pkg/client/%s", opts.Module, opts.Name)),
+		"ncgo ai sync --target all --root .",
 	}
 
 	return result, nil

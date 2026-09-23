@@ -53,7 +53,7 @@ func TestRunAIInitClaudeWritesStarterFiles(t *testing.T) {
 	if !strings.Contains(out.String(), "info: detected project shape: unknown") {
 		t.Fatalf("missing shape detection output: %s", out.String())
 	}
-	if !strings.Contains(out.String(), "next: run ncgo ai sync --root "+root+" --lang en") {
+	if !strings.Contains(out.String(), "next: run ncgo ai sync --target all --root "+root+" --lang en") {
 		t.Fatalf("missing ai sync next step output: %s", out.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, ".claude/rules/agent-engineering.md")); err != nil {
@@ -88,7 +88,7 @@ func TestRunAIInitClaudeTeamPresetWritesTeamFiles(t *testing.T) {
 	if !strings.Contains(out.String(), "info: detected project shape: micro workspace root") {
 		t.Fatalf("missing micro workspace shape output: %s", out.String())
 	}
-	if !strings.Contains(out.String(), "next: run ncgo ai sync --root "+root+" --lang en") {
+	if !strings.Contains(out.String(), "next: run ncgo ai sync --target all --root "+root+" --lang en") {
 		t.Fatalf("missing ai sync next step output: %s", out.String())
 	}
 	if _, err := os.Stat(filepath.Join(root, ".claude/agents/reviewer.md")); err != nil {
@@ -133,7 +133,7 @@ func TestRunAIInitClaudeJSONOutput(t *testing.T) {
 	if len(res.Written) == 0 {
 		t.Fatalf("result = %+v, want starter files to be written", res)
 	}
-	if len(res.NextSteps) != 1 || res.NextSteps[0] != "run ncgo ai sync --root "+root+" --lang en" {
+	if len(res.NextSteps) != 1 || res.NextSteps[0] != "run ncgo ai sync --target all --root "+root+" --lang en" {
 		t.Fatalf("result = %+v, want ai sync next step", res)
 	}
 	if !strings.Contains(strings.Join(res.Notes, "\n"), "detected project shape: unknown") {
@@ -215,7 +215,7 @@ func TestRunAISyncTargetFlag(t *testing.T) {
 	}
 }
 
-func TestRunAISyncDefaultTargetTextShowsClaudeFiles(t *testing.T) {
+func TestRunAISyncDefaultTargetTextShowsAllEnabledFiles(t *testing.T) {
 	root := t.TempDir()
 	writeCLIServiceManifest(t, root)
 	var out bytes.Buffer
@@ -225,13 +225,10 @@ func TestRunAISyncDefaultTargetTextShowsClaudeFiles(t *testing.T) {
 		t.Fatalf("runAISync: %v", err)
 	}
 	got := out.String()
-	for _, want := range []string{"wrote CLAUDE.md", "wrote .claude/skills/ncgo-dev/SKILL.md", "wrote .claude/generated/project-context.md"} {
+	for _, want := range []string{"wrote AGENTS.md", "wrote CLAUDE.md", "wrote .claude/skills/ncgo-dev/SKILL.md", "wrote .claude/generated/project-context.md", "wrote .cursor/rules/ncgo.mdc"} {
 		if !strings.Contains(got, want) {
 			t.Fatalf("default sync missing %q:\n%s", want, got)
 		}
-	}
-	if strings.Contains(got, "wrote AGENTS.md") {
-		t.Fatalf("default sync must not write AGENTS.md:\n%s", got)
 	}
 }
 

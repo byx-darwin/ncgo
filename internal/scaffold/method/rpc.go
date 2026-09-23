@@ -100,7 +100,7 @@ func AddRPC(opts RPCOptions) (*RPCResult, error) {
 		NextSteps: []string{
 			"go build ./...",
 			"replace the generated not-implemented body with domain logic",
-			"ncgo ai sync --root .",
+			"ncgo ai sync --target all --root .",
 		},
 	}, nil
 }

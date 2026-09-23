@@ -81,7 +81,7 @@ func runImport(opts *importOptions) func(*cobra.Command, []string) error {
 		fmt.Fprintf(out, "✓ Created .ncgo/manifest.yaml\n\n")
 		fmt.Fprintln(out, "Next steps:")
 		fmt.Fprintln(out, "  ncgo doctor                    # Check project health")
-		fmt.Fprintln(out, "  ncgo ai sync                   # Generate AI context files")
+		fmt.Fprintln(out, "  ncgo ai sync --target all      # Generate every enabled Agent context")
 		fmt.Fprintln(out, "  ncgo add infra redis --dry-run # Preview optional infrastructure")
 		return nil
 	}

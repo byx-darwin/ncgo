@@ -42,7 +42,7 @@ ncgo mcp serve
     optional `nextSteps`
   - `content[0].text` is a human-readable summary for `output=text`, or JSON for `output=json`
 - `ncgo_ai_sync`
-  - inputs: `root`, `target=all|agents|claude|cursor` (default `claude`),
+  - inputs: `root`, `target=all|agents|claude|cursor` (default `all`),
     `lang=en|zh-CN`, `force`, `dryRun`, `output=text|json`
   - stable top-level fields: `target`, `written`, `skipped`, optional `notes`,
     `scope`, `sourceRef`, and optional `workspace`
@@ -548,7 +548,7 @@ ncgo ai sync --target all --root .
   "nextSteps": [
     "go build ./...",
     "replace the generated stub body with domain logic",
-    "ncgo ai sync --root ."
+    "ncgo ai sync --target all --root ."
   ]
 }
 ```
@@ -593,11 +593,14 @@ ncgo check --root .
 ```
 
 If any usecase lost its `// ncgo:methods` anchors, the manifest drifted from
-`internal/usecase/*/`, or AI context files are stale, the command exits 1 with
-a structured report (`--output json`). Refresh context with:
+`internal/usecase/*/`, or any enabled managed Agent context is stale, the
+command exits 1 with a structured report (`--output json`). Missing or
+user-owned enabled paths are reported as structured migration warnings. The
+same command also audits workspace-level contexts at a micro workspace root.
+Refresh every enabled context with:
 
 ```bash
-ncgo ai sync --root .
+ncgo ai sync --target all --root .
 ```
 
 ### Standalone reference docs

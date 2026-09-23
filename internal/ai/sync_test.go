@@ -219,7 +219,7 @@ func TestSyncServiceUnderWorkspaceAddsMembershipFacts(t *testing.T) {
 	if !strings.Contains(body, "workspace.service_dir: `services/user-rpc`") {
 		t.Errorf("project-context.md missing workspace service dir")
 	}
-	if !strings.Contains(body, "run `ncgo ai sync --root ../..` for workspace-level context") {
+	if !strings.Contains(body, "run `ncgo ai sync --target all --root ../..` for workspace-level context") {
 		t.Errorf("project-context.md missing workspace-level sync note")
 	}
 	agents, _ := os.ReadFile(filepath.Join(serviceRoot, "AGENTS.md"))
@@ -531,7 +531,7 @@ func TestSyncWorkspaceWritesAllTargets(t *testing.T) {
 	if !strings.Contains(body, "dir `services/user-rpc`") || !strings.Contains(body, "dir `services/web-bff`") {
 		t.Errorf("project-context.md missing workspace service inventory")
 	}
-	if !strings.Contains(body, "run `ncgo ai sync --root services/<name>`") {
+	if !strings.Contains(body, "run `ncgo ai sync --target all --root services/<name>`") {
 		t.Errorf("project-context.md missing workspace-specific note")
 	}
 }
@@ -874,25 +874,40 @@ func TestRewriteDocLinks(t *testing.T) {
 	}
 }
 
-func TestSyncDefaultTargetIsClaude(t *testing.T) {
+func TestSyncDefaultTargetIsAllForService(t *testing.T) {
 	root := t.TempDir()
 	writeManifest(t, root, manifest.KindHertz)
 	res, err := Sync(Options{Root: root})
 	if err != nil {
 		t.Fatalf("Sync: %v", err)
 	}
-	if res.Target != TargetClaude {
-		t.Fatalf("Target = %q, want claude default", res.Target)
+	if res.Target != TargetAll {
+		t.Fatalf("Target = %q, want all default", res.Target)
 	}
-	want := []string{"CLAUDE.md", ".claude/skills/ncgo-dev/SKILL.md", ".claude/generated/project-context.md"}
+	want := []string{"AGENTS.md", "CLAUDE.md", ".claude/skills/ncgo-dev/SKILL.md", ".claude/generated/project-context.md", ".cursor/rules/ncgo.mdc"}
 	for _, p := range want {
 		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
 			t.Errorf("default sync should write %s: %v", p, err)
 		}
 	}
-	for _, p := range []string{"AGENTS.md", ".cursor/rules/ncgo.mdc"} {
-		if _, err := os.Stat(filepath.Join(root, p)); !os.IsNotExist(err) {
-			t.Errorf("default sync must NOT write %s", p)
+	if len(res.Written) < len(want) {
+		t.Fatalf("Written = %v, want at least all enabled context targets", res.Written)
+	}
+}
+
+func TestSyncDefaultTargetIsAllForWorkspace(t *testing.T) {
+	root := t.TempDir()
+	writeWorkspace(t, root)
+	res, err := Sync(Options{Root: root})
+	if err != nil {
+		t.Fatalf("Sync: %v", err)
+	}
+	if res.Target != TargetAll || res.Scope != "workspace" {
+		t.Fatalf("Target/Scope = %q/%q, want all/workspace", res.Target, res.Scope)
+	}
+	for _, p := range []string{"AGENTS.md", "CLAUDE.md", ".claude/skills/ncgo-dev/SKILL.md", ".claude/generated/project-context.md", ".cursor/rules/ncgo.mdc"} {
+		if _, err := os.Stat(filepath.Join(root, p)); err != nil {
+			t.Errorf("default workspace sync should write %s: %v", p, err)
 		}
 	}
 }
@@ -921,6 +936,46 @@ func TestSyncTargetAgentsOnly(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(root, "CLAUDE.md")); !os.IsNotExist(err) {
 		t.Errorf("target agents must not write CLAUDE.md")
+	}
+}
+
+func TestSyncExplicitTargetGroupsForServiceAndWorkspace(t *testing.T) {
+	groups := []struct {
+		target string
+		want   []string
+	}{
+		{target: TargetAgents, want: []string{"AGENTS.md"}},
+		{target: TargetClaude, want: []string{"CLAUDE.md", ".claude/skills/ncgo-dev/SKILL.md", ".claude/generated/project-context.md"}},
+		{target: TargetCursor, want: []string{".cursor/rules/ncgo.mdc"}},
+	}
+	all := []string{"AGENTS.md", "CLAUDE.md", ".claude/skills/ncgo-dev/SKILL.md", ".claude/generated/project-context.md", ".cursor/rules/ncgo.mdc"}
+	for _, scope := range []string{"service", "workspace"} {
+		for _, group := range groups {
+			t.Run(scope+"/"+group.target, func(t *testing.T) {
+				root := t.TempDir()
+				if scope == "service" {
+					writeManifest(t, root, manifest.KindHertz)
+				} else {
+					writeWorkspace(t, root)
+				}
+				if _, err := Sync(Options{Root: root, Target: group.target}); err != nil {
+					t.Fatalf("Sync: %v", err)
+				}
+				wanted := map[string]bool{}
+				for _, rel := range group.want {
+					wanted[rel] = true
+				}
+				for _, rel := range all {
+					_, err := os.Stat(filepath.Join(root, filepath.FromSlash(rel)))
+					if wanted[rel] && err != nil {
+						t.Errorf("target %s should write %s: %v", group.target, rel, err)
+					}
+					if !wanted[rel] && !os.IsNotExist(err) {
+						t.Errorf("target %s must not write %s", group.target, rel)
+					}
+				}
+			})
+		}
 	}
 }
 

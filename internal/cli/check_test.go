@@ -149,7 +149,7 @@ func TestRunCheckJSONOutput(t *testing.T) {
 	for _, c := range got.Checks {
 		found[c.ID] = true
 	}
-	for _, id := range []string{"check.anchor", "check.manifest.consistency", "check.context.stale"} {
+	for _, id := range []string{"check.anchor", "check.manifest.consistency", "check.context.missing"} {
 		if !found[id] {
 			t.Errorf("json missing check %s: %+v", id, got.Checks)
 		}

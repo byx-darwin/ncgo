@@ -4,9 +4,12 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 
+	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/postgenerate"
 )
 
@@ -174,5 +177,48 @@ func TestServeToolCallNewAutoStepArgs(t *testing.T) {
 	}
 	if _, ok := result["autoSteps"]; ok {
 		t.Fatalf("noGenerate should not surface autoSteps: %+v", result)
+	}
+}
+
+func TestServeToolCallNewDefaultsToAllAgentContextsWithoutGenerator(t *testing.T) {
+	allowAnyRootForTest(t)
+	for _, tc := range []struct {
+		name string
+		mode string
+	}{
+		{name: "mono", mode: manifest.ModeMono},
+		{name: "micro", mode: manifest.ModeMicro},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			dir := filepath.Join(t.TempDir(), "demo")
+			args := map[string]any{
+				"name": "demo", "module": "github.com/x/demo", "dir": dir,
+				"mode": tc.mode,
+			}
+			if tc.mode == manifest.ModeMono {
+				args["noGenerate"] = true
+			}
+			input := EncodeMessage(map[string]any{
+				"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+				"params": map[string]any{"name": "ncgo_new", "arguments": args},
+			})
+			var out bytes.Buffer
+			if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+				t.Fatalf("Serve: %v", err)
+			}
+			responses, err := DecodeResponses(out.Bytes())
+			if err != nil {
+				t.Fatalf("DecodeResponses: %v", err)
+			}
+			result := responses[0].Result.(map[string]any)
+			if result["isError"].(bool) {
+				t.Fatalf("new returned error: %s", resultText(result))
+			}
+			for _, rel := range []string{"AGENTS.md", "CLAUDE.md", ".claude/skills/ncgo-dev/SKILL.md", ".claude/generated/project-context.md", ".cursor/rules/ncgo.mdc"} {
+				if _, err := os.Stat(filepath.Join(dir, filepath.FromSlash(rel))); err != nil {
+					t.Errorf("default ncgo_new did not write %s: %v", rel, err)
+				}
+			}
+		})
 	}
 }

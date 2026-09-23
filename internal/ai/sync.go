@@ -52,7 +52,7 @@ const (
 type Options struct {
 	Root   string // service root with .ncgo/manifest.yaml or micro workspace root with ncgo.workspace
 	Lang   string // "en" (default) or "zh-CN"
-	Target string // target group to render; empty defaults to claude (all = every group)
+	Target string // target group to render; empty defaults to all enabled groups
 	Force  bool   // overwrite non-managed files
 	DryRun bool   // do not write; only report intended actions
 }
@@ -149,7 +149,7 @@ func Sync(opts Options) (*Result, error) {
 		opts.Lang = LangEN
 	}
 	if opts.Target == "" {
-		opts.Target = TargetClaude
+		opts.Target = TargetAll
 	}
 	if err := validateTarget(opts.Target); err != nil {
 		return nil, err
@@ -165,11 +165,7 @@ func Sync(opts Options) (*Result, error) {
 	if err != nil {
 		return nil, err
 	}
-	inputs := buildInputs(source, local, opts.Lang)
-	inputs.MethodsByDomain = methodsFromScan(opts.Root)
-	inputs.ErrorCodes = ErrorCodes(resolveProfile(source))
-	inputs.EditBoundaries = RenderBoundaries(EditBoundaries(source, opts.Root))
-	inputs.LocalNotes = local
+	inputs := renderInputsForSource(source, opts.Root, local, opts.Lang, methodsFromScan(opts.Root))
 	res := newSyncResult(source)
 	res.Target = opts.Target
 	for _, t := range targets() {
@@ -185,6 +181,18 @@ func Sync(opts Options) (*Result, error) {
 		return res, err
 	}
 	return res, nil
+}
+
+// renderInputsForSource is the single input assembly path shared by sync and
+// read-only context auditing. Keeping it centralized prevents a newly rendered
+// field from drifting away from what ncgo check considers current.
+func renderInputsForSource(source syncSource, root, local, lang string, methods map[string][]string) renderInputs {
+	inputs := buildInputs(source, local, lang)
+	inputs.MethodsByDomain = methods
+	inputs.ErrorCodes = ErrorCodes(resolveProfile(source))
+	inputs.EditBoundaries = RenderBoundaries(EditBoundaries(source, root))
+	inputs.LocalNotes = local
+	return inputs
 }
 
 // validateTarget reports whether the requested --target group is known.
@@ -315,7 +323,7 @@ func syncNotes(source syncSource) []string {
 	case syncScopeWorkspace:
 		return []string{
 			"detected micro workspace root; rendered workspace-level AI context from `ncgo.workspace`",
-			"for service-level context, run `ncgo ai sync --root services/<name>` inside a generated service directory",
+			"for service-level context, run `ncgo ai sync --target all --root services/<name>` inside a generated service directory",
 		}
 	case syncScopeService:
 		if source.ServiceWorkspace == nil {

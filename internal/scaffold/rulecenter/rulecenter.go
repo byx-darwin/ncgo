@@ -83,6 +83,7 @@ func Add(opts Options) (*Result, error) {
 		"go get google.golang.org/grpc",
 		"go mod tidy",
 		"make dev",
+		"ncgo ai sync --target all --root .",
 	}
 
 	return result, nil

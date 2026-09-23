@@ -2,33 +2,39 @@ package doctor
 
 import (
 	"fmt"
-	"os"
 	"path/filepath"
-	"strings"
 
+	"github.com/byx-darwin/ncgo/internal/ai"
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scan"
 )
 
 // RunCheck validates AI context integrity and manifest consistency for the
-// ncgo service rooted at root: it verifies that every usecase has paired
-// // ncgo:methods anchors, that manifest domains match internal/usecase/*/
-// directories, and that rendered AI context files' declared domains match
-// the manifest. It returns an error only when root is not an ncgo service
-// (e.g. missing or invalid manifest).
+// ncgo service or micro workspace rooted at root. Service checks verify
+// method anchors and manifest consistency; both scopes audit every enabled
+// Agent context target. It returns an error only when root is neither a valid
+// service nor a valid workspace.
 func RunCheck(root string) (*Report, error) {
-	m, err := manifest.Load(root)
+	rep := &Report{Root: root}
+	if _, manifestErr := manifest.Load(root); manifestErr == nil {
+		s, err := scan.Scan(root)
+		if err != nil {
+			return nil, err
+		}
+		rep.Scope = ScopeService
+		rep.Checks = append(rep.Checks, checkAnchors(s)...)
+		rep.Checks = append(rep.Checks, checkConsistency(s)...)
+	} else {
+		if _, workspaceErr := manifest.LoadWorkspace(root); workspaceErr != nil {
+			return nil, manifestErr
+		}
+		rep.Scope = ScopeWorkspace
+	}
+	contexts, err := ai.AuditContexts(root, "")
 	if err != nil {
 		return nil, err
 	}
-	s, err := scan.Scan(root)
-	if err != nil {
-		return nil, err
-	}
-	rep := &Report{Root: root, Scope: ScopeService}
-	rep.Checks = append(rep.Checks, checkAnchors(s)...)
-	rep.Checks = append(rep.Checks, checkConsistency(s)...)
-	rep.Checks = append(rep.Checks, checkContextStale(root, m)...)
+	rep.Checks = append(rep.Checks, contextChecks(root, contexts)...)
 	rep.Summary = Summarize(rep.Checks)
 	return rep, nil
 }
@@ -77,107 +83,37 @@ func checkConsistency(s *scan.ScanResult) []Check {
 	return out
 }
 
-// checkContextStale compares the domains declared in a rendered context file
-// (CLAUDE.md or AGENTS.md, whichever exists) against the current manifest. A
-// mismatch means the AI context is stale (a domain was added/removed without
-// re-running `ai sync`). Missing context files are skipped (not a failure).
-func checkContextStale(root string, m *manifest.Manifest) []Check {
-	path := ""
-	for _, rel := range contextFileTargets() {
-		if rel == ".claude/skills/ncgo-dev/SKILL.md" || rel == ".cursor/rules/ncgo.mdc" {
-			continue // SKILL.md / .mdc do not carry the domains fact line
+func contextChecks(root string, audits []ai.ContextAudit) []Check {
+	out := make([]Check, 0, len(audits))
+	syncHint := fmt.Sprintf("run `ncgo ai sync --target all --root %q`", root)
+	for _, audit := range audits {
+		path := filepath.Join(root, filepath.FromSlash(audit.Path))
+		check := Check{File: path, Severity: SeverityError}
+		switch audit.State {
+		case ai.ContextCurrent:
+			check.ID = "check.context.current"
+			check.OK = true
+			check.Message = fmt.Sprintf("%s context is current: %s", audit.Group, audit.Path)
+		case ai.ContextMissing:
+			check.ID = "check.context.missing"
+			check.Severity = SeverityWarn
+			check.Message = fmt.Sprintf("enabled %s context is missing: %s", audit.Group, audit.Path)
+			check.Hint = syncHint
+		case ai.ContextUnmanaged:
+			check.ID = "check.context.unmanaged"
+			check.Severity = SeverityWarn
+			check.Message = fmt.Sprintf("enabled %s path is user-owned and was not validated: %s", audit.Group, audit.Path)
+			check.Hint = fmt.Sprintf("preserve the file or explicitly replace it with `ncgo ai sync --target all --root %q --force`", root)
+		case ai.ContextUnsafe:
+			check.ID = "check.context.unsafe"
+			check.Message = fmt.Sprintf("enabled %s context path is unsafe: %s (%s)", audit.Group, audit.Path, audit.Reason)
+			check.Hint = "remove or retarget the escaping symlink, then " + syncHint
+		default:
+			check.ID = "check.context.stale"
+			check.Message = fmt.Sprintf("enabled %s context is stale: %s (%s)", audit.Group, audit.Path, audit.Reason)
+			check.Hint = syncHint
 		}
-		candidate := filepath.Join(root, rel)
-		if pathExists(candidate) {
-			path = candidate
-			break
-		}
+		out = append(out, check)
 	}
-	if path == "" {
-		return []Check{okContextCheck("no rendered context file present; nothing to compare")}
-	}
-	body, err := os.ReadFile(path)
-	if err != nil {
-		return []Check{{
-			ID: "check.context.stale", OK: false, Severity: SeverityError,
-			Message: fmt.Sprintf("read %s: %v", path, err), File: path,
-		}}
-	}
-	rendered := parseContextDomains(string(body))
-	if rendered == nil {
-		return []Check{okContextCheck("context file has no domains fact line")}
-	}
-	if !sameStringSet(rendered, m.Domains) {
-		return []Check{{
-			ID: "check.context.stale", OK: false, Severity: SeverityError,
-			Message: fmt.Sprintf("%s is stale: context declares domains %v, manifest has %v", filepath.Base(path), rendered, m.Domains),
-			File:    path,
-			Hint:    "run `ncgo ai sync --root .`",
-		}}
-	}
-	return []Check{okContextCheck("AI context domains match manifest")}
-}
-
-func okContextCheck(msg string) Check {
-	return Check{ID: "check.context.stale", OK: true, Severity: SeverityError, Message: msg}
-}
-
-// parseContextDomains extracts the domain list from a rendered context file's
-// "- domains: [a, b]" fact line. Returns nil when the line is absent.
-func parseContextDomains(content string) []string {
-	for _, line := range strings.Split(content, "\n") {
-		line = strings.TrimSpace(line)
-		if !strings.HasPrefix(line, "- domains: `[") {
-			continue
-		}
-		rest := strings.TrimPrefix(line, "- domains: `[")
-		rest = strings.TrimSuffix(rest, "]`")
-		if rest == "" {
-			return []string{}
-		}
-		parts := strings.Split(rest, ",")
-		out := make([]string, 0, len(parts))
-		for _, p := range parts {
-			if s := strings.TrimSpace(p); s != "" {
-				out = append(out, s)
-			}
-		}
-		return out
-	}
-	return nil
-}
-
-// sameStringSet reports whether two slices contain the same strings
-// (order-insensitive).
-func sameStringSet(a, b []string) bool {
-	if len(a) != len(b) {
-		return false
-	}
-	seen := make(map[string]int, len(a))
-	for _, s := range a {
-		seen[s]++
-	}
-	for _, s := range b {
-		seen[s]--
-		if seen[s] < 0 {
-			return false
-		}
-	}
-	return true
-}
-
-// contextFileTargets lists the context files ai sync renders and check audits.
-func contextFileTargets() []string {
-	return []string{
-		"AGENTS.md",
-		"CLAUDE.md",
-		".claude/skills/ncgo-dev/SKILL.md",
-		".claude/generated/project-context.md",
-		".cursor/rules/ncgo.mdc",
-	}
-}
-
-func pathExists(path string) bool {
-	_, err := os.Stat(path)
-	return err == nil
+	return out
 }

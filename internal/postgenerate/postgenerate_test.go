@@ -6,9 +6,11 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/byx-darwin/ncgo/internal/exec"
+	"github.com/byx-darwin/ncgo/internal/manifest"
 )
 
 func TestRun_NoAutoSteps(t *testing.T) {
@@ -32,15 +34,29 @@ func TestRun_NoAutoSteps(t *testing.T) {
 
 func TestRun_NoGenerate(t *testing.T) {
 	var buf bytes.Buffer
+	dir := t.TempDir()
+	if err := manifest.Save(dir, &manifest.Manifest{
+		Ncgo: manifest.Meta{Version: "test", AssetsVersion: "test"},
+		Mode: manifest.ModeMono, Module: "example.com/test",
+		Service: manifest.Service{Name: "test", Kind: manifest.KindHertz},
+	}); err != nil {
+		t.Fatalf("manifest.Save: %v", err)
+	}
 	opts := Options{
-		Dir:         t.TempDir(),
+		Dir:         dir,
 		RanGenerate: false,
 		Stdout:      &buf,
 	}
 	res := Run(opts)
-	for _, step := range res.Steps {
-		if step.Status != "skipped" {
-			t.Errorf("step %q: expected status 'skipped', got %q", step.Name, step.Status)
+	if len(res.Steps) != 2 || res.Steps[0].Name != "go mod tidy" || res.Steps[0].Status != "skipped" {
+		t.Fatalf("steps = %+v, want tidy skipped then AI sync", res.Steps)
+	}
+	if res.Steps[1].Name != "ai sync" || res.Steps[1].Status != "succeeded" || !strings.Contains(res.Steps[1].Detail, "--target all") {
+		t.Fatalf("AI sync step = %+v, want successful all-target sync", res.Steps[1])
+	}
+	for _, rel := range []string{"AGENTS.md", "CLAUDE.md", ".cursor/rules/ncgo.mdc"} {
+		if _, err := os.Stat(filepath.Join(dir, rel)); err != nil {
+			t.Errorf("no-generate auto sync did not write %s: %v", rel, err)
 		}
 	}
 }
@@ -128,7 +144,7 @@ module: example.com/test
 
 	opts := Options{
 		Dir:         dir,
-		AITarget:    "", // empty should default to "claude"
+		AITarget:    "", // empty should default to "all"
 		RanGenerate: true,
 		Runner:      &fakeRunner{success: true},
 		Stdout:      &buf,

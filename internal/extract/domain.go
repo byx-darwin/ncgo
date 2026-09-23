@@ -121,6 +121,8 @@ func ApplyDomain(opts DomainOptions) (*DomainPlan, error) {
 		"review copied files and keep only the domain code that belongs in the RPC service",
 		"wire RPC clients / handlers and update cross-service imports manually",
 		"run `go mod tidy` and tests in both source and target services",
+		"run `ncgo ai sync --target all --root .` for the source service",
+		"run `ncgo ai sync --target all --root " + filepath.ToSlash(plan.To) + "` for the target service",
 	}
 	for _, f := range plan.Sources {
 		dst := filepath.Join(plan.Root, filepath.FromSlash(f.To))

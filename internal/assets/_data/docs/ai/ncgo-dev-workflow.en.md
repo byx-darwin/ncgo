@@ -52,7 +52,7 @@ contract, so an AI agent can drive it directly.
    `internal/usecase/*/`, and rendered AI context is not stale. Exits `0` on
    pass, `1` on a failed check, `2` on a command error.
 
-10. **Refresh AI context** — `ncgo ai sync --root .`
+10. **Refresh every enabled Agent context** — `ncgo ai sync --target all --root .`
    Re-renders this project's AI artifacts (see below) so agent context
    reflects the new domain and methods. Re-run `ncgo check` after sync to
    confirm the stale-context check passes.
@@ -73,7 +73,7 @@ contract, so an AI agent can drive it directly.
 - [ ] the handler calls the usecase method (no repo/data import from handler)
 - [ ] `go build ./...` passes
 - [ ] `ncgo check --root .` exits 0
-- [ ] `ncgo ai sync --root .` completes and reports the managed files written
+- [ ] `ncgo ai sync --target all --root .` completes and reports every enabled managed file written
 - [ ] `ncgo check --root .` still exits 0 after sync
 
 ### Failure Handling
@@ -92,6 +92,6 @@ contract, so an AI agent can drive it directly.
 - `ncgo check` exits 1 on `check.manifest.consistency` — `manifest.Domains`
   drifted from `internal/usecase/*/`; run `ncgo add domain` or fix the manifest.
 - `ncgo check` exits 1 on `check.context.stale` — the rendered AI context's
-  declared domains differ from the manifest; run `ncgo ai sync --root .`.
+  managed content differs from current project facts; run `ncgo ai sync --target all --root .`.
 - `ncgo ai sync` refuses to overwrite — a file lacks the
   `<!-- ncgo:managed -->` marker; pass `--force` only if you own the file.

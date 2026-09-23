@@ -61,6 +61,12 @@ func TestAddNoGenerateCreatesHertzServiceAndUpdatesWorkspace(t *testing.T) {
 	if res.Module != "github.com/acme/commerce/services/web-bff" {
 		t.Errorf("Module = %q", res.Module)
 	}
+	steps := strings.Join(res.NextSteps, "\n")
+	for _, want := range []string{"ncgo ai sync --target all --root .", "ncgo ai sync --target all --root ../.."} {
+		if !strings.Contains(steps, want) {
+			t.Errorf("NextSteps missing %q:\n%s", want, steps)
+		}
+	}
 	for _, p := range []string{
 		".pre-commit-config.yaml",
 		".ncgo/manifest.yaml",
@@ -134,13 +140,19 @@ func TestAddSupportsModuleAndDirOverride(t *testing.T) {
 	root := seedWorkspace(t, nil)
 	opts := baseOpts(root)
 	opts.Module = "github.com/acme/web-bff"
-	opts.Dir = "apps/web-bff"
+	opts.Dir = "apps/platform/web-bff"
 	res, err := Add(context.Background(), opts)
 	if err != nil {
 		t.Fatalf("Add: %v", err)
 	}
-	if res.ServiceRel != "apps/web-bff" || res.Module != opts.Module {
+	if res.ServiceRel != "apps/platform/web-bff" || res.Module != opts.Module {
 		t.Errorf("result = %+v", res)
+	}
+	steps := strings.Join(res.NextSteps, "\n")
+	for _, want := range []string{"ncgo ai sync --target all --root .", "ncgo ai sync --target all --root ../../.."} {
+		if !strings.Contains(steps, want) {
+			t.Errorf("nested-dir NextSteps missing %q:\n%s", want, steps)
+		}
 	}
 	m, _ := manifest.Load(res.ServiceDir)
 	if m.Module != opts.Module {

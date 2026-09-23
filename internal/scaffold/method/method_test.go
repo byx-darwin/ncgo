@@ -41,7 +41,7 @@ func TestAddMethodResultHasNextSteps(t *testing.T) {
 		t.Fatalf("Result.NextSteps must not be empty")
 	}
 	joined := strings.Join(res.NextSteps, "\n")
-	if !strings.Contains(joined, "ncgo ai sync --root .") {
+	if !strings.Contains(joined, "ncgo ai sync --target all --root .") {
 		t.Fatalf("NextSteps missing ai sync hint:\n%s", joined)
 	}
 }

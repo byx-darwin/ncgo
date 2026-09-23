@@ -180,7 +180,7 @@ type newOptions struct {
 	ruleCenterAddr string // rule-center gRPC address (e.g., rule-center:8888)
 	templateDir    string // mono template package directory replacing embedded code templates and the IDL placeholder
 	templateName   string // mono template name from the registry cache (run `ncgo template pull` first)
-	aiTarget       string // AI sync target: claude (default) | all | agents | cursor | none
+	aiTarget       string // AI sync target: all (default) | agents | claude | cursor | none
 	noAutoSteps    bool   // skip automatic post-generation steps
 }
 
@@ -208,7 +208,7 @@ func newNewCmd() *cobra.Command {
 	f.StringVar(&opts.ruleCenterAddr, "rule-center-addr", "", "Rule-center gRPC address for rate-limit rule queries (e.g., localhost:8888)")
 	f.StringVar(&opts.templateDir, "template-dir", "", "Mono template package directory replacing embedded code templates and the IDL placeholder")
 	f.StringVar(&opts.templateName, "template", "", "Mono template name from the registry cache (run `ncgo template pull` first)")
-	f.StringVar(&opts.aiTarget, "ai-target", "claude", "AI sync target: claude | all | agents | cursor | none")
+	f.StringVar(&opts.aiTarget, "ai-target", "all", "AI sync target: all | agents | claude | cursor | none")
 	f.BoolVar(&opts.noAutoSteps, "no-auto-steps", false, "Skip automatic post-generation steps")
 	return cmd
 }
@@ -306,18 +306,15 @@ func runNewMono(cmd *cobra.Command, name string, opts *newOptions) error {
 		fmt.Fprintln(out, "(template package has no idl/; used built-in IDL placeholder)")
 	}
 	// Run auto post-generation steps
-	var pgResult *postgenerate.Result
-	if res.RanGenerate {
-		pgResult = postgenerate.Run(postgenerate.Options{
-			Dir:          res.Dir,
-			AITarget:     opts.aiTarget,
-			NoAutoSteps:  opts.noAutoSteps,
-			RanGenerate:  res.RanGenerate,
-			Stdout:       out,
-			Kind:         opts.kind,
-			WithDatabase: opts.db == "postgres",
-		})
-	}
+	pgResult := postgenerate.Run(postgenerate.Options{
+		Dir:          res.Dir,
+		AITarget:     opts.aiTarget,
+		NoAutoSteps:  opts.noAutoSteps,
+		RanGenerate:  res.RanGenerate,
+		Stdout:       out,
+		Kind:         opts.kind,
+		WithDatabase: opts.db == "postgres",
+	})
 	// Filter NextSteps: remove auto-executed steps
 	nextSteps := res.NextSteps
 	if pgResult != nil && !opts.noAutoSteps {
@@ -367,8 +364,19 @@ func runNewMicro(cmd *cobra.Command, name string, opts *newOptions) error {
 	}
 	out := cmd.OutOrStdout()
 	fmt.Fprintf(out, "scaffolded micro workspace %s at %s\n", name, res.Dir)
+	pgResult := postgenerate.Run(postgenerate.Options{
+		Dir:         res.Dir,
+		AITarget:    opts.aiTarget,
+		NoAutoSteps: opts.noAutoSteps,
+		RanGenerate: false,
+		Stdout:      out,
+	})
+	nextSteps := res.NextSteps
+	if !opts.noAutoSteps {
+		nextSteps = pgResult.FilterNextSteps(nextSteps)
+	}
 	fmt.Fprintln(out, "\nnext steps:")
-	for _, s := range res.NextSteps {
+	for _, s := range nextSteps {
 		fmt.Fprintf(out, "  - %s\n", s)
 	}
 	return nil

@@ -127,8 +127,9 @@ GEN_ROOT="$TMP_DIR/gen-check"
 grep -q 'all checks passed' "$TMP_DIR/gen-check.out"
 
 log "broken anchor fails ncgo check (negative)"
-# A fresh `ncgo new --no-generate` project writes no internal/usecase files,
-# so add one with paired anchors to the generated project before breaking it.
+# Add a domain with paired anchors, then refresh all enabled contexts before
+# breaking the anchor. This keeps the precondition genuinely healthy now that
+# ncgo check audits every managed Agent context for staleness.
 cat >>"$GEN_ROOT/.ncgo/manifest.yaml" <<'YAML'
 domains:
   - demo
@@ -145,6 +146,7 @@ GO
 USE_CASE=$(find "$GEN_ROOT/internal/usecase" -name '*.go' | head -1)
 test -n "$USE_CASE"
 grep -q 'ncgo:methods:start' "$USE_CASE"
+"$BIN" ai sync --target all --root "$GEN_ROOT" >/dev/null
 "$BIN" check --root "$GEN_ROOT" >/dev/null 2>&1 || { echo "healthy generated project failed ncgo check"; exit 1; }
 # Remove the start anchor (portable grep+mv; works on GNU and BSD sed hosts).
 grep -v 'ncgo:methods:start' "$USE_CASE" >"$USE_CASE.tmp" && mv "$USE_CASE.tmp" "$USE_CASE"

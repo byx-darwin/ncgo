@@ -20,8 +20,10 @@ ncgo ai init claude --preset minimal
 ncgo ai sync
 ```
 
-生成 `AGENTS.md`、`CLAUDE.md`、`.claude/generated/project-context.md`
-以及 Cursor rules。
+生成项目默认启用全部三个消费者分组。默认会渲染 `AGENTS.md`、`CLAUDE.md`、
+Claude skill 与 project context，以及 Cursor rules。仅在需要缩小单次刷新范围时使用
+`--target agents|claude|cursor`。`ncgo check --root .` 会逐一审计全部已启用文件：
+缺失或用户自有路径返回结构化 warning，过期的托管文件会令检查失败。
 
 ## 通过 MCP 暴露操作
 
@@ -52,6 +54,7 @@ ncgo mcp serve
 | `--lang string` | 设计文档语言：`en` \| `zh-CN`（默认 `"en"`） |
 | `--output string` | 输出格式：`text` 或 `json`（默认 `"text"`） |
 | `--root string` | 包含 `.ncgo/manifest.yaml` 的服务根目录，或包含 `ncgo.workspace` 的微服务工作区根目录（默认 `"."`） |
+| `--target string` | 目标分组：`all` \| `agents` \| `claude` \| `cursor`（默认 `all`） |
 | `-h, --help` | `sync` 帮助信息 |
 
 ## `ncgo mcp serve` flags

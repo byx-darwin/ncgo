@@ -117,15 +117,33 @@ func Add(ctx context.Context, opts Options) (*Result, error) {
 			return nil, err
 		}
 	}
+	workspaceRel, err := filepath.Rel(serviceDir, root)
+	if err != nil {
+		return nil, fmt.Errorf("rpc: relate service to workspace: %w", err)
+	}
+	next := append([]string(nil), monoRes.NextSteps...)
+	if !containsAISyncStep(next) {
+		next = append(next, "ncgo ai sync --target all --root .")
+	}
+	next = append(next, "ncgo ai sync --target all --root "+filepath.ToSlash(workspaceRel))
 	return &Result{
 		ServiceDir:  serviceDir,
 		ServiceRel:  serviceRel,
 		Module:      module,
-		NextSteps:   monoRes.NextSteps,
-		Plan:        buildPlan(serviceDir, opts.Name, updated, opts.NoGenerate, monoRes.NextSteps),
+		NextSteps:   next,
+		Plan:        buildPlan(serviceDir, opts.Name, updated, opts.NoGenerate, next),
 		Updated:     updated,
 		RanGenerate: monoRes.RanGenerate,
 	}, nil
+}
+
+func containsAISyncStep(steps []string) bool {
+	for _, step := range steps {
+		if strings.Contains(step, "ncgo ai sync") {
+			return true
+		}
+	}
+	return false
 }
 
 func validate(opts Options) error {

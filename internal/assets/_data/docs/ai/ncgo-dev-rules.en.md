@@ -9,6 +9,6 @@
 - Respect layer boundaries: handler → usecase → repository.
 - Run `make sqlc` before `go mod tidy` (Kitex always; Hertz only with database).
 - Add usecase methods via `ncgo add method <domain>.<Method>`, not by hand.
-- After changing manifest or generated code, run `ncgo ai sync --root .`.
+- After changing manifest or generated code, run `ncgo ai sync --target all --root .`.
 - Full workflow: see "Implementing a Feature with ncgo" in `AGENTS.md`.
 - Architecture reference: `docs/ncgo/<profile>/design-doc.en.md`.
