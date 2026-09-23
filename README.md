@@ -52,14 +52,14 @@ Use `ncgo` when you:
 
 ## Current Status
 
-The v0.5 MVP is complete:
+The v1 release line is available and actively maintained:
 
 - Mono scaffolds: Hertz HTTP service and Kitex RPC service.
 - Micro workspace: root `ncgo.workspace` plus `add rpc` / `add bff` services.
 - Domain workflow: `add domain` and anchor-based `add method`.
 - Optional infra: Redis, Kafka, Elasticsearch, ClickHouse, structured logging, canary release helpers, and Kitex-only Polaris registry.
 - AI/agent workflow: `ai init claude`, `ai sync`, static `doctor`, and MCP stdio server.
-- Lifecycle MVPs: metadata-only `upgrade --plan` and conservative `extract domain --apply`.
+- Lifecycle tooling: metadata upgrades and conservative `extract domain --apply`.
 
 Deferred optionals remain documented but intentionally not implemented yet:
 ~~NATS~~, ~~Mongo~~, and ~~MinIO~~ (formally removed per P0-5 decision — Kafka, Postgres, and ClickHouse cover equivalent use-cases).
@@ -743,7 +743,7 @@ wiring targets without modifying files. See `specs/007-observability-logging.zh-
 for examples.
 
 `release_canary` generates `internal/base/release/canary.go` plus a framework
-adapter (`hertz.go` or `kitex.go`). The MVP is an SDK-neutral helper for release
+adapter (`hertz.go` or `kitex.go`). The current implementation is an SDK-neutral helper for release
 metadata, traffic context, Hertz header extraction, Kitex metadata propagation,
 unified canary rules, Nacos/Polaris discovery instance models,
 `Discoverer`/`RuleProvider`/`Selector` abstractions, stable/canary pool
@@ -802,22 +802,11 @@ Kind auto-detection relies on generator marker files: `router.go` containing
 `ncgo new --no-generate` have no marker files yet, so import them with an
 explicit `--kind` flag (e.g. `ncgo import --root . --kind kitex`).
 
-`ncgo mcp serve` starts a stdio MCP server. It currently exposes
-`ncgo_version`, `ncgo_doctor`, `ncgo_check`, `ncgo_ai_init_claude`, `ncgo_ai_sync`,
-`ncgo_i18n_report`, `ncgo_i18n_check`, `ncgo_protolint`, `ncgo_add_infra`,
-`ncgo_add_method`, `ncgo_import`, and `ncgo_ai_context` tools. `ncgo_ai_context` scans real
-code and returns structured domains/methods/anchors/consistency for agents.
-`ncgo_check` mirrors `ncgo check` (read-only AI context/manifest validation).
-`ncgo_import` is always preview-only through MCP — it never writes
-`.ncgo/manifest.yaml`, unlike the CLI's `ncgo import`; run `ncgo import`
-locally to actually write the file.
-The `ncgo_ai_sync` tool accepts the same `target` values as the CLI
-(`all|agents|claude|cursor`, default `all`), and
-`ncgo_add_method` supports `output: json`.
-The MCP interface is now documented in a contract-first layout in
-[`docs/examples.md#0-mcp-contract-first-reference`](docs/examples.md#0-mcp-contract-first-reference): see `0. MCP contract-first reference`
-for each tool's inputs, supported `output` values, and stable top-level result
-fields before the workflow examples. In short, MCP tools keep
+`ncgo mcp serve` starts a stdio MCP server. The complete registered tool
+surface—inputs, output formats, stable fields, safety hints, side effects, and
+the CLI-to-MCP capability matrix—is generated from live metadata in the
+[`MCP Tool Reference`](docs/mcp-reference.md), so the README does not maintain
+a second tool inventory. MCP tools keep
 `content[0].text` as the display/export payload, expose the versioned
 `structuredContent` envelope (`ncgo.mcp.result/v1`) for agents, and retain
 legacy sibling fields during migration. Tool annotations disclose read-only,
@@ -848,7 +837,7 @@ but **warning-only runs keep `ok=true`**; CLI / MCP / doctor only fail when an
 `ncgo upgrade` updates ncgo/assets version metadata in `.ncgo/manifest.yaml` or
 `ncgo.workspace` (and listed micro service manifests). `--plan` prints a detailed
 read-only metadata plan for the root/workspace and service manifests; `--dry-run`
-keeps the older concise no-write output. The MVP does not rewrite generated
+keeps the older concise no-write output. The current command does not rewrite generated
 source files.
 
 `ncgo extract domain` emits a migration plan for mono-to-micro domain extraction.

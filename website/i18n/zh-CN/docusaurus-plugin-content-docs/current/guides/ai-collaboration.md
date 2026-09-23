@@ -31,8 +31,8 @@ Claude skill 与 project context，以及 Cursor rules。仅在需要缩小单�
 ncgo mcp serve
 ```
 
-启动一个 MCP stdio server，暴露 `ncgo_version`、`ncgo_doctor`、
-`ncgo_ai_sync` 等工具。
+启动 MCP stdio server。所有注册工具、输入 schema、输出格式、稳定字段、
+副作用、安全提示与 CLI↔MCP 能力矩阵见生成的 [MCP 工具参考](../reference/mcp.md)。
 
 每次调用都会保留面向人的 `content[0].text`，并通过带版本的
 `structuredContent` 信封（`ncgo.mcp.result/v1`）返回结果、数据、副作用、诊断、

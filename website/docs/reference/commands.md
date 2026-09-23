@@ -27,3 +27,6 @@ Top-level commands (from `ncgo --help`):
 
 For per-command flags, run `ncgo <command> --help`. See the
 [guides](../guides/new-service.md) for worked examples.
+
+For the generated CLI-to-MCP capability matrix, including intentionally
+CLI-only operations, see the [MCP Tool Reference](mcp.md).

@@ -28,6 +28,9 @@ jobs:
       - name: Download modules
         run: go mod download
 
+      - name: Verify generated MCP reference
+        run: go run ./internal/reference/cmd/generate --check
+
       - name: Install code-gen tools
         run: |
           sudo apt-get update

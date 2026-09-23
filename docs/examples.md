@@ -45,82 +45,12 @@ derived files. Registry list/pull refreshes or populates a git-backed cache, so
 the registry client cannot provide an offline, apply-free preview. These tools
 state the same limitation in their `tools/list` descriptions.
 
-### Tool contracts
+### Generated tool reference
 
-- `ncgo_version`
-  - inputs: none
-  - output: text
-  - stable result shape: version/build/assets summary in `content[0].text`
-- `ncgo_doctor`
-  - inputs: `root` (optional), `output=text|json|sarif`
-  - stable top-level fields: `root`, `scope`, `summary`, `checks`, `ok`
-- `ncgo_check`
-  - inputs: `root`, `output=text|json`
-  - stable top-level fields: `root`, `scope`, `summary`, `checks`, `ok`
-  - read-only; mirrors `ncgo check`'s exit-code semantics via `ok`/`isError`
-- `ncgo_ai_init_claude`
-  - inputs: `root`, optional `preset=minimal|team`, `force`, `dryRun`,
-    `output=text|json`
-  - stable top-level fields: `written`, `skipped`, optional `notes`,
-    optional `nextSteps`
-  - `content[0].text` is a human-readable summary for `output=text`, or JSON for `output=json`
-- `ncgo_ai_sync`
-  - inputs: `root`, `target=all|agents|claude|cursor` (default `all`),
-    `lang=en|zh-CN`, `force`, `dryRun`, `output=text|json`
-  - stable top-level fields: `target`, `written`, `skipped`, optional `notes`,
-    `scope`, `sourceRef`, and optional `workspace`
-  - `content[0].text` is a human-readable summary for `output=text`, or JSON for `output=json`
-- `ncgo_ai_context`
-  - inputs: `root`, `output=text|json`
-  - stable top-level fields: `root`, `domains`, `methods`, `anchors`, `issues`
-  - `content[0].text` is a human-readable scan summary for `output=text`, or the JSON payload for `output=json`
-- `ncgo_i18n_report`
-  - inputs: `root`, `output=text|json`
-  - stable top-level fields: `root`, `sourceLocale`, `localesDir`,
-    `statusPath`, `glossaryPath`, `reportPathJSON`, `reportPathMarkdown`,
-    `schema`, `report`, `nextSteps`
-- `ncgo_i18n_check`
-  - inputs: `root`, `mode=dev|release` (default `dev`), `output=text|json`
-  - stable top-level fields: `root`, `mode`, `ok`, `sourceLocale`, `schema`,
-    `summary`, `failures`, `warnings`, `nextSteps`
-- `ncgo_protolint`
-  - inputs: `root`, optional `files`, `rules`, `ignoreRules`, `ignoreFiles`,
-    `output=text|json|sarif`
-  - stable top-level fields: `root`, `files`, `rulesRun`, `ignoredRules`,
-    `ignoredFiles`, `ok`, `summary`, `diagnostics`
-- `ncgo_add_infra`
-  - inputs: `root`, `kind`, optional `force`, `wire`, `dryRun`,
-    `output=text|json`
-  - stable top-level fields: `dryRun`, `updated`, `writtenPath`,
-    `writtenPaths`, `wiredPaths`, `nextSteps`, `plan`
-- `ncgo_add_method`
-  - inputs: `root`, `spec=<domain>.<Method>`, `in=usecase`, optional `dryRun`,
-    `output=text|json`
-  - stable top-level fields: `path`, `domain`, `method`, `dryRun`, `nextSteps`
-  - `content[0].text` is an insertion summary for `output=text`, or the JSON
-    payload for `output=json`
-- `ncgo_add_rpc_method`
-  - inputs: `root`, `service`, `rpc`, optional `dryRun`, `output=text|json`
-  - stable top-level fields: `path`, `service`, `method`, `dryRun`, `nextSteps`
-  - dry-run still validates the generated handler signature and renders the
-    updated Go source, but does not write the usecase file
-- `ncgo_add_rule_center`
-  - inputs: `root`, `addr`, optional `force`, `dryRun`, `output=text|json`
-  - stable top-level fields: `dryRun`, `writtenPaths`, `nextSteps`
-- `ncgo_import`
-  - inputs: `root`, optional `kind=hertz|kitex` (auto-detected if omitted)
-  - stable top-level fields: `preview`, `module`, `mode`, `service`
-    (`service.name`, `service.kind`, `service.withDatabase`, `service.idl`)
-  - always preview-only: never writes `.ncgo/manifest.yaml`, even though the
-    CLI's `ncgo import` does; `content[0].text` is a YAML preview of the
-    manifest that would be written
-- `ncgo_new`
-  - inputs: `name`, `module`, optional `dir`, `mode`, `kind`, `db`,
-    `infra`, `noGenerate`, `preset`, `ruleCenterAddr`, `output=text|json`
-  - stable top-level fields: `dir`, `mode`, `nextSteps`, `ranGenerate`
-
-The workflow sections below reference these contracts instead of restating the
-same transport rules each time.
+The complete tool inventory, input schemas, output formats, stable fields,
+side effects, safety hints, and CLI-to-MCP capability matrix are generated from
+the live registrations in [MCP Tool Reference](mcp-reference.md). The workflow
+sections below link to that single source instead of maintaining another list.
 
 ### Minimal `tools/call` request skeletons
 

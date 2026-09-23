@@ -222,3 +222,35 @@ func TestServeToolCallNewDefaultsToAllAgentContextsWithoutGenerator(t *testing.T
 		})
 	}
 }
+
+func TestCallNewMonoUsesTemplateDir(t *testing.T) {
+	allowAnyRootForTest(t)
+	templateDir := t.TempDir()
+	kitexTemplates := filepath.Join(templateDir, "kitex-template")
+	if err := os.MkdirAll(kitexTemplates, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(kitexTemplates, "main_go.yaml"), []byte("path: main.go\nupdate_behavior:\n  type: cover\nbody: |\n  package main\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+	target := filepath.Join(t.TempDir(), "demo")
+	args, _ := json.Marshal(map[string]any{
+		"name": "demo", "module": "github.com/x/demo", "dir": target,
+		"kind": "kitex", "templateDir": templateDir, "noGenerate": true,
+		"aiTarget": "none", "noAutoSteps": true,
+	})
+	result, err := callNew(context.Background(), args, "test-version", "test-assets")
+	if err != nil {
+		t.Fatalf("callNew: %v", err)
+	}
+	if result["isError"].(bool) {
+		t.Fatalf("callNew returned error: %s", toolText(result))
+	}
+	entries, err := os.ReadDir(filepath.Join(target, "template", "kitex-template"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(entries) != 1 || entries[0].Name() != "main_go.yaml" {
+		t.Fatalf("mono template package was not used: %v", entries)
+	}
+}

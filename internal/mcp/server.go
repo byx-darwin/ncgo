@@ -51,12 +51,13 @@ type rpcError struct {
 }
 
 type tool struct {
-	Name         string          `json:"name"`
-	Description  string          `json:"description"`
-	InputSchema  map[string]any  `json:"inputSchema"`
-	OutputSchema map[string]any  `json:"outputSchema"`
-	Annotations  toolAnnotations `json:"annotations"`
-	Meta         map[string]any  `json:"_meta"`
+	Name         string           `json:"name"`
+	Description  string           `json:"description"`
+	InputSchema  map[string]any   `json:"inputSchema"`
+	OutputSchema map[string]any   `json:"outputSchema"`
+	Annotations  toolAnnotations  `json:"annotations"`
+	Meta         map[string]any   `json:"_meta"`
+	Reference    referenceDetails `json:"-"`
 }
 
 // toolAnnotations mirrors the standard MCP ToolAnnotations hints. Network

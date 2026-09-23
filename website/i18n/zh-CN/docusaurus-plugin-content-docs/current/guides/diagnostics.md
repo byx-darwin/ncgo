@@ -21,7 +21,7 @@ ncgo doctor
 ncgo upgrade --plan
 ```
 
-仅涉及元数据的 MVP：预览 manifest / assets 元数据更新，
+当前仅涉及元数据：预览 manifest / assets 元数据更新，
 不会重写生成的源码文件。
 
 ## 提取领域（mono → micro）

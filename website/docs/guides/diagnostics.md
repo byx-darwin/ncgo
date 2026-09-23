@@ -21,7 +21,7 @@ agents, CI, or code scanning tools.
 ncgo upgrade --plan
 ```
 
-Metadata-only MVP: previews manifest / assets metadata updates without
+Current metadata-only scope: previews manifest / assets metadata updates without
 rewriting generated source files.
 
 ## Extract domain (mono → micro)

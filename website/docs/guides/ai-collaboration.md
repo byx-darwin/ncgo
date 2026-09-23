@@ -32,8 +32,9 @@ user-owned paths are structured warnings and stale managed files fail the check.
 ncgo mcp serve
 ```
 
-Starts an MCP stdio server exposing tools such as `ncgo_version`,
-`ncgo_doctor`, and `ncgo_ai_sync`.
+Starts an MCP stdio server. See the generated [MCP Tool Reference](../reference/mcp.md)
+for every registered tool, input schema, output format, stable field, side
+effect, safety hint, and the CLI-to-MCP capability matrix.
 
 Every call keeps human-readable `content[0].text` and publishes a versioned
 `structuredContent` envelope (`ncgo.mcp.result/v1`) with outcome, data,

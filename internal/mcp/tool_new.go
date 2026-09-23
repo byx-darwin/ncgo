@@ -98,15 +98,14 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 		}
 		args.TemplateDir = safeTemplateDir
 	}
+	templateDir, err := registry.ResolveTemplateDir(args.Template, args.TemplateDir)
+	if err != nil {
+		return validationErrorResult("new template", err), nil
+	}
 	switch args.Mode {
 	case manifest.ModeMono:
-		res, err = runNewMono(ctx, args.Name, args.Module, dir, args.Kind, args.DB, args.Infra, args.NoGenerate, args.Preset, args.RuleCenterAddr, args.AITarget, args.NoAutoSteps, ncgoVersion, assetsVersion)
+		res, err = runNewMono(ctx, args.Name, args.Module, dir, args.Kind, args.DB, args.Infra, args.NoGenerate, args.Preset, args.RuleCenterAddr, templateDir, args.AITarget, args.NoAutoSteps, ncgoVersion, assetsVersion)
 	case manifest.ModeMicro:
-		var templateDir string
-		templateDir, err = registry.ResolveTemplateDir(args.Template, args.TemplateDir)
-		if err != nil {
-			return validationErrorResult("new template", err), nil
-		}
 		res, err = runNewMicro(args.Name, args.Module, dir, ncgoVersion, assetsVersion, templateDir, args.AITarget, args.NoAutoSteps)
 	default:
 		return invalidArgumentResult(fmt.Sprintf("mode %q is invalid (mono|micro)", args.Mode)), nil
@@ -125,7 +124,7 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 	return out, nil
 }
 
-func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra []string, noGenerate bool, preset, ruleCenterAddr, aiTarget string, noAutoSteps bool, ncgoVersion, assetsVersion string) (*newResult, error) {
+func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra []string, noGenerate bool, preset, ruleCenterAddr, templateDir, aiTarget string, noAutoSteps bool, ncgoVersion, assetsVersion string) (*newResult, error) {
 	if kind == "" {
 		kind = manifest.KindHertz
 	}
@@ -141,6 +140,7 @@ func runNewMono(ctx context.Context, name, module, dir, kind, db string, infra [
 		Infra:          infra,
 		Preset:         preset,
 		RuleCenterAddr: ruleCenterAddr,
+		TemplateDir:    templateDir,
 		AssetsVersion:  assetsVersion,
 		NCGOVersion:    ncgoVersion,
 		NoGenerate:     noGenerate,

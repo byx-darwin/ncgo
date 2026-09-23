@@ -37,67 +37,11 @@ ncgo mcp serve
 list/pull 会刷新或填充 git 缓存，registry client 没有离线、无落盘模式。对应
 `tools/list` 描述也会明确这些限制。
 
-### 各工具 contract
+### 生成式工具参考
 
-- `ncgo_version`
-  - 输入：无
-  - output：text
-  - 稳定结果形态：版本 / build / assets 摘要写在 `content[0].text`
-- `ncgo_doctor`
-  - 输入：`root`（可选）、`output=text|json|sarif`
-  - 稳定顶层字段：`root`、`scope`、`summary`、`checks`、`ok`
-- `ncgo_check`
-  - 输入：`root`，`output=text|json`
-  - 稳定顶层字段：`root`、`scope`、`summary`、`checks`、`ok`
-  - 只读；通过 `ok`/`isError` 对应 `ncgo check` 的退出码语义
-- `ncgo_ai_init_claude`
-  - 输入：`root`，以及可选的 `preset=minimal|team`、`force`、`dryRun`、`output=text|json`
-  - 稳定顶层字段：`written`、`skipped`，以及可选的 `notes`、`nextSteps`
-  - `content[0].text` 在 `output=text` 时返回人类可读摘要，在 `output=json` 时返回 JSON
-- `ncgo_ai_sync`
-  - 输入：`root`、`target=all|agents|claude|cursor`（默认 `all`）、
-    `lang=en|zh-CN`、`force`、`dryRun`、`output=text|json`
-  - 稳定顶层字段：`target`、`written`、`skipped`，以及可选的 `notes`、`scope`、`sourceRef`、`workspace`
-  - `content[0].text` 在 `output=text` 时返回人类可读摘要，在 `output=json` 时返回 JSON
-- `ncgo_ai_context`
-  - 输入：`root`、`output=text|json`
-  - 稳定顶层字段：`root`、`domains`、`methods`、`anchors`、`issues`
-  - `content[0].text` 在 `output=text` 时返回人类可读的扫描摘要，在 `output=json` 时返回 JSON payload
-- `ncgo_i18n_report`
-  - 输入：`root`、`output=text|json`
-  - 稳定顶层字段：`root`、`sourceLocale`、`localesDir`、`statusPath`、`glossaryPath`、`reportPathJSON`、`reportPathMarkdown`、`schema`、`report`、`nextSteps`
-- `ncgo_i18n_check`
-  - 输入：`root`、`mode=dev|release`（默认 `dev`）、`output=text|json`
-  - 稳定顶层字段：`root`、`mode`、`ok`、`sourceLocale`、`schema`、`summary`、`failures`、`warnings`、`nextSteps`
-- `ncgo_protolint`
-  - 输入：`root`，以及可选的 `files`、`rules`、`ignoreRules`、`ignoreFiles`、`output=text|json|sarif`
-  - 稳定顶层字段：`root`、`files`、`rulesRun`、`ignoredRules`、`ignoredFiles`、`ok`、`summary`、`diagnostics`
-- `ncgo_add_infra`
-  - 输入：`root`、`kind`，以及可选的 `force`、`wire`、`dryRun`、`output=text|json`
-  - 稳定顶层字段：`dryRun`、`updated`、`writtenPath`、`writtenPaths`、`wiredPaths`、`nextSteps`、`plan`
-- `ncgo_add_method`
-  - 输入：`root`、`spec=<domain>.<Method>`、`in=usecase`，可选 `dryRun`、`output=text|json`
-  - 稳定顶层字段：`path`、`domain`、`method`、`dryRun`、`nextSteps`
-  - `content[0].text` 在 `output=text` 时返回插入摘要，在 `output=json` 时返回 JSON
-- `ncgo_add_rpc_method`
-  - 输入：`root`、`service`、`rpc`，可选 `dryRun`、`output=text|json`
-  - 稳定顶层字段：`path`、`service`、`method`、`dryRun`、`nextSteps`
-  - dry-run 仍会校验生成 handler 的签名并渲染更新后的 Go 源码，但不会写入 usecase 文件
-- `ncgo_add_rule_center`
-  - 输入：`root`、`addr`，以及可选的 `force`、`dryRun`、`output=text|json`
-  - 稳定顶层字段：`dryRun`、`writtenPaths`、`nextSteps`
-- `ncgo_import`
-  - 输入：`root`，可选 `kind=hertz|kitex`（留空则自动检测）
-  - 稳定顶层字段：`preview`、`module`、`mode`、`service`
-    （`service.name`、`service.kind`、`service.withDatabase`、`service.idl`）
-  - 始终只预览：不会写入 `.ncgo/manifest.yaml`（CLI 的 `ncgo import` 会写入）；
-    `content[0].text` 是待写入 manifest 的 YAML 预览
-- `ncgo_new`
-  - 输入：`name`、`module`，以及可选的 `dir`、`mode`、`kind`、`db`、
-    `infra`、`noGenerate`、`preset`、`ruleCenterAddr`、`output=text|json`
-  - 稳定顶层字段：`dir`、`mode`、`nextSteps`、`ranGenerate`
-
-后面的 workflow 会直接引用这份 contract，不再在每个场景里重复解释同一套传输约定。
+完整工具清单、输入 schema、输出格式、稳定字段、副作用、安全提示与 CLI↔MCP
+能力矩阵都从实际注册信息生成，见 [MCP 工具参考](mcp-reference.zh-CN.md)。后面的
+workflow 只链接这一个权威来源，不再维护另一份手写清单。
 
 ### 最小 `tools/call` 请求骨架
 

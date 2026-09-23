@@ -27,3 +27,6 @@ title: 命令参考
 
 查看每个命令的 flag，请运行 `ncgo <command> --help`。
 完整示例请参见 [指南](../guides/new-service.md)。
+
+包含有意保留为 CLI-only 操作的生成式 CLI↔MCP 能力矩阵，见
+[MCP 工具参考](mcp.md)。
