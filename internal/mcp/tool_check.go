@@ -2,6 +2,7 @@ package mcp
 
 import (
 	"encoding/json"
+	"fmt"
 	"io"
 
 	"github.com/byx-darwin/ncgo/internal/doctor"
@@ -35,15 +36,15 @@ func callCheck(raw json.RawMessage) (map[string]any, error) {
 	args.Root = safeRoot
 	output, err := checkMCPTool.resolveOutput(args.Output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 	rep, err := runCheckReport(args.Root)
 	if err != nil {
-		return textResult("ncgo_check: "+err.Error(), true), nil
+		return validationErrorResult("check", fmt.Errorf("ncgo_check: %w", err)), nil
 	}
 	out, err := checkMCPTool.buildResult(rep, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("check output", err), nil
 	}
 	return out, nil
 }

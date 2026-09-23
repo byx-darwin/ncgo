@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
+	"path/filepath"
 
 	"github.com/byx-darwin/ncgo/internal/manifest"
 	"github.com/byx-darwin/ncgo/internal/scaffold/template"
@@ -29,7 +30,7 @@ func callExportTemplates(raw json.RawMessage) (map[string]any, error) {
 
 	m, err := manifest.Load(args.Root)
 	if err != nil {
-		return textResult(fmt.Sprintf("load manifest: %v", err), true), nil
+		return validationErrorResult("export templates", fmt.Errorf("load manifest: %v", err)), nil
 	}
 
 	kind := args.Kind
@@ -39,7 +40,11 @@ func callExportTemplates(raw json.RawMessage) (map[string]any, error) {
 	switch kind {
 	case manifest.KindHertz, manifest.KindKitex:
 	default:
-		return textResult(fmt.Sprintf("kind %q is invalid (hertz|kitex)", kind), true), nil
+		return invalidArgumentResult(fmt.Sprintf("kind %q is invalid (hertz|kitex)", kind)), nil
+	}
+	output, err := resolveMCPOutput("export_templates", args.Output, mcpOutputText, mcpOutputJSON)
+	if err != nil {
+		return invalidArgumentResult(err.Error()), nil
 	}
 
 	result, err := template.Export(template.ExportOptions{
@@ -49,12 +54,7 @@ func callExportTemplates(raw json.RawMessage) (map[string]any, error) {
 		ServiceName: m.Service.Name,
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
-	}
-
-	output, err := resolveMCPOutput("export_templates", args.Output, mcpOutputText, mcpOutputJSON)
-	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("export templates", err), nil
 	}
 
 	templates := result.Templates
@@ -70,6 +70,10 @@ func callExportTemplates(raw json.RawMessage) (map[string]any, error) {
 		"kind":      kind,
 		"templates": templates,
 		"idls":      idls,
+		"effects": []mcpEffect{{
+			Kind: "directory", Action: "write_derived_contents", Status: "applied", Path: filepath.Join(args.Root, "template"),
+			Detail: "exported templates and IDL snapshots",
+		}},
 	}
 
 	text, err := formatMCPOutput(output, map[string]outputWriter{
@@ -92,7 +96,7 @@ func callExportTemplates(raw json.RawMessage) (map[string]any, error) {
 		},
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("export templates output", err), nil
 	}
 
 	return buildMCPResult(text, false, fields), nil

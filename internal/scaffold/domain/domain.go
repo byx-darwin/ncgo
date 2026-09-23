@@ -102,6 +102,9 @@ func Add(opts Options) (*Result, error) {
 		wired = true
 	}
 	next := nextSteps(opts.Name, wired)
+	if opts.DryRun {
+		next = append([]string{"rerun without --dry-run to apply this domain plan"}, next...)
+	}
 	return &Result{
 		WrittenPaths: written,
 		NextSteps:    next,

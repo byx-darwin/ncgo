@@ -64,16 +64,73 @@ func TestFormatMCPOutput(t *testing.T) {
 }
 
 func TestBuildMCPResult(t *testing.T) {
-	result := buildMCPResult("hello", true, map[string]any{"ok": false, "count": 2})
-	if !result["isError"].(bool) {
-		t.Fatalf("isError = false, want true")
+	diagnostic := map[string]any{"severity": "warning", "code": "demo_warning", "message": "review me"}
+	result := buildMCPResult("hello", false, map[string]any{
+		"ok":          true,
+		"count":       2,
+		"diagnostics": []map[string]any{diagnostic},
+		"nextSteps":   []string{"continue"},
+	})
+	if result["isError"].(bool) {
+		t.Fatalf("isError = true, want false")
 	}
 	content := result["content"].([]map[string]string)
 	if len(content) != 1 || content[0]["text"] != "hello" {
 		t.Fatalf("content = %+v", content)
 	}
-	if result["ok"] != false || result["count"] != 2 {
-		t.Fatalf("fields = %+v", result)
+	if result["ok"] != true || result["count"] != 2 {
+		t.Fatalf("legacy fields = %+v", result)
+	}
+	envelope := result["structuredContent"].(map[string]any)
+	if envelope["schemaVersion"] != mcpResultSchemaVersion || envelope["ok"] != true || envelope["error"] != nil {
+		t.Fatalf("envelope header = %+v", envelope)
+	}
+	if envelope["data"].(map[string]any)["count"] != 2 {
+		t.Fatalf("envelope data = %+v", envelope["data"])
+	}
+	if got := envelope["diagnostics"].([]map[string]any); len(got) != 1 || got[0]["code"] != "demo_warning" {
+		t.Fatalf("envelope diagnostics = %+v", got)
+	}
+	if got := envelope["nextSteps"].([]string); len(got) != 1 || got[0] != "continue" {
+		t.Fatalf("envelope nextSteps = %+v", got)
+	}
+}
+
+func TestTextResultErrorEnvelope(t *testing.T) {
+	result := textResult("boom", true)
+	if !result["isError"].(bool) {
+		t.Fatalf("isError = false, want true")
+	}
+	content := result["content"].([]map[string]string)
+	if len(content) != 1 || content[0]["text"] != "boom" {
+		t.Fatalf("content = %+v", content)
+	}
+	envelope := result["structuredContent"].(map[string]any)
+	if envelope["ok"] != false {
+		t.Fatalf("ok = true, want false: %+v", envelope)
+	}
+	toolErr := envelope["error"].(mcpError)
+	if toolErr.Code != mcpInternalErrorCode || toolErr.Message != "boom" || toolErr.Retryable || toolErr.Remediation == "" {
+		t.Fatalf("error = %+v", toolErr)
+	}
+	for _, key := range []string{"effects", "diagnostics", "nextSteps"} {
+		if got := envelope[key].([]any); len(got) != 0 {
+			t.Fatalf("%s = %+v, want empty", key, got)
+		}
+	}
+}
+
+func TestErrorHelpersExposeStableRecoverySemantics(t *testing.T) {
+	invalid := invalidArgumentResult("bad input")
+	invalidErr := invalid["structuredContent"].(map[string]any)["error"].(mcpError)
+	if invalidErr.Code != mcpInvalidArgsCode || invalidErr.Retryable || !strings.Contains(invalidErr.Remediation, "inputSchema") {
+		t.Fatalf("invalid argument error = %+v", invalidErr)
+	}
+
+	network := networkErrorResult("template pull", errors.New("remote unavailable"))
+	networkErr := network["structuredContent"].(map[string]any)["error"].(mcpError)
+	if networkErr.Code != mcpNetworkErrorCode || !networkErr.Retryable || !strings.Contains(networkErr.Remediation, "network") {
+		t.Fatalf("network error = %+v", networkErr)
 	}
 }
 
@@ -102,5 +159,9 @@ func TestStructuredMCPToolBuildResult(t *testing.T) {
 	text := result["content"].([]map[string]string)[0]["text"]
 	if text != "json:xxx" {
 		t.Fatalf("text = %q, want json:xxx", text)
+	}
+	toolErr := result["structuredContent"].(map[string]any)["error"].(mcpError)
+	if toolErr.Code != "ncgo_demo_failed" || toolErr.Retryable || toolErr.Remediation == "" {
+		t.Fatalf("structured tool error = %+v", toolErr)
 	}
 }

@@ -163,6 +163,21 @@ func TestCallTemplatePullMissing(t *testing.T) {
 	if !strings.Contains(toolText(result), "not found in registry") {
 		t.Errorf("text missing 'not found in registry': %s", toolText(result))
 	}
+	toolErr := result["structuredContent"].(map[string]any)["error"].(mcpError)
+	if toolErr.Code != mcpNotFoundErrorCode || toolErr.Retryable {
+		t.Fatalf("error = %+v, want non-retryable resource-not-found", toolErr)
+	}
+}
+
+func TestCallTemplatePullRequiresNameBeforeRegistryAccess(t *testing.T) {
+	result, err := callTemplatePull(context.Background(), []byte(`{"registry":"/must/not/be/accessed"}`))
+	if err != nil {
+		t.Fatalf("callTemplatePull: %v", err)
+	}
+	toolErr := result["structuredContent"].(map[string]any)["error"].(mcpError)
+	if toolErr.Code != mcpInvalidArgsCode || toolErr.Message != "name is required" {
+		t.Fatalf("error = %+v, want invalid name before registry access", toolErr)
+	}
 }
 
 func TestCallTemplatePullFixture(t *testing.T) {

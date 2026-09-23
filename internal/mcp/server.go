@@ -51,9 +51,31 @@ type rpcError struct {
 }
 
 type tool struct {
-	Name        string         `json:"name"`
-	Description string         `json:"description"`
-	InputSchema map[string]any `json:"inputSchema"`
+	Name         string          `json:"name"`
+	Description  string          `json:"description"`
+	InputSchema  map[string]any  `json:"inputSchema"`
+	OutputSchema map[string]any  `json:"outputSchema"`
+	Annotations  toolAnnotations `json:"annotations"`
+	Meta         map[string]any  `json:"_meta"`
+}
+
+// toolAnnotations mirrors the standard MCP ToolAnnotations hints. Network
+// access is represented by openWorldHint; ncgo's external-process behavior is
+// additionally exposed in _meta because MCP has no standard hint for it.
+type toolAnnotations struct {
+	ReadOnlyHint    bool `json:"readOnlyHint"`
+	DestructiveHint bool `json:"destructiveHint"`
+	IdempotentHint  bool `json:"idempotentHint"`
+	OpenWorldHint   bool `json:"openWorldHint"`
+}
+
+type toolSafety struct {
+	ReadOnly        bool
+	Destructive     bool
+	Idempotent      bool
+	Network         bool
+	ExternalProcess bool
+	SupportsDryRun  bool
 }
 
 func (s *Server) Serve(ctx context.Context, in io.Reader, out io.Writer) error {

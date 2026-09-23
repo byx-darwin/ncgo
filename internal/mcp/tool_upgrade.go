@@ -32,12 +32,12 @@ func callUpgrade(raw json.RawMessage, ncgoVersion, assetsVersion string) (map[st
 		Plan:          true, // Always plan mode from MCP: read-only, never writes files.
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return validationErrorResult("upgrade plan", err), nil
 	}
 
 	output, err := resolveMCPOutput("upgrade", args.Output, mcpOutputText, mcpOutputJSON)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 
 	text, err := formatMCPOutput(output, map[string]outputWriter{
@@ -60,7 +60,7 @@ func callUpgrade(raw json.RawMessage, ncgoVersion, assetsVersion string) (map[st
 		},
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("upgrade output", err), nil
 	}
 
 	return buildMCPResult(text, false, buildUpgradePlan(res)), nil

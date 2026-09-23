@@ -27,7 +27,7 @@ func callAddBFF(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 		return nil, err
 	}
 	if args.Name == "" {
-		return textResult("name is required", true), nil
+		return invalidArgumentResult("name is required"), nil
 	}
 	if args.Root == "" {
 		args.Root = "."
@@ -50,15 +50,15 @@ func callAddBFF(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 
 	output, err := resolveMCPOutput("add_bff", args.Output, mcpOutputText, mcpOutputJSON)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 
 	templateDir, err := registry.ResolveTemplateDir(args.Template, args.TemplateDir)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return validationErrorResult("add bff template", err), nil
 	}
 	if args.Preset != "" && (args.Template != "" || args.TemplateDir != "") {
-		return textResult("--preset and --template/--templateDir are mutually exclusive", true), nil
+		return invalidArgumentResult("--preset and --template/--templateDir are mutually exclusive"), nil
 	}
 
 	res, err := bff.Add(ctx, bff.Options{
@@ -74,12 +74,12 @@ func callAddBFF(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 		TemplateDir:   templateDir,
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return classifiedOperationErrorResult("add bff", err), nil
 	}
 
 	out, err := addBFFMCPTool.buildResult(res, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("add bff output", err), nil
 	}
 	return out, nil
 }
@@ -110,7 +110,7 @@ var addBFFMCPTool = structuredMCPTool[*bff.Result]{
 			}
 			m["plan"] = planItems
 		}
-		return m
+		return withEffects(m, effectsFromPlan(res.Plan, res.DryRun))
 	},
 	isError: func(*bff.Result) bool { return false },
 }

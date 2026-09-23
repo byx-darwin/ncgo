@@ -79,6 +79,36 @@ type Entry struct {
 	Description string
 }
 
+// DependencyError reports a required local executable that is unavailable.
+type DependencyError struct {
+	Name string
+	Err  error
+}
+
+func (e *DependencyError) Error() string { return e.Name + " is required for registry access" }
+func (e *DependencyError) Unwrap() error { return e.Err }
+
+// UnavailableError reports a failure while contacting the remote registry.
+type UnavailableError struct {
+	URL string
+	Err error
+}
+
+func (e *UnavailableError) Error() string {
+	return fmt.Sprintf("registry unavailable (%s): %v", e.URL, e.Err)
+}
+func (e *UnavailableError) Unwrap() error { return e.Err }
+
+// TemplateNotFoundError reports a valid registry lookup with no matching package.
+type TemplateNotFoundError struct {
+	Name string
+	URL  string
+}
+
+func (e *TemplateNotFoundError) Error() string {
+	return fmt.Sprintf("template %q not found in registry %s (run: ncgo template list)", e.Name, e.URL)
+}
+
 // Client manages a local mirror of the template registry git repository.
 type Client struct {
 	URL    string
@@ -153,7 +183,7 @@ func (c *Client) Pull(ctx context.Context, name string) (string, error) {
 	}
 	dir := filepath.Join(root, name)
 	if _, err := os.Stat(filepath.Join(dir, "template.yaml")); err != nil {
-		return "", fmt.Errorf("template %q not found in registry %s (run: ncgo template list)", name, c.URL)
+		return "", &TemplateNotFoundError{Name: name, URL: c.URL}
 	}
 	return dir, nil
 }
@@ -188,7 +218,7 @@ func (c *Client) ensureCache(ctx context.Context) (string, error) {
 func (c *Client) wrapGitErr(err error) error {
 	var nf *ncgoexec.NotFoundError
 	if errors.As(err, &nf) {
-		return errors.New("git is required for registry access")
+		return &DependencyError{Name: "git", Err: err}
 	}
-	return fmt.Errorf("registry unavailable (%s): %v", c.URL, err)
+	return &UnavailableError{URL: c.URL, Err: err}
 }

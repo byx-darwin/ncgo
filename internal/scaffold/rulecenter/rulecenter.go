@@ -25,6 +25,7 @@ type Options struct {
 type Result struct {
 	DryRun       bool     `json:"dryRun"`
 	WrittenPaths []string `json:"writtenPaths"`
+	PlannedPaths []string `json:"plannedPaths,omitempty"`
 	NextSteps    []string `json:"nextSteps"`
 }
 
@@ -52,12 +53,14 @@ func Add(opts Options) (*Result, error) {
 	if err != nil {
 		return result, err
 	}
+	result.PlannedPaths = append(result.PlannedPaths, clientPath)
 	if !opts.DryRun {
 		result.WrittenPaths = append(result.WrittenPaths, clientPath)
 	}
 
 	// 2. Update conf/dev/conf.yaml to set source.type: rule_center
 	confPath := filepath.Join(opts.Root, "conf", "dev", "conf.yaml")
+	result.PlannedPaths = append(result.PlannedPaths, confPath)
 	if !opts.DryRun {
 		if err := updateConfForRuleCenter(confPath, opts.Addr); err != nil {
 			return result, fmt.Errorf("rule-center: update config: %w", err)
@@ -69,8 +72,15 @@ func Add(opts Options) (*Result, error) {
 	// kitex rate-limit middleware builds its own client lazily from cfg).
 	if m.Service.Kind == "hertz" {
 		serverPath := filepath.Join(opts.Root, "internal", "base", "server", "server.go")
-		if !opts.DryRun {
-			if _, err := os.Stat(serverPath); err == nil {
+		if _, err := os.Stat(serverPath); err == nil {
+			wouldChange, err := ruleCenterServerNeedsWiring(serverPath)
+			if err != nil {
+				return result, err
+			}
+			if wouldChange {
+				result.PlannedPaths = append(result.PlannedPaths, serverPath)
+			}
+			if !opts.DryRun && wouldChange {
 				if err := wireRuleCenterInServer(serverPath); err != nil {
 					return result, fmt.Errorf("rule-center: wire server.go: %w", err)
 				}
@@ -84,6 +94,9 @@ func Add(opts Options) (*Result, error) {
 		"go mod tidy",
 		"make dev",
 		"ncgo ai sync --target all --root .",
+	}
+	if opts.DryRun {
+		result.NextSteps = append([]string{"rerun without --dry-run to apply this rule-center plan"}, result.NextSteps...)
 	}
 
 	return result, nil
@@ -187,4 +200,13 @@ func wireRuleCenterInServer(path string) error {
 	content = content[:insertPos] + wiring + content[insertPos:]
 
 	return os.WriteFile(path, []byte(content), 0o644)
+}
+
+func ruleCenterServerNeedsWiring(path string) (bool, error) {
+	b, err := os.ReadFile(path)
+	if err != nil {
+		return false, fmt.Errorf("read server.go: %w", err)
+	}
+	content := string(b)
+	return !strings.Contains(content, "middleware.NewRuleCenterClient") && strings.Contains(content, "var rlOpts ratelimit.Options"), nil
 }

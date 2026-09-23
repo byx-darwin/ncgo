@@ -14,13 +14,13 @@ var addDomainMCPTool = structuredMCPTool[*domain.Result]{
 	supported: []string{mcpOutputText, mcpOutputJSON},
 	format:    formatMCPAddDomainOutput,
 	fields: func(res *domain.Result) map[string]any {
-		return map[string]any{
+		return withEffects(map[string]any{
 			"dryRun":       res.DryRun,
 			"updated":      res.Updated,
 			"writtenPaths": res.WrittenPaths,
 			"nextSteps":    res.NextSteps,
 			"plan":         res.Plan,
-		}
+		}, effectsFromPlan(res.Plan, res.DryRun))
 	},
 	isError: func(*domain.Result) bool { return false },
 }
@@ -37,7 +37,7 @@ func callAddDomain(raw json.RawMessage) (map[string]any, error) {
 		return nil, err
 	}
 	if args.Name == "" {
-		return textResult("name is required", true), nil
+		return invalidArgumentResult("name is required"), nil
 	}
 	if args.Root == "" {
 		args.Root = "."
@@ -50,7 +50,7 @@ func callAddDomain(raw json.RawMessage) (map[string]any, error) {
 
 	output, err := addDomainMCPTool.resolveOutput(args.Output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 	res, err := domain.Add(domain.Options{
 		Root:   args.Root,
@@ -59,11 +59,11 @@ func callAddDomain(raw json.RawMessage) (map[string]any, error) {
 		DryRun: args.DryRun,
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("add domain", err), nil
 	}
 	out, err := addDomainMCPTool.buildResult(res, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("add domain output", err), nil
 	}
 	return out, nil
 }

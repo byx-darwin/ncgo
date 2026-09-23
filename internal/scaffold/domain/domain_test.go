@@ -118,6 +118,9 @@ func TestAddDryRunPlansWithoutWriting(t *testing.T) {
 	if len(m.Domains) != 0 {
 		t.Fatalf("dry-run updated manifest domains = %v, want empty", m.Domains)
 	}
+	if len(res.NextSteps) == 0 || !strings.Contains(res.NextSteps[0], "without --dry-run") {
+		t.Fatalf("dry-run NextSteps = %v, want apply-first instruction", res.NextSteps)
+	}
 	if !planContains(res.Plan, "file", "create") || !planContains(res.Plan, "manifest", "add") || !planContains(res.Plan, "next_step", "run") {
 		t.Fatalf("plan missing expected items: %+v", res.Plan)
 	}

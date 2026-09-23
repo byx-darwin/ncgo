@@ -76,6 +76,70 @@ func TestAddUsecaseMethod(t *testing.T) {
 	}
 }
 
+func TestAddMethodDryRunValidatesAndDoesNotWrite(t *testing.T) {
+	root := seedDomainProject(t)
+	path := filepath.Join(root, "internal", "usecase", "device", "device.go")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read before dry-run: %v", err)
+	}
+
+	res, err := Add(Options{Root: root, Spec: "device.ListThemes", DryRun: true})
+	if err != nil {
+		t.Fatalf("Add dry-run: %v", err)
+	}
+	if !res.DryRun || res.Path != path || res.Domain != "device" || res.Method != "ListThemes" {
+		t.Fatalf("dry-run result = %+v", res)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read after dry-run: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("dry-run modified usecase file:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+	if strings.Contains(string(after), "func (u *UseCase) ListThemes(") {
+		t.Fatal("dry-run unexpectedly persisted ListThemes")
+	}
+}
+
+func TestAddMethodDryRunStillRejectsDuplicateAndInvalidSource(t *testing.T) {
+	t.Run("duplicate", func(t *testing.T) {
+		root := seedDomainProject(t)
+		if _, err := Add(Options{Root: root, Spec: "device.ListThemes"}); err != nil {
+			t.Fatalf("seed method: %v", err)
+		}
+		_, err := Add(Options{Root: root, Spec: "device.ListThemes", DryRun: true})
+		if err == nil || !strings.Contains(err.Error(), "already exists") {
+			t.Fatalf("dry-run duplicate error = %v", err)
+		}
+	})
+
+	t.Run("format", func(t *testing.T) {
+		root := seedDomainProject(t)
+		path := filepath.Join(root, "internal", "usecase", "device", "device.go")
+		before, err := os.ReadFile(path)
+		if err != nil {
+			t.Fatalf("read usecase: %v", err)
+		}
+		invalid := append(append([]byte(nil), before...), []byte("\nfunc broken(\n")...)
+		if err := os.WriteFile(path, invalid, 0o644); err != nil {
+			t.Fatalf("write invalid usecase: %v", err)
+		}
+		_, err = Add(Options{Root: root, Spec: "device.ListThemes", DryRun: true})
+		if err == nil || !strings.Contains(err.Error(), "format") {
+			t.Fatalf("dry-run format error = %v", err)
+		}
+		after, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read after dry-run: %v", readErr)
+		}
+		if string(after) != string(invalid) {
+			t.Fatal("failed dry-run modified invalid source")
+		}
+	})
+}
+
 func TestAddRejectsDuplicateMethod(t *testing.T) {
 	root := seedDomainProject(t)
 	if _, err := Add(Options{Root: root, Spec: "device.ListThemes"}); err != nil {

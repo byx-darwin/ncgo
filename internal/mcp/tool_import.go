@@ -44,12 +44,12 @@ func callImport(raw json.RawMessage, ncgoVersion, assetsVersion string) (map[str
 		AssetsVersion: assetsVersion,
 	})
 	if err != nil {
-		return textResult("ncgo_import: "+err.Error(), true), nil
+		return validationErrorResult("import preview", fmt.Errorf("ncgo_import: %w", err)), nil
 	}
 
 	b, err := yaml.Marshal(m)
 	if err != nil {
-		return textResult("ncgo_import: marshal preview: "+err.Error(), true), nil
+		return operationErrorResult("import preview", fmt.Errorf("ncgo_import: marshal preview: %w", err)), nil
 	}
 	text := fmt.Sprintf("Preview of generated manifest (MCP is always preview-only; run `ncgo import` locally to write it):\n\n%s", string(b))
 

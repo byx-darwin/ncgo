@@ -32,7 +32,7 @@ func callProtolint(ctx context.Context, raw json.RawMessage) (map[string]any, er
 		return nil, err
 	}
 	if strings.TrimSpace(args.Root) == "" {
-		return textResult("protolint: root is required", true), nil
+		return invalidArgumentResult("protolint: root is required"), nil
 	}
 	root, err := sandboxRoot(args.Root)
 	if err != nil {
@@ -50,16 +50,16 @@ func callProtolint(ctx context.Context, raw json.RawMessage) (map[string]any, er
 	}
 	output, err := protolintMCPTool.resolveOutput(args.Output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 	res, err := protolint.Run(ctx, protolint.RunOptions{Root: root, Files: args.Files, RuleIDs: args.Rules, IgnoreRuleIDs: args.IgnoreRules, IgnoreFiles: args.IgnoreFiles})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return validationErrorResult("protolint", err), nil
 	}
 	res.Root = root
 	out, err := protolintMCPTool.buildResult(res, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("protolint output", err), nil
 	}
 	return out, nil
 }

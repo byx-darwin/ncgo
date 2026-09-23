@@ -34,6 +34,11 @@ ncgo mcp serve
 启动一个 MCP stdio server，暴露 `ncgo_version`、`ncgo_doctor`、
 `ncgo_ai_sync` 等工具。
 
+每次调用都会保留面向人的 `content[0].text`，并通过带版本的
+`structuredContent` 信封（`ncgo.mcp.result/v1`）返回结果、数据、副作用、诊断、
+错误与下一步。Agent 在调用前还可从 `tools/list` 的标准注解与命名空间元数据中
+识别只读、破坏性、幂等、网络、外部进程和 dry-run 行为。
+
 Server 的当前工作目录就是文件系统边界。文件参数必须是相对路径；绝对路径、`..`、
 逃逸到工作区外的 symlink 与 dangling symlink 都会在读写前被拒绝。解析后仍位于
 工作区内的 symlink 可以使用；未创建目标会通过最近存在的父目录校验。

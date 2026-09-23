@@ -35,6 +35,12 @@ ncgo mcp serve
 Starts an MCP stdio server exposing tools such as `ncgo_version`,
 `ncgo_doctor`, and `ncgo_ai_sync`.
 
+Every call keeps human-readable `content[0].text` and publishes a versioned
+`structuredContent` envelope (`ncgo.mcp.result/v1`) with outcome, data,
+side-effects, diagnostics, errors, and next steps. `tools/list` annotations and
+namespaced metadata disclose read-only, destructive, idempotent, network,
+external-process, and dry-run behavior before an agent invokes a tool.
+
 The server's current working directory is the filesystem boundary. Filesystem
 arguments must be relative; absolute paths, `..`, symlink escapes, and dangling
 symlinks are rejected before reads or writes. Symlinks that resolve inside the

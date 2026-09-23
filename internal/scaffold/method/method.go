@@ -25,15 +25,17 @@ var (
 )
 
 type Options struct {
-	Root  string // project root containing .ncgo/manifest.yaml
-	Spec  string // <domain>.<Method>
-	Layer string // currently only "usecase"
+	Root   string // project root containing .ncgo/manifest.yaml
+	Spec   string // <domain>.<Method>
+	Layer  string // currently only "usecase"
+	DryRun bool   // validate and render without modifying the usecase file
 }
 
 type Result struct {
 	Path      string
 	Domain    string
 	Method    string
+	DryRun    bool
 	NextSteps []string // follow-up commands for the agent
 }
 
@@ -63,18 +65,29 @@ func Add(opts Options) (*Result, error) {
 		return nil, fmt.Errorf("method: domain %q is not listed in .ncgo/manifest.yaml", domain)
 	}
 	path := filepath.Join(root, "internal", "usecase", domain, domain+".go")
-	if err := insertUsecaseMethod(path, method); err != nil {
+	formatted, err := renderUsecaseFile(path, method)
+	if err != nil {
 		return nil, err
 	}
+	if !opts.DryRun {
+		if err := os.WriteFile(path, formatted, 0o644); err != nil {
+			return nil, fmt.Errorf("method: write %s: %w", path, err)
+		}
+	}
+	nextSteps := []string{
+		"go build ./...",
+		"replace the generated stub body with domain logic",
+		"ncgo ai sync --target all --root .",
+	}
+	if opts.DryRun {
+		nextSteps = append([]string{"repeat the add method request with dryRun=false to apply the stub"}, nextSteps...)
+	}
 	return &Result{
-		Path:   path,
-		Domain: domain,
-		Method: method,
-		NextSteps: []string{
-			"go build ./...",
-			"replace the generated stub body with domain logic",
-			"ncgo ai sync --target all --root .",
-		},
+		Path:      path,
+		Domain:    domain,
+		Method:    method,
+		DryRun:    opts.DryRun,
+		NextSteps: nextSteps,
 	}, nil
 }
 
@@ -102,31 +115,28 @@ func domainListed(m *manifest.Manifest, domain string) bool {
 	return false
 }
 
-func insertUsecaseMethod(path, method string) error {
+func renderUsecaseFile(path, method string) ([]byte, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("method: read %s: %w", path, err)
+		return nil, fmt.Errorf("method: read %s: %w", path, err)
 	}
 	src := string(body)
 	if strings.Contains(src, "func (u *UseCase) "+method+"(") {
-		return fmt.Errorf("method: %s already exists in %s", method, path)
+		return nil, fmt.Errorf("method: %s already exists in %s", method, path)
 	}
 	start := strings.Index(src, startMarker)
 	end := strings.Index(src, endMarker)
 	if start < 0 || end < 0 || end < start {
-		return fmt.Errorf("method: %s is missing %q/%q markers", path, startMarker, endMarker)
+		return nil, fmt.Errorf("method: %s is missing %q/%q markers", path, startMarker, endMarker)
 	}
 	insertAt := end
 	stub := renderUsecaseMethod(method)
 	updated := src[:insertAt] + stub + src[insertAt:]
 	formatted, err := format.Source([]byte(updated))
 	if err != nil {
-		return fmt.Errorf("method: format %s: %w", path, err)
+		return nil, fmt.Errorf("method: format %s: %w", path, err)
 	}
-	if err := os.WriteFile(path, formatted, 0o644); err != nil {
-		return fmt.Errorf("method: write %s: %w", path, err)
-	}
-	return nil
+	return formatted, nil
 }
 
 func renderUsecaseMethod(method string) string {

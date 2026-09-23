@@ -370,6 +370,7 @@ func TestServeToolCallAISyncIncludesStructuredFields(t *testing.T) {
 	if len(result["skipped"].([]any)) != 7 {
 		t.Fatalf("dry-run skipped = %+v, want 5 targets + 2 standalone docs", result["skipped"])
 	}
+	assertWireEffectsStatus(t, result, "planned", 7)
 	text := resultText(result)
 	if !strings.Contains(text, "info: detected parent micro workspace `../..` for this service root") {
 		t.Fatalf("text = %q", text)
@@ -1136,6 +1137,7 @@ func TestServeToolCallAddInfraDryRun(t *testing.T) {
 	if !mcpPlanContains(result["plan"].([]any), "manifest", "add") {
 		t.Fatalf("plan missing manifest add: %+v", result["plan"])
 	}
+	assertWireEffectsStatus(t, result, "planned", 2)
 	content := resultText(result)
 	for _, want := range []string{"would write ", "dry-run: manifest would be updated", "dry-run: no files were written"} {
 		if !strings.Contains(content, want) {
@@ -1564,6 +1566,10 @@ func TestServeToolCallNewMissingModule(t *testing.T) {
 	if !strings.Contains(resultText(result), "module is required") {
 		t.Fatalf("content = %q, want 'module is required'", resultText(result))
 	}
+	toolErr := result["structuredContent"].(map[string]any)["error"].(map[string]any)
+	if toolErr["code"] != mcpInvalidArgsCode || toolErr["retryable"] != false {
+		t.Fatalf("error = %+v, want stable invalid-arguments error", toolErr)
+	}
 }
 
 func TestServeToolCallAddDomain(t *testing.T) {
@@ -1594,6 +1600,7 @@ func TestServeToolCallAddDomain(t *testing.T) {
 	if got := len(result["writtenPaths"].([]any)); got != 3 {
 		t.Fatalf("writtenPaths len = %d, want 3", got)
 	}
+	assertWireEffectsStatus(t, result, "applied", 4)
 	content := resultText(result)
 	for _, want := range []string{"wrote ", "internal/usecase/device", "internal/repository/device", "internal/base/data/device_register"} {
 		if !strings.Contains(content, want) {
@@ -1624,6 +1631,7 @@ func TestServeToolCallAddDomainDryRun(t *testing.T) {
 	if !result["dryRun"].(bool) {
 		t.Fatalf("dryRun = false, want true")
 	}
+	assertWireEffectsStatus(t, result, "planned", 4)
 	content := resultText(result)
 	if !strings.Contains(content, "would write") {
 		t.Fatalf("content missing 'would write': %s", content)
@@ -1657,6 +1665,56 @@ func TestServeToolCallAddMethodJSON(t *testing.T) {
 		if _, ok := obj[k]; !ok {
 			t.Errorf("add method json missing %q: %v", k, obj)
 		}
+	}
+	if result["dryRun"].(bool) {
+		t.Fatalf("dryRun = true, want false")
+	}
+	effects := result["structuredContent"].(map[string]any)["effects"].([]any)
+	if len(effects) != 1 || effects[0].(map[string]any)["status"] != "applied" {
+		t.Fatalf("effects = %+v, want one applied write", effects)
+	}
+}
+
+func TestServeToolCallAddMethodDryRunDoesNotWrite(t *testing.T) {
+	allowAnyRootForTest(t)
+	root := seedMCPProject(t, manifest.KindHertz)
+	if _, err := domain.Add(domain.Options{Root: root, Name: "device"}); err != nil {
+		t.Fatalf("seed domain: %v", err)
+	}
+	path := filepath.Join(root, "internal", "usecase", "device", "device.go")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read before: %v", err)
+	}
+	input := EncodeMessage(map[string]any{
+		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
+		"params": map[string]any{"name": "ncgo_add_method", "arguments": map[string]any{"root": root, "spec": "device.Get", "dryRun": true}},
+	})
+	var out bytes.Buffer
+	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
+		t.Fatalf("Serve: %v", err)
+	}
+	responses, err := DecodeResponses(out.Bytes())
+	if err != nil {
+		t.Fatalf("DecodeResponses: %v", err)
+	}
+	result := responses[0].Result.(map[string]any)
+	if result["isError"].(bool) || !result["dryRun"].(bool) {
+		t.Fatalf("dry-run result = %+v", result)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read after: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatalf("dry-run modified %s", path)
+	}
+	if !strings.Contains(resultText(result), "would insert") {
+		t.Fatalf("content = %q, want preview wording", resultText(result))
+	}
+	effects := result["structuredContent"].(map[string]any)["effects"].([]any)
+	if len(effects) != 1 || effects[0].(map[string]any)["status"] != "planned" {
+		t.Fatalf("effects = %+v, want one planned write", effects)
 	}
 }
 
@@ -1698,9 +1756,13 @@ func (s *DemoServiceImpl) Ping(ctx context.Context, req *pb.PingReq) (resp *pb.P
 		t.Fatalf("write usecase fixture: %v", err)
 	}
 
+	before, err := os.ReadFile(usecasePath)
+	if err != nil {
+		t.Fatalf("read usecase before: %v", err)
+	}
 	input := EncodeMessage(map[string]any{
 		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": "ncgo_add_rpc_method", "arguments": map[string]any{"root": root, "service": "demo", "rpc": "Ping", "output": "json"}},
+		"params": map[string]any{"name": "ncgo_add_rpc_method", "arguments": map[string]any{"root": root, "service": "demo", "rpc": "Ping", "dryRun": true, "output": "json"}},
 	})
 	var out bytes.Buffer
 	if err := New("test-version", "test-assets").Serve(context.Background(), bytes.NewReader(input), &out); err != nil {
@@ -1720,6 +1782,20 @@ func (s *DemoServiceImpl) Ping(ctx context.Context, req *pb.PingReq) (resp *pb.P
 			t.Errorf("add rpc-method json missing %q: %v", k, obj)
 		}
 	}
+	if !result["dryRun"].(bool) || obj["dryRun"] != true {
+		t.Fatalf("dryRun metadata missing: result=%+v json=%+v", result, obj)
+	}
+	after, err := os.ReadFile(usecasePath)
+	if err != nil {
+		t.Fatalf("read usecase after: %v", err)
+	}
+	if !bytes.Equal(before, after) {
+		t.Fatalf("rpc-method dry-run modified %s", usecasePath)
+	}
+	effects := result["structuredContent"].(map[string]any)["effects"].([]any)
+	if len(effects) != 1 || effects[0].(map[string]any)["status"] != "planned" {
+		t.Fatalf("effects = %+v, want one planned write", effects)
+	}
 }
 
 // allowAnyRootForTest relaxes the workspace-boundary check that sandboxRoot
@@ -1732,4 +1808,24 @@ func allowAnyRootForTest(t *testing.T) {
 	orig := resolvePath
 	resolvePath = func(target string) (string, error) { return filepath.Abs(target) }
 	t.Cleanup(func() { resolvePath = orig })
+}
+
+func assertWireEffectsStatus(t *testing.T, result map[string]any, wantStatus string, minCount int) {
+	t.Helper()
+	envelope := result["structuredContent"].(map[string]any)
+	effects := envelope["effects"].([]any)
+	if len(effects) < minCount {
+		t.Fatalf("effects len = %d, want at least %d: %+v", len(effects), minCount, effects)
+	}
+	found := false
+	for _, raw := range effects {
+		effect := raw.(map[string]any)
+		if effect["status"] == wantStatus {
+			found = true
+			break
+		}
+	}
+	if !found {
+		t.Fatalf("effects = %+v, want status %q", effects, wantStatus)
+	}
 }

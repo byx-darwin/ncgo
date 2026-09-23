@@ -176,6 +176,30 @@ func TestAddAcceptsKitex(t *testing.T) {
 	}
 }
 
+func TestAddKitexDryRunDoesNotPlanServerWiring(t *testing.T) {
+	dir := t.TempDir()
+	makeKitexManifest(t, dir)
+	writeConfDev(t, dir)
+	serverPath := filepath.Join(dir, "internal", "base", "server", "server.go")
+	if err := os.MkdirAll(filepath.Dir(serverPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(serverPath, []byte("package server\n\nvar rlOpts ratelimit.Options\n"), 0o644); err != nil {
+		t.Fatal(err)
+	}
+
+	res, err := Add(Options{Root: dir, Addr: "rule-center:8888", DryRun: true})
+	if err != nil {
+		t.Fatalf("Add dry-run: %v", err)
+	}
+	if containsPath(res.PlannedPaths, serverPath) {
+		t.Fatalf("Kitex dry-run planned unsupported server wiring: %v", res.PlannedPaths)
+	}
+	if len(res.WrittenPaths) != 0 {
+		t.Fatalf("dry-run WrittenPaths = %v, want empty", res.WrittenPaths)
+	}
+}
+
 // containsPath reports whether path appears in paths (exact match).
 func containsPath(paths []string, path string) bool {
 	for _, p := range paths {
@@ -228,6 +252,9 @@ func TestWriteRuleCenterClientDryRun(t *testing.T) {
 	}
 	if len(res.WrittenPaths) != 0 {
 		t.Fatalf("expected no files written in dry-run, got %v", res.WrittenPaths)
+	}
+	if len(res.NextSteps) == 0 || !strings.Contains(res.NextSteps[0], "without --dry-run") {
+		t.Fatalf("dry-run NextSteps = %v, want apply-first instruction", res.NextSteps)
 	}
 
 	// Verify file was not actually created

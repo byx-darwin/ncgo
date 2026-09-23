@@ -1483,6 +1483,9 @@ func TestAddInfraRateLimitDryRunDoesNotWrite(t *testing.T) {
 	if !res.DryRun {
 		t.Errorf("DryRun = false, want true")
 	}
+	if len(res.NextSteps) == 0 || !strings.Contains(res.NextSteps[0], "without --dry-run") {
+		t.Fatalf("dry-run NextSteps = %v, want apply-first instruction", res.NextSteps)
+	}
 	// No files should have been written.
 	for _, p := range []string{
 		filepath.Join(root, "internal", "pkg", "ratelimit", "resolver.go"),
@@ -1509,6 +1512,14 @@ func TestAddInfraRateLimitDryRunDoesNotWrite(t *testing.T) {
 	// Plan should still report intended work.
 	if !planContains(res.Plan, "file", "create", filepath.Join(root, "internal", "pkg", "ratelimit", "resolver.go"), "") {
 		t.Errorf("Plan missing resolver.go create: %+v", res.Plan)
+	}
+	for _, path := range []string{
+		filepath.Join(root, "conf", "docker", "conf.yaml"),
+		filepath.Join(root, "compose.yaml"),
+	} {
+		if !planContains(res.Plan, "file", "update", path, "") {
+			t.Errorf("Plan missing derived container write %s: %+v", path, res.Plan)
+		}
 	}
 }
 

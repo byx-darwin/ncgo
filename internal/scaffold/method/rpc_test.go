@@ -208,6 +208,69 @@ func TestAddRPCHzAppendsSignature(t *testing.T) {
 	}
 }
 
+func TestAddRPCDryRunValidatesAndDoesNotWrite(t *testing.T) {
+	root := seedRPCProject(t, manifest.KindKitex,
+		"internal/handler/demo/handler.go", kitexHandlerFixture, minimalUsecaseGo)
+	path := filepath.Join(root, "internal", "usecase", "demo", "usecase.go")
+	before, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read before dry-run: %v", err)
+	}
+
+	res, err := AddRPC(RPCOptions{Root: root, Service: "demo", RPC: "Ping", DryRun: true})
+	if err != nil {
+		t.Fatalf("AddRPC dry-run: %v", err)
+	}
+	if !res.DryRun || res.Path != path || res.Service != "demo" || res.Method != "Ping" {
+		t.Fatalf("dry-run result = %+v", res)
+	}
+	after, err := os.ReadFile(path)
+	if err != nil {
+		t.Fatalf("read after dry-run: %v", err)
+	}
+	if string(after) != string(before) {
+		t.Fatalf("dry-run modified usecase file:\nbefore:\n%s\nafter:\n%s", before, after)
+	}
+	if strings.Contains(string(after), "func (uc *UseCase) Ping(") {
+		t.Fatal("dry-run unexpectedly persisted Ping")
+	}
+}
+
+func TestAddRPCDryRunStillRejectsDuplicateAndInvalidSource(t *testing.T) {
+	t.Run("duplicate", func(t *testing.T) {
+		root := seedRPCProject(t, manifest.KindKitex,
+			"internal/handler/demo/handler.go", kitexHandlerFixture, minimalUsecaseGo)
+		if _, err := AddRPC(RPCOptions{Root: root, Service: "demo", RPC: "Ping"}); err != nil {
+			t.Fatalf("seed RPC method: %v", err)
+		}
+		_, err := AddRPC(RPCOptions{Root: root, Service: "demo", RPC: "Ping", DryRun: true})
+		if err == nil || !strings.Contains(err.Error(), "already exists") {
+			t.Fatalf("dry-run duplicate error = %v", err)
+		}
+	})
+
+	t.Run("format", func(t *testing.T) {
+		root := seedRPCProject(t, manifest.KindKitex,
+			"internal/handler/demo/handler.go", kitexHandlerFixture, minimalUsecaseGo)
+		path := filepath.Join(root, "internal", "usecase", "demo", "usecase.go")
+		invalid := minimalUsecaseGo + "\nfunc broken(\n"
+		if err := os.WriteFile(path, []byte(invalid), 0o644); err != nil {
+			t.Fatalf("write invalid usecase: %v", err)
+		}
+		_, err := AddRPC(RPCOptions{Root: root, Service: "demo", RPC: "Ping", DryRun: true})
+		if err == nil || !strings.Contains(err.Error(), "format") {
+			t.Fatalf("dry-run format error = %v", err)
+		}
+		after, readErr := os.ReadFile(path)
+		if readErr != nil {
+			t.Fatalf("read after dry-run: %v", readErr)
+		}
+		if string(after) != invalid {
+			t.Fatal("failed dry-run modified invalid source")
+		}
+	})
+}
+
 func TestAddRPCRejectsServiceMismatch(t *testing.T) {
 	root := seedRPCProject(t, manifest.KindKitex,
 		"internal/handler/demo/handler.go", kitexHandlerFixture, minimalUsecaseGo)

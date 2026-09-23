@@ -31,7 +31,7 @@ var newMCPTool = structuredMCPTool[*newResult]{
 		if len(res.AutoSteps) > 0 {
 			out["autoSteps"] = res.AutoSteps
 		}
-		return out
+		return withEffects(out, newEffects(res))
 	},
 	isError: func(*newResult) bool { return false },
 }
@@ -67,10 +67,10 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 		return nil, err
 	}
 	if args.Module == "" {
-		return textResult("module is required (--module)", true), nil
+		return invalidArgumentResult("module is required (--module)"), nil
 	}
 	if args.Name == "" {
-		return textResult("name is required", true), nil
+		return invalidArgumentResult("name is required"), nil
 	}
 	if args.Mode == "" {
 		args.Mode = manifest.ModeMono
@@ -78,7 +78,7 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 
 	output, err := newMCPTool.resolveOutput(args.Output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 
 	var res *newResult
@@ -105,22 +105,22 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 		var templateDir string
 		templateDir, err = registry.ResolveTemplateDir(args.Template, args.TemplateDir)
 		if err != nil {
-			return textResult(err.Error(), true), nil
+			return validationErrorResult("new template", err), nil
 		}
 		res, err = runNewMicro(args.Name, args.Module, dir, ncgoVersion, assetsVersion, templateDir, args.AITarget, args.NoAutoSteps)
 	default:
-		return textResult(fmt.Sprintf("mode %q is invalid (mono|micro)", args.Mode), true), nil
+		return invalidArgumentResult(fmt.Sprintf("mode %q is invalid (mono|micro)", args.Mode)), nil
 	}
 	if err != nil {
 		var nf *exec.NotFoundError
 		if errors.As(err, &nf) {
-			return textResult(fmt.Sprintf("generator tool %q not found on PATH. Install: %s", nf.Name, exec.InstallHint(nf.Name)), true), nil
+			return dependencyErrorResult(fmt.Sprintf("generator tool %q not found on PATH. Install: %s", nf.Name, exec.InstallHint(nf.Name))), nil
 		}
-		return textResult(err.Error(), true), nil
+		return classifiedOperationErrorResult("new scaffold", err), nil
 	}
 	out, err := newMCPTool.buildResult(res, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("new output", err), nil
 	}
 	return out, nil
 }

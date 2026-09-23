@@ -19,7 +19,7 @@ func callExtractDomain(raw json.RawMessage) (map[string]any, error) {
 		return nil, err
 	}
 	if args.Name == "" {
-		return textResult("name is required", true), nil
+		return invalidArgumentResult("name is required"), nil
 	}
 	if args.Root == "" {
 		args.Root = "."
@@ -41,12 +41,12 @@ func callExtractDomain(raw json.RawMessage) (map[string]any, error) {
 		To:   args.To,
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return validationErrorResult("extract domain", err), nil
 	}
 
 	output, err := resolveMCPOutput("extract_domain", args.Output, mcpOutputText, mcpOutputJSON)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 
 	fields := extractDomainFields(plan)
@@ -70,7 +70,7 @@ func callExtractDomain(raw json.RawMessage) (map[string]any, error) {
 		},
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("extract domain output", err), nil
 	}
 
 	return buildMCPResult(text, false, fields), nil

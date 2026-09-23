@@ -20,7 +20,7 @@ func callAddRuleCenter(raw json.RawMessage) (map[string]any, error) {
 		return nil, err
 	}
 	if args.Addr == "" {
-		return textResult("addr is required", true), nil
+		return invalidArgumentResult("addr is required"), nil
 	}
 	safeRoot, err := sandboxRoot(args.Root)
 	if err != nil {
@@ -30,7 +30,7 @@ func callAddRuleCenter(raw json.RawMessage) (map[string]any, error) {
 
 	output, err := addRuleCenterMCPTool.resolveOutput(args.Output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 
 	res, err := rulecenter.Add(rulecenter.Options{
@@ -40,13 +40,22 @@ func callAddRuleCenter(raw json.RawMessage) (map[string]any, error) {
 		DryRun: args.DryRun,
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		result := operationErrorResult("add rule center", err)
+		if res != nil {
+			setResultEffects(result, fileEffects(res.WrittenPaths, false, "write"))
+		}
+		return result, nil
 	}
 
 	out, err := addRuleCenterMCPTool.buildResult(res, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("add rule center output", err), nil
 	}
+	paths := res.WrittenPaths
+	if res.DryRun {
+		paths = res.PlannedPaths
+	}
+	setResultEffects(out, fileEffects(paths, res.DryRun, "update"))
 	return out, nil
 }
 
@@ -58,6 +67,7 @@ var addRuleCenterMCPTool = structuredMCPTool[*rulecenter.Result]{
 		return map[string]any{
 			"dryRun":       res.DryRun,
 			"writtenPaths": res.WrittenPaths,
+			"plannedPaths": res.PlannedPaths,
 			"nextSteps":    res.NextSteps,
 		}
 	},
@@ -71,7 +81,11 @@ func formatMCPAddRuleCenterOutput(res *rulecenter.Result, output string) (string
 			if res.DryRun {
 				writeVerb = "would write"
 			}
-			for _, p := range res.WrittenPaths {
+			paths := res.WrittenPaths
+			if res.DryRun {
+				paths = res.PlannedPaths
+			}
+			for _, p := range paths {
 				if _, err := fmt.Fprintf(w, "%s %s\n", writeVerb, p); err != nil {
 					return err
 				}
@@ -89,10 +103,12 @@ func formatMCPAddRuleCenterOutput(res *rulecenter.Result, output string) (string
 			return json.NewEncoder(w).Encode(struct {
 				DryRun       bool     `json:"dryRun"`
 				WrittenPaths []string `json:"writtenPaths"`
+				PlannedPaths []string `json:"plannedPaths,omitempty"`
 				NextSteps    []string `json:"nextSteps"`
 			}{
 				DryRun:       res.DryRun,
 				WrittenPaths: res.WrittenPaths,
+				PlannedPaths: res.PlannedPaths,
 				NextSteps:    res.NextSteps,
 			})
 		},

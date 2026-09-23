@@ -15,12 +15,35 @@ ncgo mcp serve
 ### Common response contract
 
 - `content[0].text` is the human-readable or export-ready payload.
-- For structured tools, sibling top-level fields remain the stable machine-
-  readable payload for agents.
+- `structuredContent` is the versioned machine contract. Version
+  `ncgo.mcp.result/v1` always contains `schemaVersion`, `ok`, `data`, `effects`,
+  `diagnostics`, `error`, and `nextSteps`; empty collections are arrays or
+  objects rather than `null`.
+- `error` is `null` on success. On failure it contains a stable `code`, human
+  `message`, `retryable` flag, optional `path`, and actionable `remediation`.
+  Common codes distinguish invalid arguments, validation conflicts, missing
+  dependencies, network failures, external-process failures, sandbox escapes,
+  and tool-specific failed checks; agents do not need to classify message text.
+- Existing sibling top-level fields remain available for compatibility. New
+  clients should read `structuredContent`; old clients can migrate without a
+  flag day, and `content[0].text` is unchanged.
 - `output` defaults to `text`; some tools also support `json` or `sarif`.
 - `output` only changes `content[0].text`; it does not remove top-level fields.
 - `isError` follows the blocking status. For tools with `ok`, it mirrors
   `!ok`; warning-only lint or doctor runs therefore keep `isError=false`.
+- `tools/list` declares the standard `readOnlyHint`, `destructiveHint`,
+  `idempotentHint`, and `openWorldHint` annotations. Namespaced `_meta`
+  (`io.github.byx-darwin.ncgo/toolBehavior`) additionally declares network,
+  external-process, and dry-run behavior. Treat annotations as safety hints,
+  not authorization.
+
+For mutating calls that support `dryRun`, planned writes appear in `effects`
+with `status=planned`; applied calls use `status=applied`. `ncgo_new` cannot
+preview because its authoritative output depends on hz/kitex and post-generation
+commands. `ncgo_export_templates` is a write-through snapshot that may overwrite
+derived files. Registry list/pull refreshes or populates a git-backed cache, so
+the registry client cannot provide an offline, apply-free preview. These tools
+state the same limitation in their `tools/list` descriptions.
 
 ### Tool contracts
 
@@ -71,10 +94,16 @@ ncgo mcp serve
   - stable top-level fields: `dryRun`, `updated`, `writtenPath`,
     `writtenPaths`, `wiredPaths`, `nextSteps`, `plan`
 - `ncgo_add_method`
-  - inputs: `root`, `spec=<domain>.<Method>`, `in=usecase`, `output=text|json`
-  - stable top-level fields: `path`, `domain`, `method`, `nextSteps`
+  - inputs: `root`, `spec=<domain>.<Method>`, `in=usecase`, optional `dryRun`,
+    `output=text|json`
+  - stable top-level fields: `path`, `domain`, `method`, `dryRun`, `nextSteps`
   - `content[0].text` is an insertion summary for `output=text`, or the JSON
     payload for `output=json`
+- `ncgo_add_rpc_method`
+  - inputs: `root`, `service`, `rpc`, optional `dryRun`, `output=text|json`
+  - stable top-level fields: `path`, `service`, `method`, `dryRun`, `nextSteps`
+  - dry-run still validates the generated handler signature and renders the
+    updated Go source, but does not write the usecase file
 - `ncgo_add_rule_center`
   - inputs: `root`, `addr`, optional `force`, `dryRun`, `output=text|json`
   - stable top-level fields: `dryRun`, `writtenPaths`, `nextSteps`

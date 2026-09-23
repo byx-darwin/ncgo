@@ -215,6 +215,35 @@ func RefreshWorkspaceComposeForServiceRoot(root string) error {
 	return WriteWorkspaceCompose(workspaceRoot, w)
 }
 
+// WorkspaceContainerPathsForServiceRoot returns the parent workspace files
+// that RefreshWorkspaceComposeForServiceRoot would write. The root
+// .dockerignore is included only when a local replace makes the workspace root
+// a Docker build context and the file does not already exist.
+func WorkspaceContainerPathsForServiceRoot(root string) ([]string, error) {
+	workspaceRoot, w, _, err := findWorkspaceForServiceRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	if w == nil {
+		return nil, nil
+	}
+	paths := []string{filepath.Join(workspaceRoot, "compose.yaml")}
+	apps, err := loadWorkspaceComposeApps(workspaceRoot, w)
+	if err != nil {
+		return nil, err
+	}
+	for _, app := range apps {
+		if app.Context == "." {
+			dockerIgnore := filepath.Join(workspaceRoot, ".dockerignore")
+			if !pathExists(dockerIgnore) {
+				paths = append(paths, dockerIgnore)
+			}
+			break
+		}
+	}
+	return paths, nil
+}
+
 // ensureRootDockerIgnore writes <root>/.dockerignore with the same exclude
 // patterns as the per-service template, but only if the file does not
 // already exist — it never overwrites user content.

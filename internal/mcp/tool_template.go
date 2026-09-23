@@ -3,6 +3,7 @@ package mcp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 
@@ -20,16 +21,15 @@ func callTemplateList(ctx context.Context, raw json.RawMessage) (map[string]any,
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
+	output, err := resolveMCPOutput("template_list", args.Output, mcpOutputText, mcpOutputJSON)
+	if err != nil {
+		return invalidArgumentResult(err.Error()), nil
+	}
 
 	client := registry.NewClient(registry.ResolveURL(args.Registry), nil)
 	entries, err := client.List(ctx)
 	if err != nil {
-		return textResult(err.Error(), true), nil
-	}
-
-	output, err := resolveMCPOutput("template_list", args.Output, mcpOutputText, mcpOutputJSON)
-	if err != nil {
-		return textResult(err.Error(), true), nil
+		return registryErrorResult("template list", err), nil
 	}
 
 	templates := make([]map[string]any, 0, len(entries))
@@ -40,7 +40,13 @@ func callTemplateList(ctx context.Context, raw json.RawMessage) (map[string]any,
 			"description": e.Description,
 		})
 	}
-	fields := map[string]any{"templates": templates}
+	fields := map[string]any{
+		"templates": templates,
+		"effects": []mcpEffect{
+			{Kind: "network", Action: "fetch_registry", Status: "applied"},
+			{Kind: "cache", Action: "refresh", Status: "applied"},
+		},
+	}
 
 	text, err := formatMCPOutput(output, map[string]outputWriter{
 		mcpOutputText: func(w io.Writer) error {
@@ -58,7 +64,7 @@ func callTemplateList(ctx context.Context, raw json.RawMessage) (map[string]any,
 		},
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("template list output", err), nil
 	}
 
 	return buildMCPResult(text, false, fields), nil
@@ -76,19 +82,36 @@ func callTemplatePull(ctx context.Context, raw json.RawMessage) (map[string]any,
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
+	if args.Name == "" {
+		return invalidArgumentResult("name is required"), nil
+	}
+	output, err := resolveMCPOutput("template_pull", args.Output, mcpOutputText, mcpOutputJSON)
+	if err != nil {
+		return invalidArgumentResult(err.Error()), nil
+	}
 
 	client := registry.NewClient(registry.ResolveURL(args.Registry), nil)
 	dir, err := client.Pull(ctx, args.Name)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		result := registryErrorResult("template pull", err)
+		var notFound *registry.TemplateNotFoundError
+		if errors.As(err, &notFound) {
+			setResultEffects(result, []mcpEffect{
+				{Kind: "network", Action: "fetch_template", Status: "applied", Detail: args.Name},
+				{Kind: "cache", Action: "refresh", Status: "applied"},
+			})
+		}
+		return result, nil
 	}
 
-	output, err := resolveMCPOutput("template_pull", args.Output, mcpOutputText, mcpOutputJSON)
-	if err != nil {
-		return textResult(err.Error(), true), nil
+	fields := map[string]any{
+		"name": args.Name,
+		"dir":  dir,
+		"effects": []mcpEffect{
+			{Kind: "network", Action: "fetch_template", Status: "applied", Detail: args.Name},
+			{Kind: "cache", Action: "update", Status: "applied", Path: dir},
+		},
 	}
-
-	fields := map[string]any{"name": args.Name, "dir": dir}
 
 	text, err := formatMCPOutput(output, map[string]outputWriter{
 		mcpOutputText: func(w io.Writer) error {
@@ -100,8 +123,24 @@ func callTemplatePull(ctx context.Context, raw json.RawMessage) (map[string]any,
 		},
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("template pull output", err), nil
 	}
 
 	return buildMCPResult(text, false, fields), nil
+}
+
+func registryErrorResult(operation string, err error) map[string]any {
+	var dependency *registry.DependencyError
+	if errors.As(err, &dependency) {
+		return dependencyErrorResult(err.Error())
+	}
+	var notFound *registry.TemplateNotFoundError
+	if errors.As(err, &notFound) {
+		return resourceNotFoundResult(err.Error())
+	}
+	var unavailable *registry.UnavailableError
+	if errors.As(err, &unavailable) {
+		return networkErrorResult(operation, err)
+	}
+	return operationErrorResult(operation, err)
 }

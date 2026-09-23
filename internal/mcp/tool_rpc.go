@@ -27,7 +27,7 @@ func callAddRPC(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 		return nil, err
 	}
 	if args.Name == "" {
-		return textResult("name is required", true), nil
+		return invalidArgumentResult("name is required"), nil
 	}
 	if args.Root == "" {
 		args.Root = "."
@@ -50,15 +50,15 @@ func callAddRPC(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 
 	output, err := resolveMCPOutput("add_rpc", args.Output, mcpOutputText, mcpOutputJSON)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 
 	templateDir, err := registry.ResolveTemplateDir(args.Template, args.TemplateDir)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return validationErrorResult("add rpc template", err), nil
 	}
 	if args.Preset != "" && (args.Template != "" || args.TemplateDir != "") {
-		return textResult("--preset and --template/--templateDir are mutually exclusive", true), nil
+		return invalidArgumentResult("--preset and --template/--templateDir are mutually exclusive"), nil
 	}
 
 	res, err := rpc.Add(ctx, rpc.Options{
@@ -74,12 +74,12 @@ func callAddRPC(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 		TemplateDir:   templateDir,
 	})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return classifiedOperationErrorResult("add rpc", err), nil
 	}
 
 	out, err := addRPCMCPTool.buildResult(res, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("add rpc output", err), nil
 	}
 	return out, nil
 }
@@ -110,7 +110,7 @@ var addRPCMCPTool = structuredMCPTool[*rpc.Result]{
 			}
 			m["plan"] = planItems
 		}
-		return m
+		return withEffects(m, effectsFromPlan(res.Plan, res.DryRun))
 	},
 	isError: func(*rpc.Result) bool { return false },
 }

@@ -256,9 +256,12 @@ func sandboxChild(root, target string) (string, error) {
 
 func sandboxErrorResult(err error) map[string]any {
 	result := textResult(err.Error(), true)
-	result["error"] = map[string]any{
-		"code":    sandboxErrorCode,
-		"message": err.Error(),
+	toolErr := mcpError{
+		Code:        sandboxErrorCode,
+		Message:     err.Error(),
+		Retryable:   false,
+		Remediation: "Choose a path inside the MCP workspace and retry.",
 	}
+	setResultError(result, toolErr) // also preserves the legacy #130 top-level field
 	return result
 }

@@ -23,15 +23,15 @@ func callAIContext(raw json.RawMessage) (map[string]any, error) {
 	args.Root = safeRoot
 	s, err := scan.Scan(args.Root)
 	if err != nil {
-		return textResult("ncgo_ai_context: "+err.Error(), true), nil
+		return validationErrorResult("ai context", fmt.Errorf("ncgo_ai_context: %w", err)), nil
 	}
 	output, err := resolveMCPOutput("ai_context", args.Output, mcpOutputText, mcpOutputJSON)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 	text, err := formatAIContext(s, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("ai context result", err), nil
 	}
 	return buildMCPResult(text, false, mcpAIContextFields(s)), nil
 }

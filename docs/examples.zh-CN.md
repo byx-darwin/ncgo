@@ -14,10 +14,28 @@ ncgo mcp serve
 ### 通用返回约定
 
 - `content[0].text` 是面向人类阅读或直接转存的载荷。
-- 对结构化工具来说，同级顶层字段是给 Agent 稳定消费的 machine-readable payload。
+- `structuredContent` 是带版本的机器契约。`ncgo.mcp.result/v1` 始终包含
+  `schemaVersion`、`ok`、`data`、`effects`、`diagnostics`、`error`、`nextSteps`；
+  空集合使用数组或对象，而不是 `null`。
+- 成功时 `error` 为 `null`；失败时包含稳定的 `code`、面向人的 `message`、
+  `retryable`、可选 `path` 与可执行的 `remediation`。
+  常用错误码会区分参数无效、校验冲突、依赖缺失、网络失败、外部进程失败、
+  沙箱越界和具体工具检查失败；Agent 无需再解析 message 来分类。
+- 为兼容旧客户端，原有同级顶层字段继续保留。新客户端应读取
+  `structuredContent`；旧客户端可以渐进迁移，`content[0].text` 不变。
 - `output` 默认是 `text`；部分工具还支持 `json` 或 `sarif`。
 - `output` 只影响 `content[0].text` 的格式，不会移除顶层字段。
 - `isError` 跟随阻断状态。对带 `ok` 的工具来说，它等价于 `!ok`；因此 warning-only 的 lint / doctor 场景会保持 `isError=false`。
+- `tools/list` 会声明标准的 `readOnlyHint`、`destructiveHint`、
+  `idempotentHint`、`openWorldHint`。命名空间 `_meta`
+  （`io.github.byx-darwin.ncgo/toolBehavior`）还会声明网络、外部进程与
+  dry-run 行为。注解是安全提示，不是授权。
+
+支持 `dryRun` 的修改类调用会在 `effects` 中以 `status=planned` 返回计划写入，
+真正执行后为 `status=applied`。`ncgo_new` 的权威输出依赖 hz/kitex 与生成后命令，
+无法只渲染预览；`ncgo_export_templates` 是可能覆盖派生文件的直写快照；registry
+list/pull 会刷新或填充 git 缓存，registry client 没有离线、无落盘模式。对应
+`tools/list` 描述也会明确这些限制。
 
 ### 各工具 contract
 
@@ -58,9 +76,13 @@ ncgo mcp serve
   - 输入：`root`、`kind`，以及可选的 `force`、`wire`、`dryRun`、`output=text|json`
   - 稳定顶层字段：`dryRun`、`updated`、`writtenPath`、`writtenPaths`、`wiredPaths`、`nextSteps`、`plan`
 - `ncgo_add_method`
-  - 输入：`root`、`spec=<domain>.<Method>`、`in=usecase`、`output=text|json`
-  - 稳定顶层字段：`path`、`domain`、`method`、`nextSteps`
+  - 输入：`root`、`spec=<domain>.<Method>`、`in=usecase`，可选 `dryRun`、`output=text|json`
+  - 稳定顶层字段：`path`、`domain`、`method`、`dryRun`、`nextSteps`
   - `content[0].text` 在 `output=text` 时返回插入摘要，在 `output=json` 时返回 JSON
+- `ncgo_add_rpc_method`
+  - 输入：`root`、`service`、`rpc`，可选 `dryRun`、`output=text|json`
+  - 稳定顶层字段：`path`、`service`、`method`、`dryRun`、`nextSteps`
+  - dry-run 仍会校验生成 handler 的签名并渲染更新后的 Go 源码，但不会写入 usecase 文件
 - `ncgo_add_rule_center`
   - 输入：`root`、`addr`，以及可选的 `force`、`dryRun`、`output=text|json`
   - 稳定顶层字段：`dryRun`、`writtenPaths`、`nextSteps`

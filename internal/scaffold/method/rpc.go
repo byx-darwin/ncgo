@@ -23,6 +23,7 @@ type RPCOptions struct {
 	Root    string // project root containing .ncgo/manifest.yaml
 	Service string // must match manifest.Service.Name
 	RPC     string // method name; must already exist in the generated handler
+	DryRun  bool   // validate and render without modifying the usecase file
 }
 
 // RPCResult describes the outcome of AddRPC.
@@ -30,6 +31,7 @@ type RPCResult struct {
 	Path      string
 	Service   string
 	Method    string
+	DryRun    bool
 	NextSteps []string
 }
 
@@ -89,19 +91,30 @@ func AddRPC(opts RPCOptions) (*RPCResult, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := appendUsecaseMethod(usecasePath, m.Service.Name, opts.RPC, *sig); err != nil {
+	formatted, err := renderRPCUsecaseFile(usecasePath, m.Service.Name, opts.RPC, *sig)
+	if err != nil {
 		return nil, err
 	}
+	if !opts.DryRun {
+		if err := os.WriteFile(usecasePath, formatted, 0o644); err != nil {
+			return nil, fmt.Errorf("method: write %s: %w", usecasePath, err)
+		}
+	}
 
+	nextSteps := []string{
+		"go build ./...",
+		"replace the generated not-implemented body with domain logic",
+		"ncgo ai sync --target all --root .",
+	}
+	if opts.DryRun {
+		nextSteps = append([]string{"repeat the add rpc-method request with dryRun=false to apply the stub"}, nextSteps...)
+	}
 	return &RPCResult{
-		Path:    usecasePath,
-		Service: m.Service.Name,
-		Method:  opts.RPC,
-		NextSteps: []string{
-			"go build ./...",
-			"replace the generated not-implemented body with domain logic",
-			"ncgo ai sync --target all --root .",
-		},
+		Path:      usecasePath,
+		Service:   m.Service.Name,
+		Method:    opts.RPC,
+		DryRun:    opts.DryRun,
+		NextSteps: nextSteps,
 	}, nil
 }
 
@@ -394,23 +407,23 @@ func importLocalName(spec *ast.ImportSpec) string {
 	return p
 }
 
-func appendUsecaseMethod(path, service, methodName string, sig methodSignature) error {
+func renderRPCUsecaseFile(path, service, methodName string, sig methodSignature) ([]byte, error) {
 	body, err := os.ReadFile(path)
 	if err != nil {
-		return fmt.Errorf("method: read %s: %w", path, err)
+		return nil, fmt.Errorf("method: read %s: %w", path, err)
 	}
 	src := string(body)
 	if strings.Contains(src, "UseCase) "+methodName+"(") {
-		return fmt.Errorf("method: %s already exists in %s", methodName, path)
+		return nil, fmt.Errorf("method: %s already exists in %s", methodName, path)
 	}
 	required := append([]importSpec{{Alias: "goerror", Path: "github.com/byx-darwin/go-tools/go-common/error"}}, sig.Imports...)
 	updated := mergeImports(src, required)
 	updated = strings.TrimRight(updated, "\n") + "\n" + renderRPCMethod(service, methodName, sig)
 	formatted, err := format.Source([]byte(updated))
 	if err != nil {
-		return fmt.Errorf("method: format %s: %w", path, err)
+		return nil, fmt.Errorf("method: format %s: %w", path, err)
 	}
-	return os.WriteFile(path, formatted, 0o644)
+	return formatted, nil
 }
 
 func renderRPCMethod(service, methodName string, sig methodSignature) string {

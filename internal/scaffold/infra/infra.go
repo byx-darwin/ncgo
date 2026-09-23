@@ -296,6 +296,21 @@ func Add(opts Options) (*Result, error) {
 			return nil, err
 		}
 	}
+	filePlans = append(filePlans,
+		PlanItem{Kind: "file", Action: "update", Path: filepath.Join(root, "conf", "docker", "conf.yaml")},
+		PlanItem{Kind: "file", Action: "update", Path: filepath.Join(root, "compose.yaml")},
+	)
+	workspaceContainerPaths, err := shared.WorkspaceContainerPathsForServiceRoot(root)
+	if err != nil {
+		return nil, err
+	}
+	for _, path := range workspaceContainerPaths {
+		action := "update"
+		if filepath.Base(path) == ".dockerignore" {
+			action = "create"
+		}
+		filePlans = append(filePlans, PlanItem{Kind: "file", Action: action, Path: path})
+	}
 	if !opts.DryRun {
 		for _, w := range writes {
 			if err := writeFile(w.Path, w.Body); err != nil {
@@ -330,6 +345,9 @@ func Add(opts Options) (*Result, error) {
 		}
 	}
 	next := nextSteps(kind, m.Service.Kind, m.Service.Name)
+	if opts.DryRun {
+		next = append([]string{"rerun without --dry-run to apply this infrastructure plan"}, next...)
+	}
 	return &Result{
 		WrittenPath:  paths[0],
 		WrittenPaths: paths,

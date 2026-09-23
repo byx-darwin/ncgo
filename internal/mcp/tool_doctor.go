@@ -35,12 +35,12 @@ func (s *Server) callDoctor(ctx context.Context, raw json.RawMessage) (map[strin
 	}
 	output, err := doctorMCPTool.resolveOutput(args.Output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 	rep := runDoctorReport(ctx, doctor.Options{Root: args.Root})
 	out, err := doctorMCPTool.buildResult(rep, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("doctor output", err), nil
 	}
 	return out, nil
 }

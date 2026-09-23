@@ -817,9 +817,12 @@ The `ncgo_ai_sync` tool accepts the same `target` values as the CLI
 The MCP interface is now documented in a contract-first layout in
 [`docs/examples.md#0-mcp-contract-first-reference`](docs/examples.md#0-mcp-contract-first-reference): see `0. MCP contract-first reference`
 for each tool's inputs, supported `output` values, and stable top-level result
-fields before the workflow examples. In short, structured MCP tools keep
-`content[0].text` as the display/export payload and expose sibling top-level
-fields for agent use; `output` only changes the text payload format.
+fields before the workflow examples. In short, MCP tools keep
+`content[0].text` as the display/export payload, expose the versioned
+`structuredContent` envelope (`ncgo.mcp.result/v1`) for agents, and retain
+legacy sibling fields during migration. Tool annotations disclose read-only,
+destructive, idempotent, network, external-process, and dry-run behavior;
+`output` only changes the text payload format.
 
 If you use the built-in i18n workflow in a generated Hertz project, you can now
 consume structured results via `ncgo i18n report` / `ncgo i18n check` or MCP via

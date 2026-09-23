@@ -114,16 +114,16 @@ func callI18NReport(raw json.RawMessage) (map[string]any, error) {
 	}
 	output, err := i18nReportMCPTool.resolveOutput(args.Output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 	rawReport, _, err := loadMCPI18NReport(root)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return validationErrorResult("i18n report", err), nil
 	}
 	res := buildMCPI18NReportResult(root, rawReport)
 	out, err := i18nReportMCPTool.buildResult(res, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("i18n report output", err), nil
 	}
 	return out, nil
 }
@@ -143,22 +143,22 @@ func callI18NCheck(raw json.RawMessage) (map[string]any, error) {
 	}
 	output, err := i18nCheckMCPTool.resolveOutput(args.Output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 	if args.Mode == "" {
 		args.Mode = mcpI18NCheckDev
 	}
 	if args.Mode != mcpI18NCheckDev && args.Mode != mcpI18NCheckRelease {
-		return textResult(fmt.Sprintf("i18n check: unsupported --mode %q; want dev or release", args.Mode), true), nil
+		return invalidArgumentResult(fmt.Sprintf("i18n check: unsupported --mode %q; want dev or release", args.Mode)), nil
 	}
 	_, typed, err := loadMCPI18NReport(root)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return validationErrorResult("i18n check", err), nil
 	}
 	res := buildMCPI18NCheckResult(root, args.Mode, typed)
 	out, err := i18nCheckMCPTool.buildResult(res, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("i18n check output", err), nil
 	}
 	return out, nil
 }

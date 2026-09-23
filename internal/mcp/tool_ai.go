@@ -47,16 +47,17 @@ func callAISync(raw json.RawMessage) (map[string]any, error) {
 	args.Root = safeRoot
 	output, err := aiSyncMCPTool.resolveOutput(args.Output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 	res, err := ai.Sync(ai.Options{Root: args.Root, Target: args.Target, Lang: args.Lang, Force: args.Force, DryRun: args.DryRun})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("ai sync", err), nil
 	}
 	out, err := aiSyncMCPTool.buildResult(res, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("ai sync output", err), nil
 	}
+	setResultEffects(out, aiEffects(res, args.DryRun))
 	return out, nil
 }
 
@@ -78,16 +79,17 @@ func callAIInitClaude(raw json.RawMessage) (map[string]any, error) {
 	args.Root = safeRoot
 	output, err := aiInitClaudeMCPTool.resolveOutput(args.Output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return invalidArgumentResult(err.Error()), nil
 	}
 	res, err := ai.InitClaude(ai.InitOptions{Root: args.Root, Preset: args.Preset, Force: args.Force, DryRun: args.DryRun})
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("ai init claude", err), nil
 	}
 	out, err := aiInitClaudeMCPTool.buildResult(res, output)
 	if err != nil {
-		return textResult(err.Error(), true), nil
+		return operationErrorResult("ai init claude output", err), nil
 	}
+	setResultEffects(out, aiEffects(res, args.DryRun))
 	return out, nil
 }
 
