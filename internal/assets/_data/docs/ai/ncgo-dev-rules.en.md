@@ -8,7 +8,9 @@
 - Do not hand-edit generated files. Fix the template or generator instead.
 - Respect layer boundaries: handler → usecase → repository.
 - Run `make sqlc` before `go mod tidy` (Kitex always; Hertz only with database).
-- Add usecase methods via `ncgo add method <domain>.<Method>`, not by hand.
+- Add internal domain methods via `ncgo add method <domain>.<Method>`; add
+  external Hertz/Kitex endpoint signatures via `ncgo add rpc-method` after
+  IDL generation. Do not use both commands for the same endpoint method.
 - After changing manifest or generated code, run `ncgo ai sync --target all --root .`.
-- Full workflow: see "Implementing a Feature with ncgo" in `AGENTS.md`.
+- Intent-based recipes: see "Developing with ncgo" in `AGENTS.md`.
 - Architecture reference: `docs/ncgo/<profile>/design-doc.en.md`.

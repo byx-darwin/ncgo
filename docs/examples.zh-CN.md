@@ -467,9 +467,13 @@ ncgo ai sync --target all --root . --output json
 
 适合：已经有 ncgo 项目，只想按需逐步增强，而不是重新生成整个服务。
 
-### 用 ncgo 实现一个功能
+### 用 ncgo 添加内部 domain capability
 
 一个聚焦的端到端流程——新增领域与用例方法，然后刷新 AI 上下文——如下：
+
+这是内部 domain 工作流。Hertz 或 Kitex endpoint 应先编辑 IDL、运行 proto lint
+和 `make update`，再按下文使用 `ncgo add rpc-method`。不要把 `add method` 与
+`add rpc-method` 当成创建同一个 endpoint 方法的两种方式。
 
 ```bash
 ncgo add domain device --root .

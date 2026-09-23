@@ -117,11 +117,20 @@ func TestSyncWritesAllTargets(t *testing.T) {
 			t.Errorf("%s missing managed marker", p)
 		}
 		if p == ".claude/skills/ncgo-dev/SKILL.md" {
-			if !strings.Contains(body, "name: ncgo-dev") || !strings.Contains(body, "Implementing a Feature with ncgo") {
+			if !strings.Contains(body, "name: ncgo-dev") || !strings.Contains(body, "## Developing with ncgo") {
 				t.Errorf("%s missing skill frontmatter or workflow body", p)
 			}
-			if !strings.Contains(body, "make update") {
-				t.Errorf("%s missing IDL regeneration step (make update) in workflow body", p)
+			for _, want := range []string{
+				"### Recipe: Hertz HTTP endpoint",
+				"### Recipe: Kitex RPC endpoint",
+				"### Recipe: internal domain capability",
+				"### Recipe: BFF to RPC client",
+				"### Recipe: infrastructure add-on and wiring",
+				"Do **not** run both commands as two ways to create the same endpoint method",
+			} {
+				if !strings.Contains(body, want) {
+					t.Errorf("%s missing workflow contract %q", p, want)
+				}
 			}
 			continue
 		}

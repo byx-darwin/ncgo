@@ -364,7 +364,7 @@ func renderNcgoDevSkill(inputs renderInputs) string {
 	var b strings.Builder
 	b.WriteString("---\n")
 	b.WriteString("name: ncgo-dev\n")
-	b.WriteString("description: Implement a feature in this ncgo project (add domain → add method → sqlc → verify → ai sync)\n")
+	b.WriteString("description: Choose the correct ncgo workflow for Hertz endpoints, Kitex RPCs, internal domains, BFF clients, or infrastructure wiring\n")
 	b.WriteString("---\n")
 	b.WriteString(ManagedMarker + "\n\n")
 	b.WriteString(inputs.WorkflowBody)

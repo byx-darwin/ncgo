@@ -524,10 +524,15 @@ stable `root` / `scope` / `summary` / `checks` / `ok` fields.
 Best for: incrementally growing an existing project without regenerating the
 whole service.
 
-### Implementing a Feature with ncgo
+### Adding an internal domain capability with ncgo
 
 A focused end-to-end flow for adding a new domain and usecase method, then
 refreshing AI context, looks like this:
+
+This is the internal-domain workflow. For a Hertz or Kitex endpoint, edit the
+IDL, run proto lint and `make update`, then use `ncgo add rpc-method` as shown
+below. Do not use `add method` and `add rpc-method` as duplicate ways to create
+the same endpoint method.
 
 ```bash
 ncgo add domain device --root .

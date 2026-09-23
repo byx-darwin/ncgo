@@ -1,89 +1,198 @@
-## 用 ncgo 实现一个功能
+## 使用 ncgo 开发
 
-本项目由 `ncgo` CLI 生成和扩展。按照以下工作流端到端添加新功能。
-每个步骤都有程序化契约，因此 AI 代理可以直接驱动它。
+先按意图选择 recipe。外部 endpoint 与内部 domain capability 修改的是不同的
+usecase 形态，不能把对应命令当作同一种操作。
 
-### 工作流
+### 命令边界：endpoint 与 domain
 
-1. **添加领域** — `ncgo add domain <name> --root .`
-   生成 `internal/usecase/<name>/`、`internal/repository/<name>/` 和
-   `internal/base/data/<name>_register.go`，并将领域记录在
-   `.ncgo/manifest.yaml` 中。领域名称匹配 `^[a-z][a-z0-9_]{0,62}$`。
+- `ncgo add rpc-method` 从已经生成的 Hertz 或 Kitex handler 复制签名，写入顶层
+  `internal/usecase/<service>/usecase.go`。它用于 IDL 生成器运行后的外部 endpoint。
+- `ncgo add domain` 配合 `ncgo add method` 创建内部 domain 包，并在
+  `internal/usecase/<domain>/` 下生成无参数的
+  `func (u *UseCase) <Method>() error` capability。
+- 不要把两个命令当成创建同一个 endpoint 方法的两种方式而连续执行。只有当
+  endpoint 明确委托给职责不同、通常名称也不同的 domain capability 时，才会同时
+  使用两条工作流。
 
-2. **添加用例方法** — `ncgo add method <domain>.<Method> --root .`
-   在领域用例文件的 `// ncgo:methods:start` 和 `// ncgo:methods:end`
-   标记之间插入 `func (u *UseCase) <Method>() error` 桩代码。
-   方法名称匹配 `^[A-Z][A-Za-z0-9_]{0,62}$`。
+任一 recipe 实际应用后，都要刷新并验证全部已启用 Agent 消费者：
 
-3. **更新 IDL** — 编辑 `idl/<service>.proto`
-   当功能暴露新的或变更的接口时，添加或修改 rpc/api 方法定义；
-   如果只是内部用例逻辑变更，可跳过此步及下一步。
+```bash
+gofmt -w <changed-go-files>
+go build ./...
+go vet ./...
+go test ./... -count=1
+ncgo ai sync --target all --root .
+ncgo check --root .
+```
 
-4. **从 IDL 重新生成代码** — `make update`
-   Hertz 运行 `hz update`；Kitex 运行 `kitex` 生成器。从 IDL
-   重新生成 handler 桩代码和生成类型（`internal/pb` 或 `kitex_gen`）。
-   若功能只改动用例逻辑、不涉及 IDL，可跳过此步及上一步。
+### Recipe：Hertz HTTP endpoint
 
-5. **把 RPC 桩追加到 usecase.go** — `ncgo add rpc-method --service <name> --rpc <Method> --root .`
-   将方法桩追加到顶层 `internal/usecase/<service>/usecase.go`，签名从上一步
-   重新生成的 handler 文件中提取。之所以需要这一步，是因为该文件的
-   `update_behavior: skip` 意味着生成器永远不会自动往里面追加新方法。不会处理
-   项目自有的聚合文件（例如手写的 `composite.go`）——这些仍需人工处理。
+**前置条件**
 
-6. **实现 handler** — 将生成的 handler 接入第 2 步添加的用例方法，
-   遵循 `handler/* → usecase/*` 分层规则（handler 不导入 repo/data）。
+- 位于具有有效 `.ncgo/manifest.yaml` 的 Hertz 服务根目录。
+- 读取 `manifest.service.idl`，不要猜测 IDL 路径。
+- `hz` 与 `ncgo` 已安装并位于 `PATH`。
 
-7. **重新生成数据库代码** — `make sqlc`
-   当服务使用数据库时需要（`cfg.Database.Enabled`）。Kitex 服务在
-   `go mod tidy` 之前始终需要此步骤；Hertz 服务仅在启用数据库脚手架时才需要。
+**执行顺序**
 
-8. **验证** — `go build ./... && go vet ./... && go test ./... -count=1`
-   每次方法插入后，脚手架必须保持可构建状态。
+1. 编辑 `<manifest.service.idl>`，新增或修改 HTTP/RPC 方法。
+2. 运行 `ncgo protolint --root . --file <manifest.service.idl>`。
+3. 运行 `make update`（Hertz 项目会调用 `hz update`）。
+4. 运行 `ncgo add rpc-method --service <manifest.service.name> --rpc <Method> --root .`。
+5. 实现新生成的顶层 usecase 桩，再让生成的 handler 调用它；handler 不导入
+   repository 或 data 包。
+6. 执行上面的公共 build、test、context sync 与 check 命令。
 
-9. **用 ncgo check 校验** — `ncgo check --root .`
-   验证改动内部一致：每个用例都有配对的 `// ncgo:methods:start|end`
-   锚点、`manifest.Domains` 与 `internal/usecase/*/` 一致，并逐一审计全部已启用
-   Agent 上下文是否缺失、未托管或过期。通过退出 `0`，校验失败退出 `1`，
-   命令错误退出 `2`。
+**预期文件**
 
-10. **刷新全部已启用 Agent 上下文** — `ncgo ai sync --target all --root .`
-   重新渲染本项目的 AI 工件（见下文），使代理上下文反映新增的领域和方法。
-   sync 后重跑 `ncgo check` 确认过期检查通过。
+- 已编辑的 IDL，以及刷新的 handler/router/model 生成文件；
+- 含 endpoint 签名的 `internal/usecase/<service>/usecase.go`；
+- sync 后的五个已启用托管 Agent 上下文文件。
 
-### 锚点
+**验证**
 
-- `// ncgo:methods:start` / `// ncgo:methods:end` — 方法插入区域，
-  位于 `internal/usecase/<domain>/<domain>.go`。不要手动编辑生成的方法；
-  使用 `ncgo add method`。
-- `// ncgo:wire:domain` — 可选的 `data.Register<Name>` 接线标记。
-  当存在时，`ncgo add domain --wire` 会在该处插入注册调用。
+- `ncgo protolint`、`go build`、`go vet` 与 `go test` 全部通过；
+- all-target sync 后 `ncgo check --root .` 退出 `0`。
 
-### 验证清单
+**失败恢复**
 
-- [ ] `.ncgo/manifest.yaml` 列出了新领域
-- [ ] `internal/usecase/<domain>/<domain>.go` 在锚点之间包含新方法
-- [ ] 若功能新增/变更接口，`idl/<service>.proto` 已更新且重跑了 `make update`
-- [ ] handler 调用了用例方法（handler 不导入 repo/data）
-- [ ] `go build ./...` 通过
-- [ ] `ncgo check --root .` 退出 0
-- [ ] `ncgo ai sync --target all --root .` 完成并报告全部已启用托管文件
-- [ ] sync 后 `ncgo check --root .` 仍退出 0
+- proto lint 失败时，先修复报告的规则再生成。
+- `make update` 失败时，检查 manifest IDL 路径、proto import 与 `hz`。
+- `add rpc-method` 找不到方法时，重跑 `make update`，确认 handler 包含完全一致的方法名。
+- usecase 已有该方法时直接实现，不要强制生成重复方法。
 
-### 失败处理
+### Recipe：Kitex RPC endpoint
 
-- `ncgo add domain` 失败"已存在" — 该领域已存在；
-  直接运行 `ncgo add method` 或使用 `--force`。
-- `ncgo add method` 失败"缺少标记" — 用例文件被手动编辑或从未生成；
-  使用 `ncgo add domain <name> --force` 重新生成领域。
-- `make update` 失败 — 确认 `hz`/`kitex` 已安装并在 `PATH` 中，且 IDL
-  文件语法正确；参见项目设计文档 `docs/ncgo/<profile>/design-doc.zh-CN.md`。
-- `make sqlc` 失败 — 确认 `sqlc` 已安装且 schema 文件完整；
-  参见项目设计文档 `docs/ncgo/<profile>/design-doc.zh-CN.md`。
-- `ncgo check` 因 `check.anchor` 退出 1 — 用例丢失了
-  `// ncgo:methods:start|end` 标记；用 `ncgo add domain <name> --force` 修复。
-- `ncgo check` 因 `check.manifest.consistency` 退出 1 — `manifest.Domains`
-  与 `internal/usecase/*/` 漂移；运行 `ncgo add domain` 或修正 manifest。
-- `ncgo check` 因 `check.context.stale` 退出 1 — 某个已启用 Agent 上下文的
-  托管内容与当前项目事实不一致；运行 `ncgo ai sync --target all --root .`。
-- `ncgo ai sync` 拒绝覆盖 — 文件缺少 `<!-- ncgo:managed -->` 标记；
-  仅当你拥有该文件时才使用 `--force`。
+**前置条件**
+
+- 位于具有有效 manifest 和已生成 handler 的 Kitex 服务根目录。
+- 读取 `manifest.service.idl`；`kitex`、`protoc` 与 `ncgo` 位于 `PATH`。
+
+**执行顺序**
+
+1. 编辑 `<manifest.service.idl>`，新增或修改 RPC 方法。
+2. 运行 `ncgo protolint --root . --file <manifest.service.idl>`。
+3. 运行 `make update`，让 Kitex 刷新 `kitex_gen/` 与 handler 签名。
+4. 运行 `ncgo add rpc-method --service <manifest.service.name> --rpc <Method> --root .`。
+5. 实现新的顶层 usecase 方法，并保持 handler 只做薄适配；使用生成 DB 代码时，
+   在 `go mod tidy` 之前运行 `make sqlc`。
+6. 执行公共 build、test、context sync 与 check 命令。
+
+**预期文件**
+
+- 已编辑的 IDL、刷新的 `kitex_gen/` 与生成 handler；
+- 含复制 RPC 签名的 `internal/usecase/<service>/usecase.go`；
+- 刷新的 Agent 上下文。
+
+**验证**
+
+- proto lint 与生成成功，`go build ./...` 可编译该签名；
+- 测试通过，sync 后 `ncgo check --root .` 退出 `0`。
+
+**失败恢复**
+
+- 生成失败时检查 proto include root 与已安装 Kitex 版本。
+- `add rpc-method` 报 handler 缺少方法时，说明生成结果过期；先重跑 `make update`。
+- 缺少 SQL 包时，在模块解析前运行 `make sqlc`。
+
+### Recipe：内部 domain capability
+
+**前置条件**
+
+- 变更属于内部业务行为，而不是新的外部 endpoint。
+- domain 名匹配 `^[a-z][a-z0-9_]{0,62}$`，方法名匹配
+  `^[A-Z][A-Za-z0-9_]{0,62}$`。
+
+**执行顺序**
+
+1. 运行 `ncgo add domain <domain> --root . --dry-run` 并审阅计划。
+2. domain 不存在时运行 `ncgo add domain <domain> --root .`。
+3. 运行 `ncgo add method <domain>.<Method> --root .`。
+4. 用 domain 逻辑替换无参数桩，并添加聚焦测试。
+5. capability 修改数据库查询时，先运行 `make sqlc`。
+6. 执行公共 build、test、context sync 与 check 命令。
+
+**预期文件**
+
+- `.ncgo/manifest.yaml` 列出该 domain；
+- `internal/usecase/<domain>/<domain>.go` 含成对 method anchors 与新方法；
+- 新建 domain 时存在 `internal/repository/<domain>/` 与
+  `internal/base/data/<domain>_register.go`。
+
+**验证**
+
+- domain 测试与 `go test ./... -count=1` 通过；
+- `check.anchor`、`check.manifest.consistency` 与上下文检查通过。
+
+**失败恢复**
+
+- “already exists”表示跳过 domain 创建，继续执行 `add method`。
+- “missing markers”表示 usecase 所有权标记被删除；应审慎恢复标记，或在审阅后
+  使用 `add domain --force` 重新生成。
+- 不要使用 `add rpc-method` 修复内部 domain 方法。
+
+### Recipe：BFF 调用 RPC client
+
+**前置条件**
+
+- 位于将拥有 client 的 Hertz BFF module。
+- 找到 RPC 服务 proto 与准确 service 名；`kitex` 位于 `PATH`，proto 的
+  `go_package` 与当前 module 布局兼容。
+
+**执行顺序**
+
+1. 用 `ncgo add kitex-client <client> --service <rpc-service> --idl <proto> --dry-run` 预览。
+2. 用 `ncgo add kitex-client <client> --service <rpc-service> --idl <proto>` 应用。
+3. 将 `pkg/client/<client>` 接入 BFF usecase/DI 层，并通过配置提供 RPC 地址；
+   handler 不得直接调用 client。
+4. 添加 client 与 BFF 行为测试，再执行公共验证命令。
+
+**预期文件**
+
+- `pkg/client/<client>/client.go` 与 `pkg/client/<client>/config.go`；
+- 生成的 `kitex_gen/` 类型与模块依赖更新；
+- 接线时由项目持有的 DI/config 修改。
+
+**验证**
+
+- `go mod tidy`、`go build ./...` 与 client 测试通过；
+- BFF 可使用配置的 RPC 地址启动，`ncgo check` 退出 `0`。
+
+**失败恢复**
+
+- proto import 失败时，传入归属 proto 路径并修复 include root。
+- module ownership 失败时，应使用 RPC module 支持的 client contract，不要生成
+  在 BFF 中无法解析的 import。
+- 文件已存在时先审阅；只有明确需要替换时才使用 `--force`。
+
+### Recipe：基础设施 add-on 与 wiring
+
+**前置条件**
+
+- 用 `ncgo add infra --help` 确认 add-on 支持当前服务类型。
+- 自动 wiring 前提交或暂存无关修改。
+
+**执行顺序**
+
+1. 用 `ncgo add infra <kind> --root . --wire --dry-run --output json` 预览文件与接线。
+2. 审阅 `writtenPaths`、manifest 变化、wiring 目标与 `nextSteps`。
+3. 用 `ncgo add infra <kind> --root . --wire` 应用。
+4. 补全生成的配置段，并在公共验证命令前执行返回的依赖命令。
+
+**预期文件**
+
+- 计划报告的 add-on 源码/config 文件；
+- `.ncgo/manifest.yaml` 记录该 add-on；
+- 只有 marker 所有的 server/client wiring 位置发生变化。
+
+**验证**
+
+- 重跑 dry-run 并确认幂等；
+- 运行聚焦 add-on 测试、`go build ./...` 与 `ncgo check --root .`。
+
+**失败恢复**
+
+- `--wire` 找不到 marker 时保留生成文件，按文档手工接入 constructor；不要重写
+  无关 server 代码。
+- 当前服务类型不支持时停止，不要复制另一框架的 adapter。
+- 依赖解析失败时，执行返回的 `go get`，再运行 `go mod tidy` 后重试验证。

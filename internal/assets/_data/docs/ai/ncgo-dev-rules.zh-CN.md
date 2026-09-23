@@ -7,7 +7,9 @@
 - 不要手动编辑生成的文件，应修复模板或生成器。
 - 遵守分层边界：handler → usecase → repository。
 - 在 `go mod tidy` 之前运行 `make sqlc`（Kitex 始终需要；Hertz 仅在启用数据库时需要）。
-- 通过 `ncgo add method <domain>.<Method>` 添加用例方法，不要手动添加。
+- 内部 domain 方法使用 `ncgo add method <domain>.<Method>`；外部 Hertz/Kitex
+  endpoint 签名应在 IDL 生成后使用 `ncgo add rpc-method`。不要用两条命令创建同一个
+  endpoint 方法。
 - 修改 manifest 或生成的代码后，运行 `ncgo ai sync --target all --root .`。
-- 完整工作流：参见 `AGENTS.md` 中的"Implementing a Feature with ncgo"。
+- 按意图划分的工作流：参见 `AGENTS.md` 中的“使用 ncgo 开发”。
 - 架构参考：`docs/ncgo/<profile>/design-doc.zh-CN.md`。
