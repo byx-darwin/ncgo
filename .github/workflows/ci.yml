@@ -2,7 +2,19 @@ name: CI
 
 on:
   push:
+    tags-ignore:
+      - 'v*.*.*'
   pull_request:
+  workflow_dispatch:
+  schedule:
+    - cron: '17 3 * * 1'
+  workflow_call:
+    inputs:
+      release_gate:
+        description: Run the release-only race and coverage gate.
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -12,58 +24,120 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: test
-    runs-on: ubuntu-latest
+  unit:
+    name: hermetic unit, vet, build, smoke
+    runs-on: ubuntu-24.04
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - name: Setup Go
-        uses: actions/setup-go@v5
+      - name: Setup repository Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Download modules
-        run: go mod download
-
-      - name: Verify generated MCP reference
-        run: go run ./internal/reference/cmd/generate --check
-
-      - name: Install code-gen tools
+      - name: Prefetch and verify locked modules
         run: |
-          sudo apt-get update
-          sudo apt-get install -y protobuf-compiler
-          go install github.com/cloudwego/hertz/cmd/hz@v0.9.7
-          go install github.com/cloudwego/kitex/tool/cmd/kitex@v0.16.1
-          go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest
+          go mod download
+          go mod verify
+
+      - name: Run hermetic checks
+        run: ./scripts/test-unit.sh
+
+  generated-project:
+    name: generated projects and pinned SDK integration
+    needs: unit
+    runs-on: ubuntu-24.04
+    env:
+      GOTOOLCHAIN: local
+      HZ_VERSION: v0.9.7
+      KITEX_VERSION: v0.16.1
+      SQLC_VERSION: v1.30.0
+      PROTOC_VERSION: '28.3'
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup generated-project Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version: '1.26.5'
+          cache: false
+
+      - name: Cache generated-project modules
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
+        with:
+          path: ${{ runner.temp }}/ncgo-generated-gomod
+          key: generated-mod-${{ runner.os }}-go1.26.5-${{ env.HZ_VERSION }}-${{ env.KITEX_VERSION }}-${{ env.SQLC_VERSION }}-${{ hashFiles('go.sum', 'tools/verifyexamples/**/go.sum', 'internal/compat/versions.go', 'internal/assets/_data/**/*.yaml', 'internal/assets/_data/**/*.go') }}
+          restore-keys: |
+            generated-mod-${{ runner.os }}-go1.26.5-
+
+      - name: Setup pinned protoc
+        uses: arduino/setup-protoc@c65c819552d16ad3c9b72d9dfd5ba5237b9c906b # v3.0.0
+        with:
+          version: ${{ env.PROTOC_VERSION }}
+          repo-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prefetch repository modules
+        env:
+          GOMODCACHE: ${{ runner.temp }}/ncgo-generated-gomod
+        run: |
+          go mod download
+          go mod verify
+
+      - name: Install pinned code-generation tools
+        env:
+          GOMODCACHE: ${{ runner.temp }}/ncgo-generated-gomod
+        run: |
+          go install "github.com/cloudwego/hertz/cmd/hz@${HZ_VERSION}"
+          go install "github.com/cloudwego/kitex/tool/cmd/kitex@${KITEX_VERSION}"
+          go install "github.com/sqlc-dev/sqlc/cmd/sqlc@${SQLC_VERSION}"
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
+
+      - name: Record toolchain versions
+        run: |
+          go version
           protoc --version
           hz --version
           kitex --version
           sqlc version
 
-      - name: Check formatting
+      - name: Verify generated projects and pinned SDK fixture
+        env:
+          GOMODCACHE: ${{ runner.temp }}/ncgo-generated-gomod
+        run: ./scripts/test-generated.sh
+
+  race-coverage:
+    name: release and scheduled race coverage
+    if: ${{ github.event_name == 'schedule' || inputs.release_gate == true }}
+    needs: unit
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Setup repository Go
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Prefetch locked modules
+        run: go mod download
+
+      - name: Race and coverage
+        env:
+          GOTOOLCHAIN: local
+          GOPROXY: 'off'
+          GOSUMDB: 'off'
         run: |
-          unformatted="$(gofmt -l $(find . -name '*.go' -not -path './.git/*'))"
-          if [ -n "$unformatted" ]; then
-            echo "Go files need gofmt:"
-            echo "$unformatted"
-            exit 1
-          fi
+          go test -short -race -covermode=atomic -coverprofile=coverage.out ./...
+          go tool cover -func=coverage.out
 
-      - name: Vet
-        run: go vet ./...
-
-      - name: Test
-        run: go test ./... -count=1
-
-      - name: Build CLI
-        run: go build .
-
-      - name: Smoke test
-        run: ./scripts/smoke.sh
-
-      - name: Verify polaris adapter compiles against pinned SDK
-        run: ./scripts/verify-polaris-adapter.sh
+      - name: Upload coverage
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: coverage-${{ github.run_id }}
+          path: coverage.out
+          if-no-files-found: error

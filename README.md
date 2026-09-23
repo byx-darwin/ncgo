@@ -914,7 +914,7 @@ go test ./... -count=1
 ```
 
 CI runs a fuller set of checks on GitHub Actions. Release builds are tag-driven;
-see [specs/008-release-process.zh-CN.md](specs/008-release-process.zh-CN.md) for the release flow.
+see [specs/008-release-process.md](specs/008-release-process.md) for the release gate, artifact verification, and recovery flow.
 
 Update scaffold goldens after intentional template/scaffold changes:
 

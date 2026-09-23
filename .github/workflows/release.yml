@@ -7,16 +7,23 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
+  verify:
+    name: required release verification
+    uses: ./.github/workflows/ci.yml
+    with:
+      release_gate: true
+
   build:
     name: build ${{ matrix.goos }}/${{ matrix.goarch }}
-    runs-on: ubuntu-latest
+    needs: verify
+    runs-on: ubuntu-24.04
     strategy:
       fail-fast: false
       matrix:
@@ -38,50 +45,41 @@ jobs:
             archive: zip
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@40f1582b2485089dde7abd97c1529aa768e1baff # v5
         with:
           go-version-file: go.mod
           cache: true
 
-      - name: Build package
+      - name: Build deterministic package twice
         env:
           GOOS: ${{ matrix.goos }}
           GOARCH: ${{ matrix.goarch }}
-          CGO_ENABLED: '0'
+          ARCHIVE_FORMAT: ${{ matrix.archive }}
         run: |
           version="${GITHUB_REF_NAME}"
           if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
             version="snapshot-${GITHUB_SHA::7}"
           fi
-          build_version="${GITHUB_SHA::7}"
-          build_time="$(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          export VERSION="$version"
+          export REVISION="$GITHUB_SHA"
+          SOURCE_DATE_EPOCH="$(git show -s --format=%ct "$GITHUB_SHA")"
+          export SOURCE_DATE_EPOCH
 
-          name="ncgo_${version}_${GOOS}_${GOARCH}"
-          package_dir="dist/${name}"
-          binary="ncgo"
-          if [ "${GOOS}" = "windows" ]; then
-            binary="ncgo.exe"
-          fi
-
-          mkdir -p "${package_dir}"
-          ldflags="-s -w -X github.com/byx-darwin/ncgo/internal/cli.Version=${version} -X github.com/byx-darwin/ncgo/internal/cli.BuildVersion=${build_version} -X github.com/byx-darwin/ncgo/internal/cli.BuildTime=${build_time}"
-          go build -trimpath -ldflags "${ldflags}" -o "${package_dir}/${binary}" .
-          cp README.md README.zh-CN.md "${package_dir}/"
-          if [ -f LICENSE ]; then
-            cp LICENSE "${package_dir}/"
-          fi
-
-          if [ "${{ matrix.archive }}" = "zip" ]; then
-            (cd dist && zip -r "${name}.zip" "${name}")
-          else
-            tar -C dist -czf "dist/${name}.tar.gz" "${name}"
-          fi
+          artifact=
+          artifact="$(./scripts/build-release.sh)"
+          repro_dir=
+          repro_dir="$(mktemp -d)"
+          DIST_DIR="$repro_dir" ./scripts/build-release.sh >/dev/null
+          cmp "$artifact" "$repro_dir/$(basename "$artifact")"
+          sha256sum "$artifact"
 
       - name: Upload package
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: ncgo-${{ matrix.goos }}-${{ matrix.goarch }}
           path: |
@@ -90,47 +88,127 @@ jobs:
           if-no-files-found: error
 
   checksums:
-    name: checksums
-    runs-on: ubuntu-latest
+    name: checksums and provenance manifest
+    runs-on: ubuntu-24.04
     needs: build
     steps:
+      - name: Checkout release verification scripts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
       - name: Download packages
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: ncgo-*
           path: dist
           merge-multiple: true
 
-      - name: Generate SHA256 checksums
+      - name: Verify asset set and generate SHA256 checksums
         run: |
-          cd dist
-          sha256sum * > checksums.txt
-          cat checksums.txt
+          version="${GITHUB_REF_NAME}"
+          if [ "${GITHUB_REF_TYPE}" != "tag" ]; then
+            version="snapshot-${GITHUB_SHA::7}"
+          fi
+          ./scripts/verify-release-assets.sh dist "$version" write
 
-      - name: Upload checksums
-        uses: actions/upload-artifact@v4
+      - name: Write provenance manifest
+        env:
+          RUN_URL: https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          python3 - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          artifacts = []
+          for line in Path("dist/checksums.txt").read_text().splitlines():
+              digest, name = line.split(None, 1)
+              artifacts.append({"name": name.strip().lstrip("*"), "sha256": digest})
+          manifest = {
+              "schemaVersion": "ncgo.release.provenance/v1",
+              "source": {
+                  "repository": os.environ["GITHUB_REPOSITORY"],
+                  "revision": os.environ["GITHUB_SHA"],
+                  "ref": os.environ["GITHUB_REF"],
+              },
+              "builder": {
+                  "workflow": os.environ["GITHUB_WORKFLOW"],
+                  "runId": os.environ["GITHUB_RUN_ID"],
+                  "runAttempt": os.environ["GITHUB_RUN_ATTEMPT"],
+                  "url": os.environ["RUN_URL"],
+              },
+              "artifacts": artifacts,
+          }
+          Path("dist/provenance.json").write_text(json.dumps(manifest, indent=2) + "\n")
+          PY
+          cat dist/provenance.json
+
+      - name: Upload release metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: checksums
-          path: dist/checksums.txt
+          name: release-metadata
+          path: |
+            dist/checksums.txt
+            dist/provenance.json
           if-no-files-found: error
+
+  provenance:
+    name: artifact attestation
+    runs-on: ubuntu-24.04
+    needs: build
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      artifact-metadata: write
+    steps:
+      - name: Download packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: ncgo-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attest release archives
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4
+        with:
+          subject-path: |
+            dist/*.tar.gz
+            dist/*.zip
 
   github-release:
     name: github release
-    runs-on: ubuntu-latest
-    needs: checksums
+    runs-on: ubuntu-24.04
+    needs:
+      - checksums
+      - provenance
     if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write
     steps:
-      - name: Download release assets
-        uses: actions/download-artifact@v4
+      - name: Checkout release verification scripts
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Download release packages
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
+          pattern: ncgo-*
           path: dist
           merge-multiple: true
+
+      - name: Download release metadata
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          name: release-metadata
+          path: dist
+
+      - name: Re-verify final release bytes
+        run: ./scripts/verify-release-assets.sh dist "$GITHUB_REF_NAME" check
 
       - name: Create GitHub Release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           ls -lah dist
-          gh release create "${GITHUB_REF_NAME}" dist/* \
+          gh release create "${GITHUB_REF_NAME}" dist/*.tar.gz dist/*.zip dist/checksums.txt dist/provenance.json \
             --title "${GITHUB_REF_NAME}" \
             --generate-notes

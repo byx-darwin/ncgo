@@ -27,33 +27,9 @@ repos:
           - go
         require_serial: true
 
-      - id: go-vet
-        name: go vet ./...
-        entry: go vet ./...
-        language: system
-        pass_filenames: false
-        stages:
-          - pre-push
-
-      - id: go-test
-        name: go test ./... -count=1
-        entry: go test ./... -count=1
-        language: system
-        pass_filenames: false
-        stages:
-          - pre-push
-
-      - id: go-build
-        name: go build .
-        entry: go build .
-        language: system
-        pass_filenames: false
-        stages:
-          - pre-push
-
-      - id: smoke-test
-        name: ./scripts/smoke.sh
-        entry: ./scripts/smoke.sh
+      - id: hermetic-unit-gate
+        name: hermetic unit, vet, build, smoke
+        entry: ./scripts/test-unit.sh
         language: system
         pass_filenames: false
         stages:

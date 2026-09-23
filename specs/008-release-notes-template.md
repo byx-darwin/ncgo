@@ -35,9 +35,13 @@ If version needs emphasis:
 
 ## Verification
 
-- `go test ./... -count=1`
-- `./scripts/smoke.sh`
-- `go install .`
+- Required Release gate run: `<workflow URL>`
+- Hermetic unit/vet/build/smoke: passed
+- Generated Hertz/Kitex project verification: passed
+- Race/coverage gate: passed
+- Five release archives and `checksums.txt`: verified
+- Artifact attestation: `gh attestation verify <archive> -R byx-darwin/ncgo`
+- Install check: `go install github.com/byx-darwin/ncgo@vX.Y.Z`
 
 ## Auto-generated Change List
 

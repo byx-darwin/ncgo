@@ -35,9 +35,13 @@ ncgo version
 
 ## 验证方式
 
-- `go test ./... -count=1`
-- `./scripts/smoke.sh`
-- `go install .`
+- Required Release gate run：`<workflow URL>`
+- Hermetic unit/vet/build/smoke：通过
+- Hertz/Kitex 生成项目验证：通过
+- Race/coverage gate：通过
+- 五个发布制品与 `checksums.txt`：已校验
+- Artifact attestation：`gh attestation verify <archive> -R byx-darwin/ncgo`
+- 安装验证：`go install github.com/byx-darwin/ncgo@vX.Y.Z`
 
 ## 自动生成变更列表
 

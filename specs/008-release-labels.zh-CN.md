@@ -76,5 +76,5 @@
 
 - GitHub Release 通过 `gh release create --generate-notes` 自动生成说明
 - 分类规则见 `.github/release.yml`
-- 人工润色模板见 `docs/release-notes-template.zh-CN.md`
+- 人工润色模板见 `specs/008-release-notes-template.zh-CN.md`
 - PR 模板见 `.github/PULL_REQUEST_TEMPLATE.md`

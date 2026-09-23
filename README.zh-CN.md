@@ -717,7 +717,7 @@ go test ./... -count=1
 ./scripts/smoke.sh
 ```
 
-CI 会在 GitHub Actions 中运行更完整的检查集合。Release 构建由 tag 触发；人工发布流程见 [specs/008-release-process.zh-CN.md](specs/008-release-process.zh-CN.md)。
+CI 会在 GitHub Actions 中运行更完整的检查集合。Release 构建由 tag 触发；发布 gate、制品校验与故障恢复见 [specs/008-release-process.zh-CN.md](specs/008-release-process.zh-CN.md)。
 
 模板或脚手架发生有意变更后，更新 golden：
 

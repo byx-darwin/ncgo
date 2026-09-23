@@ -13,29 +13,34 @@ English version: [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## 开发前提
 
-- Go `1.25+`
-- 如果会涉及 Hertz 生成流程：`hz >= v0.9.7`
-- 如果会涉及 Kitex 生成流程：`kitex >= v0.16.1`
-- 如果需要在本地运行数据库相关生成流程测试（`TestGenerateHertzWithDatabaseCompiles`、`TestGenerateKitexCompiles`）：`sqlc`，安装方式为 `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`
-- 任何涉及 IDL 代码生成或校验的流程都需要 `protoc`（Protocol Buffers 编译器）
+- 仓库检查使用 Go `1.25+`；生成项目集成验证使用 Go `1.26.5`
+- Hertz 生成流程使用 `hz v0.9.7`
+- Kitex 生成流程使用 `kitex v0.16.1`
+- 数据库生成流程使用 `sqlc v1.30.0`
+- IDL 代码生成或校验使用 `protoc 28.3`
 
 如果你当前只需要检查脚手架输入文件，优先使用 `--no-generate` 工作流。
 
-CI 现在会安装锁定版本的 `hz`/`kitex`/`protoc`/`sqlc`，并在每次 push 和 PR 时真实运行编译验证测试（`TestGenerateHertzCompiles`、`TestGenerateHertzWithDatabaseCompiles`、`TestGenerateKitexCompiles`），不再被静默跳过。具体版本见 `.github/workflows/ci.yml` 中的 `Install code-gen tools` 步骤。
+CI 会安装这些精确版本，并在每次 push 和 PR 时真实运行编译验证测试。测试通过
+`NCGO_INTEGRATION=1` 显式启用；缺少工具会失败，不再静默 skip。
 
 ## 本地检查
 
-在创建或更新 PR 前，建议至少完成以下本地检查：
+先预取锁定的仓库依赖，再执行与 CI 相同的离线核心 gate：
 
 ```bash
-go build ./...
-go build .
-go vet ./...
-go test ./... -count=1
-./scripts/smoke.sh
+go mod download
+./scripts/test-unit.sh
 ```
 
-日常迭代时可以先跑更小范围的检查，但 PR 最终状态应能通过上面的完整检查。
+修改生成器或模板时，还需要安装上述固定版本的工具并执行：
+
+```bash
+./scripts/test-generated.sh
+```
+
+生成项目测试有意依赖网络；unit gate 在预取依赖后会设置 `GOPROXY=off` 与
+`GOTOOLCHAIN=local`。
 
 ## 可选的 pre-commit 工作流
 
@@ -51,7 +56,7 @@ go test ./... -count=1
 hook 分层如下：
 
 - `pre-commit`：文件卫生检查，以及对暂存 Go 文件执行 `gofmt`
-- `pre-push`：执行 `go vet ./...`、`go test ./... -count=1`、`go build .` 和 `./scripts/smoke.sh`
+- `pre-push`：执行 `scripts/test-unit.sh` 中的 hermetic unit/vet/build/smoke gate
 
 `pre-push` 故意对齐仓库 CI 的核心检查，因此耗时会明显高于 `pre-commit` 阶段。
 

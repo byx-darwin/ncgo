@@ -355,6 +355,7 @@ func TestNextStepsMakeTargetsMatchTemplates(t *testing.T) {
 //   - make migrate-up: requires an external DATABASE_URL-backed Postgres instance
 //   - make dev: starts a persistent development server / watcher
 func TestResultNextStepsSafePrefixExecutes(t *testing.T) {
+	requireIntegration(t)
 	for _, tc := range nextStepsSmokeCases(false) {
 		t.Run(tc.name, func(t *testing.T) {
 			requireTools(t, tc.reqTools...)
@@ -370,7 +371,7 @@ func TestResultNextStepsSafePrefixExecutes(t *testing.T) {
 				t.Fatalf("RanGenerate = true, want false for next-steps smoke test")
 			}
 
-			executeSafeNextSteps(t, res.Dir, res.NextSteps)
+			executeSafeNextSteps(t, res.Dir, res.NextSteps, tc.kind, opts.Module)
 		})
 	}
 }
@@ -380,6 +381,7 @@ func TestResultNextStepsSafePrefixExecutes(t *testing.T) {
 // prepare-path smoke test so we verify the actionable prefix without turning
 // unit tests into database-dependent or long-running integration jobs.
 func TestPostGenerateResultNextStepsSafePrefixExecutes(t *testing.T) {
+	requireIntegration(t)
 	for _, tc := range nextStepsSmokeCases(true) {
 		t.Run(tc.name, func(t *testing.T) {
 			requireTools(t, tc.reqTools...)
@@ -396,7 +398,8 @@ func TestPostGenerateResultNextStepsSafePrefixExecutes(t *testing.T) {
 				t.Fatalf("RanGenerate = false, want true for post-generate next-steps smoke test")
 			}
 
-			executeSafeNextSteps(t, res.Dir, res.NextSteps)
+			lockGeneratedDependencies(t, res.Dir, tc.kind, opts.Module)
+			executeSafeNextSteps(t, res.Dir, res.NextSteps, "", "")
 
 			// After the real kitex tool + `go mod tidy`, the go.mod must still
 			// pin the generated-project compatibility set (the
@@ -819,6 +822,7 @@ func TestGenerateHertzTemplateIncludesConfigCenterAndOptionalConfigModels(t *tes
 }
 
 func TestGenerateHertzWithDatabaseRendersTopLevelDatabaseConfig(t *testing.T) {
+	requireIntegration(t)
 	requireTools(t, "hz", "protoc")
 
 	opts := baseOpts(t)
@@ -832,7 +836,6 @@ func TestGenerateHertzWithDatabaseRendersTopLevelDatabaseConfig(t *testing.T) {
 	if !res.RanGenerate {
 		t.Fatal("expected RanGenerate = true")
 	}
-
 	confBody, err := os.ReadFile(filepath.Join(res.Dir, "conf", "dev", "conf.yaml"))
 	if err != nil {
 		t.Fatalf("read rendered conf.yaml: %v", err)
@@ -1102,15 +1105,8 @@ func TestGenerateInvokesHZViaRunner(t *testing.T) {
 // tests (including i18n and dynamic rate-limit packages) to verify template
 // code compiles and behaves correctly after generation.
 func TestGenerateHertzCompiles(t *testing.T) {
-	if _, err := exec.LookPath("hz"); err != nil {
-		t.Skip("hz not found on PATH")
-	}
-	if _, err := exec.LookPath("make"); err != nil {
-		t.Skip("make not found on PATH")
-	}
-	if _, err := exec.LookPath("protoc"); err != nil {
-		t.Skip("protoc not found on PATH")
-	}
+	requireIntegration(t)
+	requireTools(t, "hz", "make", "protoc")
 
 	opts := baseOpts(t)
 	opts.NoGenerate = false // use the real exec.Default runner
@@ -1122,6 +1118,7 @@ func TestGenerateHertzCompiles(t *testing.T) {
 	if !res.RanGenerate {
 		t.Fatal("expected RanGenerate = true")
 	}
+	lockGeneratedDependencies(t, res.Dir, manifest.KindHertz, opts.Module)
 
 	// Synchronize locale keys and initialize translation status metadata.
 	cmd := osexec.CommandContext(context.Background(), "make", "i18n-sync")
@@ -1208,14 +1205,14 @@ func TestGenerateHertzCompiles(t *testing.T) {
 	assertGoModPinsGoTools(t, res.Dir)
 
 	// Build the service binary to ensure all packages compile.
-	cmd = osexec.CommandContext(context.Background(), "go", "build", ".")
+	cmd = osexec.CommandContext(context.Background(), "go", "build", "-mod=readonly", ".")
 	cmd.Dir = res.Dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go build . in %s: %v\n%s", res.Dir, err, out)
 	}
 
 	// Run the generated project's own i18n tests (built-in language assertions).
-	cmd = osexec.CommandContext(context.Background(), "go", "test", "-race", "-count=1", "./internal/pkg/i18n/...")
+	cmd = osexec.CommandContext(context.Background(), "go", "test", "-mod=readonly", "-race", "-count=1", "./internal/pkg/i18n/...")
 	cmd.Dir = res.Dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go test ./internal/pkg/i18n/... in %s: %v\n%s", res.Dir, err, out)
@@ -1224,13 +1221,13 @@ func TestGenerateHertzCompiles(t *testing.T) {
 	// Run the generated project's own rate-limit packages to verify the shipped
 	// dynamic resolver, repository hook, middleware, and their smoke tests work
 	// in a fresh project.
-	cmd = osexec.CommandContext(context.Background(), "go", "test", "-race", "-count=1", "./internal/base/conf/...", "./internal/repository/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
+	cmd = osexec.CommandContext(context.Background(), "go", "test", "-mod=readonly", "-race", "-count=1", "./internal/base/conf/...", "./internal/repository/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
 	cmd.Dir = res.Dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go test rate-limit packages in %s: %v\n%s", res.Dir, err, out)
 	}
 
-	cmd = osexec.CommandContext(context.Background(), "go", "test", "-race", "-count=1", "./tools/...")
+	cmd = osexec.CommandContext(context.Background(), "go", "test", "-mod=readonly", "-race", "-count=1", "./tools/...")
 	cmd.Dir = res.Dir
 	if out, err := cmd.CombinedOutput(); err != nil {
 		t.Fatalf("go test ./tools/... in %s: %v\n%s", res.Dir, err, out)
@@ -1238,6 +1235,7 @@ func TestGenerateHertzCompiles(t *testing.T) {
 }
 
 func TestGenerateHertzWithDatabaseCompiles(t *testing.T) {
+	requireIntegration(t)
 	requireTools(t, "hz", "make", "sqlc", "protoc")
 
 	opts := baseOpts(t)
@@ -1251,13 +1249,14 @@ func TestGenerateHertzWithDatabaseCompiles(t *testing.T) {
 	if !res.RanGenerate {
 		t.Fatal("expected RanGenerate = true")
 	}
+	lockGeneratedDependencies(t, res.Dir, manifest.KindHertz, opts.Module)
 
 	runInDir(t, res.Dir, "make", "sqlc")
 	runInDir(t, res.Dir, "go", "mod", "tidy")
 	assertGoModPinsGoTools(t, res.Dir)
 	runInDir(t, res.Dir, "make", "i18n")
-	runInDir(t, res.Dir, "go", "build", ".")
-	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/base/conf/...", "./internal/base/data/...", "./internal/repository/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
+	runInDir(t, res.Dir, "go", "build", "-mod=readonly", ".")
+	runInDir(t, res.Dir, "go", "test", "-mod=readonly", "-race", "-count=1", "./internal/base/conf/...", "./internal/base/data/...", "./internal/repository/...", "./internal/pkg/ratelimit/...", "./internal/pkg/middleware/...")
 }
 
 func TestGenerateRejectsNonEmptyDir(t *testing.T) {
@@ -1444,6 +1443,7 @@ func TestGenerateKitexInvokesKitexViaRunner(t *testing.T) {
 }
 
 func TestGenerateKitexCompiles(t *testing.T) {
+	requireIntegration(t)
 	requireTools(t, "kitex", "make", "sqlc", "protoc")
 
 	opts := baseOpts(t)
@@ -1457,15 +1457,17 @@ func TestGenerateKitexCompiles(t *testing.T) {
 	if !res.RanGenerate {
 		t.Fatal("expected RanGenerate = true")
 	}
+	lockGeneratedDependencies(t, res.Dir, manifest.KindKitex, opts.Module)
 
 	runInDir(t, res.Dir, "make", "sqlc")
 	runInDir(t, res.Dir, "go", "mod", "tidy")
 	assertGoModPinsGoTools(t, res.Dir)
-	runInDir(t, res.Dir, "go", "build", ".")
-	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/pkg/interceptor/...", "./internal/pkg/rpcerror/...", "./pkg/client/...")
+	runInDir(t, res.Dir, "go", "build", "-mod=readonly", ".")
+	runInDir(t, res.Dir, "go", "test", "-mod=readonly", "-race", "-count=1", "./internal/pkg/interceptor/...", "./internal/pkg/rpcerror/...", "./pkg/client/...")
 }
 
 func TestGenerateKitexWithDatabaseCompiles(t *testing.T) {
+	requireIntegration(t)
 	requireTools(t, "kitex", "make", "sqlc", "protoc")
 
 	opts := baseOpts(t)
@@ -1480,12 +1482,13 @@ func TestGenerateKitexWithDatabaseCompiles(t *testing.T) {
 	if !res.RanGenerate {
 		t.Fatal("expected RanGenerate = true")
 	}
+	lockGeneratedDependencies(t, res.Dir, manifest.KindKitex, opts.Module)
 
 	runInDir(t, res.Dir, "make", "sqlc")
 	runInDir(t, res.Dir, "go", "mod", "tidy")
 	assertGoModPinsGoTools(t, res.Dir)
-	runInDir(t, res.Dir, "go", "build", ".")
-	runInDir(t, res.Dir, "go", "test", "-race", "-count=1", "./internal/base/conf/...", "./internal/base/data/...", "./internal/repository/...", "./internal/pkg/interceptor/...", "./internal/pkg/rpcerror/...", "./pkg/client/...")
+	runInDir(t, res.Dir, "go", "build", "-mod=readonly", ".")
+	runInDir(t, res.Dir, "go", "test", "-mod=readonly", "-race", "-count=1", "./internal/base/conf/...", "./internal/base/data/...", "./internal/repository/...", "./internal/pkg/interceptor/...", "./internal/pkg/rpcerror/...", "./pkg/client/...")
 }
 
 func TestGenerateKitexNormalizesHyphenatedServiceName(t *testing.T) {
@@ -1536,15 +1539,8 @@ func TestValidateRejectsBadInputs(t *testing.T) {
 // successful mono.Generate with the real hz generator. It is skipped in
 // -short mode or when hz is not on PATH.
 func TestGenerate_AutoSteps_Default(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-	if _, err := exec.LookPath("hz"); err != nil {
-		t.Skip("hz not on PATH")
-	}
-	if _, err := exec.LookPath("protoc"); err != nil {
-		t.Skip("protoc not on PATH")
-	}
+	requireIntegration(t)
+	requireTools(t, "hz", "protoc")
 
 	opts := baseOpts(t)
 	opts.NoGenerate = false // use real runner to actually generate with hz
@@ -1556,6 +1552,7 @@ func TestGenerate_AutoSteps_Default(t *testing.T) {
 	if !res.RanGenerate {
 		t.Fatal("expected RanGenerate=true")
 	}
+	lockGeneratedDependencies(t, res.Dir, manifest.KindHertz, opts.Module)
 
 	// Simulate what the CLI does: run post-generation auto steps
 	pgResult := postgenerate.Run(postgenerate.Options{
@@ -1690,7 +1687,7 @@ func nextStepsSmokeCases(postGenerate bool) []nextStepsSmokeCase {
 // executeSafeNextSteps runs the command prefix from Result.NextSteps that is
 // safe and deterministic inside unit tests. The explicit skip list documents
 // which handoff steps are intentionally left for higher-level/manual validation.
-func executeSafeNextSteps(t *testing.T, projectDir string, steps []string) {
+func executeSafeNextSteps(t *testing.T, projectDir string, steps []string, lockKind, module string) {
 	t.Helper()
 	cwd := mustCwd()
 	for _, step := range steps {
@@ -1702,7 +1699,14 @@ func executeSafeNextSteps(t *testing.T, projectDir string, steps []string) {
 			continue
 		default:
 			runStep(t, cwd, step)
+			if lockKind != "" && (strings.HasPrefix(step, "hz new ") || strings.HasPrefix(step, "kitex ")) {
+				lockGeneratedDependencies(t, projectDir, lockKind, module)
+				lockKind = ""
+			}
 		}
+	}
+	if lockKind != "" {
+		t.Fatal("generated-project dependency lock was not applied")
 	}
 	if got, want := filepath.Clean(cwd), filepath.Clean(projectDir); got != want {
 		t.Fatalf("next steps cd resolved to %q, want %q", got, want)
@@ -1744,9 +1748,50 @@ func requireTools(t *testing.T, names ...string) {
 	t.Helper()
 	for _, name := range names {
 		if _, err := exec.LookPath(name); err != nil {
-			t.Skipf("%s not found on PATH", name)
+			t.Fatalf("integration tool %s not found on PATH", name)
 		}
 	}
+}
+
+func requireIntegration(t *testing.T) {
+	t.Helper()
+	if testing.Short() || os.Getenv("NCGO_INTEGRATION") != "1" {
+		t.Skip("network-dependent generated-project test; set NCGO_INTEGRATION=1")
+	}
+}
+
+func lockGeneratedDependencies(t *testing.T, dir, kind, module string) {
+	t.Helper()
+	fixture := "generated-hertz"
+	if kind == manifest.KindKitex {
+		fixture = "generated-kitex"
+	}
+	fixtureDir := filepath.Join("..", "..", "..", "tools", "verifyexamples", fixture)
+	lockedMod, err := os.ReadFile(filepath.Join(fixtureDir, "go.mod"))
+	if err != nil {
+		t.Fatalf("read %s lock go.mod: %v", fixture, err)
+	}
+	currentModule := "module " + module
+	lockedText := string(lockedMod)
+	lockedModule := strings.SplitN(lockedText, "\n", 2)[0]
+	lockedText = strings.Replace(lockedText, lockedModule, currentModule, 1)
+	if err := os.WriteFile(filepath.Join(dir, "go.mod"), []byte(lockedText), 0o644); err != nil {
+		t.Fatalf("write locked generated go.mod: %v", err)
+	}
+	lockedSum, err := os.ReadFile(filepath.Join(fixtureDir, "go.sum"))
+	if err != nil {
+		t.Fatalf("read %s lock go.sum: %v", fixture, err)
+	}
+	if err := os.WriteFile(filepath.Join(dir, "go.sum"), lockedSum, 0o644); err != nil {
+		t.Fatalf("write locked generated go.sum: %v", err)
+	}
+
+	// This is the one intentional network phase. All generated-project commands
+	// after it must resolve solely from the reviewed lock and local module cache.
+	runInDir(t, dir, "go", "mod", "download", "all")
+	t.Setenv("GOTOOLCHAIN", "local")
+	t.Setenv("GOPROXY", "off")
+	t.Setenv("GOSUMDB", "off")
 }
 
 func runInDir(t *testing.T, dir, name string, args ...string) []byte {

@@ -9,30 +9,35 @@ release labels, and release-related docs.
 
 ## Development prerequisites / 开发前提
 
-- Go `1.25+`
-- `hz >= v0.9.7` when working on Hertz generator flows
-- `kitex >= v0.16.1` when working on Kitex generator flows
-- `sqlc` when running database-backed generator flows locally (`TestGenerateHertzWithDatabaseCompiles`, `TestGenerateKitexCompiles`) — install with `go install github.com/sqlc-dev/sqlc/cmd/sqlc@latest`
-- `protoc` (the Protocol Buffers compiler) for any flow that generates or verifies IDL-derived code
+- Go `1.25+` for repository checks; Go `1.26.5` for generated-project integration
+- `hz v0.9.7` when working on Hertz generator flows
+- `kitex v0.16.1` when working on Kitex generator flows
+- `sqlc v1.30.0` for database-backed generator flows
+- `protoc 28.3` for flows that generate or verify IDL-derived code
 
 If you only need to inspect scaffold inputs, prefer `--no-generate` workflows.
 
-CI installs pinned `hz`/`kitex`/`protoc`/`sqlc` and runs the real compile-verification tests (`TestGenerateHertzCompiles`, `TestGenerateHertzWithDatabaseCompiles`, `TestGenerateKitexCompiles`) on every push and PR — they are no longer silently skipped. See `.github/workflows/ci.yml`'s `Install code-gen tools` step for the exact versions.
+CI installs those exact versions and runs the real compile-verification tests on
+every push and PR. They are selected explicitly with `NCGO_INTEGRATION=1`; a
+missing tool is a failure rather than a silent skip.
 
 ## Local checks / 本地检查
 
-Run the same core checks as CI before opening or updating a PR:
+Prefetch the locked repository modules, then run the same offline core gate as CI:
 
 ```bash
-go build ./...
-go build .
-go vet ./...
-go test ./... -count=1
-./scripts/smoke.sh
+go mod download
+./scripts/test-unit.sh
 ```
 
-Use the smallest useful scope first when iterating, but make sure the final PR
-state passes the full checks above.
+Generator/template changes also require the pinned tools above and:
+
+```bash
+./scripts/test-generated.sh
+```
+
+The generated-project suite is intentionally network-dependent; the unit gate
+sets `GOPROXY=off` and `GOTOOLCHAIN=local` after prefetching dependencies.
 
 ## Local install / 本地安装
 
@@ -59,7 +64,7 @@ Recommended setup:
 Hook split:
 
 - `pre-commit`: file hygiene checks plus `gofmt` for staged Go files
-- `pre-push`: `go vet ./...`, `go test ./... -count=1`, `go build .`, and `./scripts/smoke.sh`
+- `pre-push`: the hermetic unit/vet/build/smoke gate in `scripts/test-unit.sh`
 
 The pre-push hooks intentionally mirror the repository's CI checks, so they may
 take longer than the pre-commit stage.

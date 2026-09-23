@@ -14,8 +14,7 @@
 set -euo pipefail
 
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
-TESTMOD="${REPO_ROOT}/tools/verifyexamples/polaris-adapter"
-RELEASE_PKG="${TESTMOD}/release"
+SOURCE_TESTMOD="${REPO_ROOT}/tools/verifyexamples/polaris-adapter"
 ADAPTER_ASSET="${REPO_ROOT}/internal/assets/_data/kitex/optional/polaris_canary_adapter.go"
 CANARY_ASSET="${REPO_ROOT}/internal/assets/_data/optional/release_canary.go"
 OPS_ASSET="${REPO_ROOT}/internal/assets/_data/optional/release_ops.go"
@@ -38,6 +37,10 @@ if [[ ! -f "${OTEL_ASSET}" ]]; then
   exit 1
 fi
 
+WORK_DIR="$(mktemp -d)"
+trap 'rm -rf "${WORK_DIR}"' EXIT
+cp -R "${SOURCE_TESTMOD}/." "${WORK_DIR}/"
+RELEASE_PKG="${WORK_DIR}/release"
 mkdir -p "${RELEASE_PKG}"
 
 # Refresh the release package from embedded assets (single source of truth).
@@ -55,17 +58,18 @@ for f in "${RELEASE_PKG}"/*.go; do
   fi
 done
 
-cd "${TESTMOD}"
+cd "${WORK_DIR}"
 
-# Resolve transitive dependencies against GOPROXY.
-go mod tidy
+# Fetch exactly the dependencies recorded in the committed fixture lockfiles.
+go mod download
+go mod verify
 
 # Compile everything in the test module. The main package references
 # release.NewPolarisSelector, so the adapter's sdkClient / instanceFromPolaris
 # bodies are fully type-checked against the pinned polaris-go.
-go build ./...
+GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off go build -mod=readonly ./...
 
 # Run the SDK-neutral ops tests (cache, observer, engine).
-go test ./release/ -count=1
+GOTOOLCHAIN=local GOPROXY=off GOSUMDB=off go test -mod=readonly ./release/ -count=1
 
 echo "polaris-adapter compile + unit OK"

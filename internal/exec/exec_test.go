@@ -84,18 +84,17 @@ func TestInstallUnknownToolReturnsError(t *testing.T) {
 }
 
 func TestInstallErrorFormatTrailingColon(t *testing.T) {
-	// Install with a deliberately invalid module path.
-	// This will fail, and we verify the error message shape.
-	err := Install(context.Background(), "hz")
-	if err == nil {
-		// If hz was already installed and go install succeeds, skip.
-		t.Skip("hz installed successfully; cannot test failure format")
-	}
+	err := formatInstallError("hz", errors.New("exit status 1"), nil)
 	if strings.HasSuffix(err.Error(), ": ") {
 		t.Errorf("error has trailing ': ': %q", err.Error())
 	}
 	if !strings.Contains(err.Error(), "install hz") {
 		t.Errorf("error = %q, should mention 'install hz'", err.Error())
+	}
+
+	withOutput := formatInstallError("hz", errors.New("exit status 1"), []byte("\nnetwork unavailable\n"))
+	if !strings.HasSuffix(withOutput.Error(), "network unavailable") {
+		t.Errorf("error = %q, should include trimmed command output", withOutput.Error())
 	}
 }
 

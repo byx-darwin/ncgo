@@ -60,13 +60,17 @@ func Install(ctx context.Context, name string) error {
 	cmd := osexec.CommandContext(ctx, "go", "install", path)
 	out, err := cmd.CombinedOutput()
 	if err != nil {
-		msg := bytes.TrimSpace(out)
-		if len(msg) > 0 {
-			return fmt.Errorf("exec: install %s: %w: %s", name, err, msg)
-		}
-		return fmt.Errorf("exec: install %s: %w", name, err)
+		return formatInstallError(name, err, out)
 	}
 	return nil
+}
+
+func formatInstallError(name string, err error, output []byte) error {
+	msg := bytes.TrimSpace(output)
+	if len(msg) > 0 {
+		return fmt.Errorf("exec: install %s: %w: %s", name, err, msg)
+	}
+	return fmt.Errorf("exec: install %s: %w", name, err)
 }
 
 // Cmd describes a single external command invocation.
