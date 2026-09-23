@@ -41,6 +41,13 @@ This writes the universal `AGENTS.md` plus Claude and Cursor context files.
 working directory, and MCP filesystem operations are restricted to that
 workspace. Start the client from the intended repository root.
 
+All MCP `root`, `dir`, `templateDir`, `to`, and explicit file inputs must be
+relative. `..`, absolute paths, symlinks that resolve outside the workspace,
+and dangling symlinks are rejected before a tool reads or writes files. A
+symlink is allowed when its resolved target remains inside the workspace;
+targets that do not exist yet are checked through their nearest existing
+parent. Registry templates selected by name come from ncgo's managed cache.
+
 The server also inherits the client's environment. Read-only tools need only
 the `ncgo` binary, while generation workflows may invoke `go`, `hz`, `kitex`,
 `protoc`, or `sqlc`. Make those tools available on the inherited `PATH`, or use

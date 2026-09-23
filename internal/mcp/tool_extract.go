@@ -24,8 +24,13 @@ func callExtractDomain(raw json.RawMessage) (map[string]any, error) {
 	if args.Root == "" {
 		args.Root = "."
 	}
-	if _, err := sandboxRoot(args.Root); err != nil {
-		return textResult(err.Error(), true), nil
+	safeRoot, err := sandboxRoot(args.Root)
+	if err != nil {
+		return sandboxErrorResult(err), nil
+	}
+	args.Root = safeRoot
+	if _, err := sandboxChild(args.Root, args.To); err != nil {
+		return sandboxErrorResult(err), nil
 	}
 
 	// MCP always uses PlanDomain — never ApplyDomain. Extraction that modifies

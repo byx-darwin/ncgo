@@ -34,7 +34,7 @@ func stringArrayField(name, desc string) schemaField {
 }
 
 func rootField(desc string) schemaField {
-	return stringField("root", desc)
+	return stringField("root", desc+"; must be relative to the MCP server workspace")
 }
 
 func outputTextJSONField() schemaField {

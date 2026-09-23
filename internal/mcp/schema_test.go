@@ -52,7 +52,7 @@ func TestOutputFields(t *testing.T) {
 }
 
 func TestPrimitiveFieldHelpers(t *testing.T) {
-	if got := rootField("Project root"); got.name != "root" || got.schema["description"] != "Project root" {
+	if got := rootField("Project root"); got.name != "root" || got.schema["description"] != "Project root; must be relative to the MCP server workspace" {
 		t.Fatalf("rootField = %+v", got)
 	}
 	if got := boolField("dryRun", "Dry run"); got.schema["type"] != "boolean" {

@@ -19,9 +19,11 @@ func callUpgrade(raw json.RawMessage, ncgoVersion, assetsVersion string) (map[st
 	if args.Root == "" {
 		args.Root = "."
 	}
-	if _, err := sandboxRoot(args.Root); err != nil {
-		return textResult(err.Error(), true), nil
+	safeRoot, err := sandboxRoot(args.Root)
+	if err != nil {
+		return sandboxErrorResult(err), nil
 	}
+	args.Root = safeRoot
 
 	res, err := upgrade.Run(upgrade.Options{
 		Root:          args.Root,

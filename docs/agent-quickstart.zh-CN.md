@@ -39,6 +39,11 @@ ncgo check --root . --output json
 `ncgo mcp serve` 是本地 stdio server。它继承客户端的当前工作目录，MCP 文件操作
 受该工作区边界限制。请从目标仓库根目录启动客户端。
 
+所有 MCP `root`、`dir`、`templateDir`、`to` 与显式文件输入都必须使用相对路径。
+含 `..` 的路径、绝对路径、解析后指向工作区外的 symlink，以及 dangling symlink，
+都会在工具读写文件前被拒绝。解析目标仍在工作区内的 symlink 可以使用；尚未创建的
+目标通过最近存在的父目录校验。按名称选择的 registry 模板来自 ncgo 管理的缓存。
+
 Server 同时继承客户端环境。只读工具只需要 `ncgo` 二进制；生成工作流可能调用
 `go`、`hz`、`kitex`、`protoc` 或 `sqlc`。请确保这些工具位于继承的 `PATH` 中，
 必要时使用客户端的 MCP 环境变量配置。不要把密钥写入项目共享的 MCP 配置。

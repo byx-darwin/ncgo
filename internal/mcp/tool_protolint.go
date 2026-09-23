@@ -4,7 +4,6 @@ import (
 	"context"
 	"encoding/json"
 	"io"
-	"path/filepath"
 	"strings"
 
 	"github.com/byx-darwin/ncgo/internal/protolint"
@@ -35,14 +34,21 @@ func callProtolint(ctx context.Context, raw json.RawMessage) (map[string]any, er
 	if strings.TrimSpace(args.Root) == "" {
 		return textResult("protolint: root is required", true), nil
 	}
-	if _, err := sandboxRoot(args.Root); err != nil {
-		return textResult(err.Error(), true), nil
+	root, err := sandboxRoot(args.Root)
+	if err != nil {
+		return sandboxErrorResult(err), nil
+	}
+	for _, file := range args.Files {
+		if _, err := sandboxChild(root, file); err != nil {
+			return sandboxErrorResult(err), nil
+		}
+	}
+	for _, file := range args.IgnoreFiles {
+		if _, err := sandboxChild(root, file); err != nil {
+			return sandboxErrorResult(err), nil
+		}
 	}
 	output, err := protolintMCPTool.resolveOutput(args.Output)
-	if err != nil {
-		return textResult(err.Error(), true), nil
-	}
-	root, err := filepath.Abs(args.Root)
 	if err != nil {
 		return textResult(err.Error(), true), nil
 	}

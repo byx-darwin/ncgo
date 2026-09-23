@@ -34,6 +34,10 @@ ncgo mcp serve
 启动一个 MCP stdio server，暴露 `ncgo_version`、`ncgo_doctor`、
 `ncgo_ai_sync` 等工具。
 
+Server 的当前工作目录就是文件系统边界。文件参数必须是相对路径；绝对路径、`..`、
+逃逸到工作区外的 symlink 与 dangling symlink 都会在读写前被拒绝。解析后仍位于
+工作区内的 symlink 可以使用；未创建目标会通过最近存在的父目录校验。
+
 ## `ncgo ai init claude` flags
 
 | Flag | 说明 |

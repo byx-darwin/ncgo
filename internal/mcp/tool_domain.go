@@ -42,9 +42,11 @@ func callAddDomain(raw json.RawMessage) (map[string]any, error) {
 	if args.Root == "" {
 		args.Root = "."
 	}
-	if _, err := sandboxRoot(args.Root); err != nil {
-		return textResult(err.Error(), true), nil
+	safeRoot, err := sandboxRoot(args.Root)
+	if err != nil {
+		return sandboxErrorResult(err), nil
 	}
+	args.Root = safeRoot
 
 	output, err := addDomainMCPTool.resolveOutput(args.Output)
 	if err != nil {

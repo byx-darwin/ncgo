@@ -31,9 +31,11 @@ func callAddInfra(raw json.RawMessage) (map[string]any, error) {
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
-	if _, err := sandboxRoot(args.Root); err != nil {
-		return textResult(err.Error(), true), nil
+	safeRoot, err := sandboxRoot(args.Root)
+	if err != nil {
+		return sandboxErrorResult(err), nil
 	}
+	args.Root = safeRoot
 	output, err := addInfraMCPTool.resolveOutput(args.Output)
 	if err != nil {
 		return textResult(err.Error(), true), nil
@@ -86,9 +88,11 @@ func callAddMethod(raw json.RawMessage) (map[string]any, error) {
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
-	if _, err := sandboxRoot(args.Root); err != nil {
-		return textResult(err.Error(), true), nil
+	safeRoot, err := sandboxRoot(args.Root)
+	if err != nil {
+		return sandboxErrorResult(err), nil
 	}
+	args.Root = safeRoot
 	output, err := addMethodMCPTool.resolveOutput(args.Output)
 	if err != nil {
 		return textResult(err.Error(), true), nil
@@ -153,9 +157,11 @@ func callAddRPCMethod(raw json.RawMessage) (map[string]any, error) {
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
-	if _, err := sandboxRoot(args.Root); err != nil {
-		return textResult(err.Error(), true), nil
+	safeRoot, err := sandboxRoot(args.Root)
+	if err != nil {
+		return sandboxErrorResult(err), nil
 	}
+	args.Root = safeRoot
 	output, err := addRPCMethodMCPTool.resolveOutput(args.Output)
 	if err != nil {
 		return textResult(err.Error(), true), nil

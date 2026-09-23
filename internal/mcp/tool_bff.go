@@ -32,8 +32,20 @@ func callAddBFF(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVer
 	if args.Root == "" {
 		args.Root = "."
 	}
-	if _, err := sandboxRoot(args.Root); err != nil {
-		return textResult(err.Error(), true), nil
+	safeRoot, err := sandboxRoot(args.Root)
+	if err != nil {
+		return sandboxErrorResult(err), nil
+	}
+	args.Root = safeRoot
+	if _, err := sandboxChild(args.Root, args.Dir); err != nil {
+		return sandboxErrorResult(err), nil
+	}
+	if args.TemplateDir != "" {
+		safeTemplateDir, sandboxErr := sandboxRoot(args.TemplateDir)
+		if sandboxErr != nil {
+			return sandboxErrorResult(sandboxErr), nil
+		}
+		args.TemplateDir = safeTemplateDir
 	}
 
 	output, err := resolveMCPOutput("add_bff", args.Output, mcpOutputText, mcpOutputJSON)

@@ -86,8 +86,17 @@ func callNew(ctx context.Context, raw json.RawMessage, ncgoVersion, assetsVersio
 	if args.Dir != "" {
 		dir = args.Dir
 	}
-	if _, err := sandboxRoot(dir); err != nil {
-		return textResult(err.Error(), true), nil
+	safeDir, err := sandboxRoot(dir)
+	if err != nil {
+		return sandboxErrorResult(err), nil
+	}
+	dir = safeDir
+	if args.TemplateDir != "" {
+		safeTemplateDir, sandboxErr := sandboxRoot(args.TemplateDir)
+		if sandboxErr != nil {
+			return sandboxErrorResult(sandboxErr), nil
+		}
+		args.TemplateDir = safeTemplateDir
 	}
 	switch args.Mode {
 	case manifest.ModeMono:

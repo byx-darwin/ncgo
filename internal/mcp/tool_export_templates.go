@@ -21,9 +21,11 @@ func callExportTemplates(raw json.RawMessage) (map[string]any, error) {
 	if args.Root == "" {
 		args.Root = "."
 	}
-	if _, err := sandboxRoot(args.Root); err != nil {
-		return textResult(err.Error(), true), nil
+	safeRoot, err := sandboxRoot(args.Root)
+	if err != nil {
+		return sandboxErrorResult(err), nil
 	}
+	args.Root = safeRoot
 
 	m, err := manifest.Load(args.Root)
 	if err != nil {

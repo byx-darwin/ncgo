@@ -108,14 +108,11 @@ func callI18NReport(raw json.RawMessage) (map[string]any, error) {
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
-	if _, err := sandboxRoot(args.Root); err != nil {
-		return textResult(err.Error(), true), nil
+	root, err := sandboxRoot(args.Root)
+	if err != nil {
+		return sandboxErrorResult(err), nil
 	}
 	output, err := i18nReportMCPTool.resolveOutput(args.Output)
-	if err != nil {
-		return textResult(err.Error(), true), nil
-	}
-	root, err := filepath.Abs(args.Root)
 	if err != nil {
 		return textResult(err.Error(), true), nil
 	}
@@ -140,8 +137,9 @@ func callI18NCheck(raw json.RawMessage) (map[string]any, error) {
 	if err := json.Unmarshal(raw, &args); err != nil {
 		return nil, err
 	}
-	if _, err := sandboxRoot(args.Root); err != nil {
-		return textResult(err.Error(), true), nil
+	root, err := sandboxRoot(args.Root)
+	if err != nil {
+		return sandboxErrorResult(err), nil
 	}
 	output, err := i18nCheckMCPTool.resolveOutput(args.Output)
 	if err != nil {
@@ -152,10 +150,6 @@ func callI18NCheck(raw json.RawMessage) (map[string]any, error) {
 	}
 	if args.Mode != mcpI18NCheckDev && args.Mode != mcpI18NCheckRelease {
 		return textResult(fmt.Sprintf("i18n check: unsupported --mode %q; want dev or release", args.Mode), true), nil
-	}
-	root, err := filepath.Abs(args.Root)
-	if err != nil {
-		return textResult(err.Error(), true), nil
 	}
 	_, typed, err := loadMCPI18NReport(root)
 	if err != nil {

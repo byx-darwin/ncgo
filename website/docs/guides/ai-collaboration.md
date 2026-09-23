@@ -35,6 +35,11 @@ ncgo mcp serve
 Starts an MCP stdio server exposing tools such as `ncgo_version`,
 `ncgo_doctor`, and `ncgo_ai_sync`.
 
+The server's current working directory is the filesystem boundary. Filesystem
+arguments must be relative; absolute paths, `..`, symlink escapes, and dangling
+symlinks are rejected before reads or writes. Symlinks that resolve inside the
+workspace and new targets whose nearest existing parent is inside it are valid.
+
 ## `ncgo ai init claude` flags
 
 | Flag | Description |
